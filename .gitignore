@@ -1,0 +1,37 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+**/application-local.yml
+**/application-local.properties
+*.pem
+*.key
+
+# IDE and OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Java / Maven
+**/target/
+.mvn/timing.properties
+
+# Node / Vite
+**/node_modules/
+**/dist/
+*.tsbuildinfo
+
+# Runtime data
+logs/
+*.log
+uploads/
+data/
+backups/
+*.bak
+*.dump
+
+# Security scan reports
+.reports/
+gitleaks-report.*
