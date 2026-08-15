@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import ReactFlow, {
+import {
+    ReactFlow,
     useNodesState,
     useEdgesState,
     addEdge,
@@ -17,8 +18,8 @@ import ReactFlow, {
     Node,
     NodeMouseHandler,
     EdgeMouseHandler
-} from 'reactflow';
-import 'reactflow/dist/style.css';
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 
 import { useApp } from '../InteractionContent/AppContext';
 import CharacterNode from '../components/flow/CharacterNode';
@@ -96,7 +97,7 @@ const RelationshipMapContent = () => {
     const updateNodeInternals = useUpdateNodeInternals();
 
     const reactFlowWrapper = useRef<HTMLDivElement>(null);
-    const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance | null>(null);
+    const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance<any, any> | null>(null);
 
     const [nodes, setNodes, onNodesChange] = useNodesState([]);
     const [edges, setEdges, onEdgesChange] = useEdgesState([]);
@@ -258,7 +259,7 @@ const RelationshipMapContent = () => {
             event.preventDefault();
             if (!reactFlowWrapper.current) return;
             const pane = reactFlowWrapper.current.getBoundingClientRect();
-            const currentConfig = node.data.handleConfig || {
+            const currentConfig = (node.data.handleConfig as HandleConfig | undefined) || {
                 top: 'target', right: 'source', bottom: 'source', left: 'target'
             };
             setMenu({
@@ -432,14 +433,13 @@ const RelationshipMapContent = () => {
             event.preventDefault();
             if (!reactFlowWrapper.current || !reactFlowInstance || !book) return;
 
-            const reactFlowBounds = reactFlowWrapper.current.getBoundingClientRect();
             const charDataString = event.dataTransfer.getData('application/reactflow');
             if (!charDataString) return;
 
             const charData: Character = JSON.parse(charDataString);
-            const position = reactFlowInstance.project({
-                x: event.clientX - reactFlowBounds.left,
-                y: event.clientY - reactFlowBounds.top,
+            const position = reactFlowInstance.screenToFlowPosition({
+                x: event.clientX,
+                y: event.clientY,
             });
 
             // Generate unique node ID (format: charId_timestamp)
@@ -616,7 +616,7 @@ const RelationshipMapContent = () => {
                         <Background color={isDarkMode ? '#1e293b' : '#f1f5f9'} gap={20} size={1} />
                         <Controls showInteractive={false} />
                         <MiniMap
-                            nodeColor={(n) => n.data.color || '#eee'}
+                            nodeColor={(n) => typeof n.data.color === 'string' ? n.data.color : '#eee'}
                             maskColor={isDarkMode ? 'rgba(15, 23, 42, 0.75)' : 'rgba(241, 245, 249, 0.7)'}
                             style={{ border: isDarkMode ? '1px solid #334155' : '1px solid #e2e8f0', background: isDarkMode ? '#0f172a' : '#ffffff' }}
                         />

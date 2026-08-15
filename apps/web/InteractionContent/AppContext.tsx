@@ -20,7 +20,7 @@ import {
 } from '../types';
 import apiClient from '../services/api';
 import { calculateMixedWordCount } from '../utils/textUtils';
-import { Node, Edge } from 'reactflow';
+import type { Node, Edge } from '@xyflow/react';
 
 // Add graph data interface definition
 interface GraphData {

@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { HashRouter, Routes, Route, Link, useNavigate, useLocation, Navigate } from 'react-router-dom';
+import React from 'react';
+import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
 import StyleLibrary from '../pages/StyleLibrary';
 import Editor from '../pages/EditorPrototype'; // Actually the Real Editor now
 import Dashboard from '../pages/Dashboard';

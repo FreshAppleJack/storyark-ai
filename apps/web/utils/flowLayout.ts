@@ -1,5 +1,5 @@
-import dagre from 'dagre';
-import { Node, Edge, Position } from 'reactflow';
+import dagre from '@dagrejs/dagre';
+import type { Node, Edge } from '@xyflow/react';
 
 // Define node width and height for Dagre layout calculation
 // Corresponds to CharacterNode.tsx actual render size
@@ -9,9 +9,6 @@ const NODE_HEIGHT = 100;
 export const getLayoutedElements = (nodes: Node[], edges: Edge[], direction = 'TB') => {
     const dagreGraph = new dagre.graphlib.Graph();
     dagreGraph.setDefaultEdgeLabel(() => ({}));
-
-    // Set layout direction: LR for horizontal, TB for vertical
-    const isHorizontal = direction === 'LR';
 
     dagreGraph.setGraph({
         rankdir: direction,

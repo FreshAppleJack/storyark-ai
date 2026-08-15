@@ -1,14 +1,17 @@
-import React, { memo } from 'react';
-import { Handle, Position, NodeProps } from 'reactflow';
-import { Character, HandleConfig } from './web/types.ts';
+import { memo } from 'react';
+import { Handle, Position } from '@xyflow/react';
+import type { Node, NodeProps } from '@xyflow/react';
+import type { Character, HandleConfig } from '../../types';
 
 // CharacterNodeData inherits handleConfig from Character now
-interface CharacterNodeData extends Character {
+type CharacterNodeData = Character & Record<string, unknown> & {
     isSelected?: boolean;
     // handleConfig is already in Character
-}
+};
 
-const CharacterNode = ({ data, selected }: NodeProps<CharacterNodeData>) => {
+type CharacterFlowNode = Node<CharacterNodeData, 'character'>;
+
+const CharacterNode = ({ data, selected }: NodeProps<CharacterFlowNode>) => {
     // 1. Role Styles: define different color schemes for each role (border, background, glow)
     const getRoleStyle = (role: string) => {
         const normalizedRole = role?.toLowerCase() || 'mob';

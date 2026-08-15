@@ -1,5 +1,5 @@
 import React, { useRef, useLayoutEffect, useState } from 'react';
-import { HandleConfig } from '@/types.ts';
+import type { HandleConfig } from '../../types';
 import { X, ArrowRightFromLine, ArrowLeftToLine, RefreshCw, Ban } from 'lucide-react';
 
 interface NodeContextMenuProps {
@@ -11,7 +11,7 @@ interface NodeContextMenuProps {
     onChange: (newConfig: HandleConfig) => void;
 }
 
-const NodeContextMenu: React.FC<NodeContextMenuProps> = ({ id, top, left, config, onClose, onChange }) => {
+const NodeContextMenu: React.FC<NodeContextMenuProps> = ({ top, left, config, onClose, onChange }) => {
     const menuRef = useRef<HTMLDivElement>(null);
     const [adjustedPos, setAdjustedPos] = useState({ top, left });
     const [isFlipped, setIsFlipped] = useState(false); // To control the animation origin direction
