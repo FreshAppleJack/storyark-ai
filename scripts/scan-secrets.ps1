@@ -6,6 +6,34 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Invoke-GitleaksCommand {
+    param(
+        [Parameter(Mandatory)][string[]]$Arguments,
+        [switch]$DiscardOutput
+    )
+
+    $previousErrorActionPreference = $ErrorActionPreference
+    try {
+        # Windows PowerShell 5.1 wraps native stderr as PowerShell error records.
+        # Gitleaks writes normal progress messages to stderr, so capture them
+        # without allowing ErrorActionPreference=Stop to abort the script.
+        $ErrorActionPreference = 'Continue'
+        $commandOutput = & $GitleaksPath @Arguments 2>&1
+        $commandExitCode = $LASTEXITCODE
+    }
+    finally {
+        $ErrorActionPreference = $previousErrorActionPreference
+    }
+
+    if (-not $DiscardOutput) {
+        foreach ($line in $commandOutput) {
+            Write-Host $line
+        }
+    }
+
+    return [int]$commandExitCode
+}
+
 function Remove-StoryArkTempDirectory {
     param([Parameter(Mandatory)][string]$Path)
 
@@ -31,7 +59,13 @@ function Test-GitleaksInstallation {
     try {
         $alphabet = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
         $randomBytes = New-Object byte[] 36
-        [System.Security.Cryptography.RandomNumberGenerator]::Fill($randomBytes)
+        $randomNumberGenerator = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+        try {
+            $randomNumberGenerator.GetBytes($randomBytes)
+        }
+        finally {
+            $randomNumberGenerator.Dispose()
+        }
         $secretBody = -join $(
             for ($index = 0; $index -lt $randomBytes.Length; $index++) {
                 $alphabet[$randomBytes[$index] % $alphabet.Length]
@@ -42,8 +76,9 @@ function Test-GitleaksInstallation {
         $selfTestFile = Join-Path $selfTestDirectory 'synthetic-secret.txt'
         [System.IO.File]::WriteAllText($selfTestFile, $syntheticSecret)
 
-        & $GitleaksPath dir $selfTestDirectory --redact --no-banner --no-color *> $null
-        $selfTestExitCode = $LASTEXITCODE
+        $selfTestExitCode = Invoke-GitleaksCommand -DiscardOutput -Arguments @(
+            'dir', $selfTestDirectory, '--redact', '--no-banner', '--no-color'
+        )
 
         if ($selfTestExitCode -ne 1) {
             throw "Gitleaks self-test failed: expected exit code 1, received $selfTestExitCode. Do not trust a zero-result scan."
@@ -96,8 +131,9 @@ try {
         Copy-Item -LiteralPath $sourcePath -Destination $destinationPath
     }
 
-    & $GitleaksPath dir $candidateDirectory --redact --no-banner --no-color
-    $workspaceScanExitCode = $LASTEXITCODE
+    $workspaceScanExitCode = Invoke-GitleaksCommand -Arguments @(
+        'dir', $candidateDirectory, '--redact', '--no-banner', '--no-color'
+    )
     if ($workspaceScanExitCode -eq 1) {
         throw 'Potential secret found in the current workspace. Review the redacted finding above before committing.'
     }
@@ -110,8 +146,9 @@ finally {
 }
 
 Write-Host '[3/3] Scanning the complete history of this new repository...'
-& $GitleaksPath git $repositoryRoot --redact --no-banner --no-color
-$historyScanExitCode = $LASTEXITCODE
+$historyScanExitCode = Invoke-GitleaksCommand -Arguments @(
+    'git', $repositoryRoot, '--redact', '--no-banner', '--no-color'
+)
 if ($historyScanExitCode -eq 1) {
     throw 'Potential secret found in Git history. Review the redacted finding above before pushing or publishing.'
 }

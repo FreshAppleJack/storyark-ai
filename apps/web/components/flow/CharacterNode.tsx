@@ -1,6 +1,6 @@
 import React, { memo } from 'react';
 import { Handle, Position, NodeProps } from 'reactflow';
-import { Character, HandleConfig } from '@/types.ts';
+import { Character, HandleConfig } from './web/types.ts';
 
 // CharacterNodeData inherits handleConfig from Character now
 interface CharacterNodeData extends Character {
