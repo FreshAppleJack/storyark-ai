@@ -1,8 +1,8 @@
 package io.github.freshapplejack.storyark.controller;
 
-import cdut.s5g2.storyark_sprint5_backend.entity.User;
-import cdut.s5g2.storyark_sprint5_backend.entity.UserSettings;
-import cdut.s5g2.storyark_sprint5_backend.mapper.UserSettingsMapper;
+import io.github.freshapplejack.storyark.entity.User;
+import io.github.freshapplejack.storyark.entity.UserSettings;
+import io.github.freshapplejack.storyark.mapper.UserSettingsMapper;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;

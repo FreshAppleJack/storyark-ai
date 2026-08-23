@@ -1,8 +1,8 @@
 package io.github.freshapplejack.storyark.controller;
 
-import cdut.s5g2.storyark_sprint5_backend.entity.AiBrainstorm;
-import cdut.s5g2.storyark_sprint5_backend.mapper.AiBrainstormMapper;
-import cdut.s5g2.storyark_sprint5_backend.mapper.BookMapper;
+import io.github.freshapplejack.storyark.entity.AiBrainstorm;
+import io.github.freshapplejack.storyark.mapper.AiBrainstormMapper;
+import io.github.freshapplejack.storyark.mapper.BookMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;

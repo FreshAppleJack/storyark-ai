@@ -1,7 +1,7 @@
 package io.github.freshapplejack.storyark.controller;
 
-import cdut.s5g2.storyark_sprint5_backend.entity.Relation;
-import cdut.s5g2.storyark_sprint5_backend.mapper.RelationMapper;
+import io.github.freshapplejack.storyark.entity.Relation;
+import io.github.freshapplejack.storyark.mapper.RelationMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;

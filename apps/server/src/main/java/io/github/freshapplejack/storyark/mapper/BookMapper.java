@@ -1,6 +1,6 @@
 package io.github.freshapplejack.storyark.mapper;
 
-import cdut.s5g2.storyark_sprint5_backend.entity.Book;
+import io.github.freshapplejack.storyark.entity.Book;
 import org.apache.ibatis.annotations.*;
 import java.util.List;
 

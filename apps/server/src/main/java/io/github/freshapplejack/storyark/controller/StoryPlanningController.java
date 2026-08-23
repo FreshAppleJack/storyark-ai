@@ -1,8 +1,8 @@
 package io.github.freshapplejack.storyark.controller;
 
-import cdut.s5g2.storyark_sprint5_backend.entity.StoryPlanning;
-import cdut.s5g2.storyark_sprint5_backend.mapper.BookMapper;
-import cdut.s5g2.storyark_sprint5_backend.mapper.StoryPlanningMapper;
+import io.github.freshapplejack.storyark.entity.StoryPlanning;
+import io.github.freshapplejack.storyark.mapper.BookMapper;
+import io.github.freshapplejack.storyark.mapper.StoryPlanningMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 

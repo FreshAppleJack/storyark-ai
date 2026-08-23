@@ -1,6 +1,6 @@
 package io.github.freshapplejack.storyark.mapper;
 
-import cdut.s5g2.storyark_sprint5_backend.entity.AiBrainstorm;
+import io.github.freshapplejack.storyark.entity.AiBrainstorm;
 import org.apache.ibatis.annotations.*;
 
 @Mapper

@@ -1,7 +1,7 @@
 package io.github.freshapplejack.storyark.controller;
 
-import cdut.s5g2.storyark_sprint5_backend.entity.Character;
-import cdut.s5g2.storyark_sprint5_backend.mapper.CharacterMapper;
+import io.github.freshapplejack.storyark.entity.Character;
+import io.github.freshapplejack.storyark.mapper.CharacterMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;

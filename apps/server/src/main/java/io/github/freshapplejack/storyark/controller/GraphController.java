@@ -1,9 +1,9 @@
 package io.github.freshapplejack.storyark.controller;
 
-import cdut.s5g2.storyark_sprint5_backend.entity.GraphNode;
-import cdut.s5g2.storyark_sprint5_backend.entity.Relation;
-import cdut.s5g2.storyark_sprint5_backend.mapper.GraphNodeMapper;
-import cdut.s5g2.storyark_sprint5_backend.mapper.RelationMapper;
+import io.github.freshapplejack.storyark.entity.GraphNode;
+import io.github.freshapplejack.storyark.entity.Relation;
+import io.github.freshapplejack.storyark.mapper.GraphNodeMapper;
+import io.github.freshapplejack.storyark.mapper.RelationMapper;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;

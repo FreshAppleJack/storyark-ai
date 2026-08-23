@@ -1,10 +1,10 @@
 package io.github.freshapplejack.storyark.controller;
 
-import cdut.s5g2.storyark_sprint5_backend.entity.Chapter;
-import cdut.s5g2.storyark_sprint5_backend.entity.Volume;
-import cdut.s5g2.storyark_sprint5_backend.mapper.BookMapper;
-import cdut.s5g2.storyark_sprint5_backend.mapper.ChapterMapper;
-import cdut.s5g2.storyark_sprint5_backend.mapper.VolumeMapper;
+import io.github.freshapplejack.storyark.entity.Chapter;
+import io.github.freshapplejack.storyark.entity.Volume;
+import io.github.freshapplejack.storyark.mapper.BookMapper;
+import io.github.freshapplejack.storyark.mapper.ChapterMapper;
+import io.github.freshapplejack.storyark.mapper.VolumeMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
