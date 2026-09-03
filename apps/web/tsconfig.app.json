@@ -18,9 +18,17 @@
 
     /* Migration baseline: stricter checks will be enabled incrementally. */
     "strict": false,
+    "noImplicitAny": false,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": [
+    "src",
+    "pages",
+    "components",
+    "services",
+    "utils",
+    "InteractionContent"
+  ]
 }

@@ -43,7 +43,7 @@ const getFuzzyScore = (value: string, query: string) => {
 
 const getForeshadowingExcerptMap = (content: string) => {
     const excerpts = new Map<string, string[]>();
-    const getForeshadowingIds = (node: any) => {
+    const getForeshadowingIds = (node: any) : string[]=> {
         if (!Array.isArray(node?.marks)) return [];
         return node.marks
             .filter((mark: any) => mark.type === 'foreshadowing' && mark.attrs?.id)

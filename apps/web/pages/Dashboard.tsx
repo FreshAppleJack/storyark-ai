@@ -286,7 +286,7 @@ const Dashboard: React.FC = () => {
                                 {...containerProps}
                                 onContextMenu={(e: React.MouseEvent) => handleContextMenu(e, book.id)}
                                 className="group bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden hover:shadow-xl hover:border-brand-300 dark:hover:border-brand-700 transition-all duration-300 flex flex-col h-64 relative cursor-pointer"
-                                onClick={(e) => {
+                                onClick={(e: React.MouseEvent<HTMLElement>) => {
                                     if (isRenaming) e.stopPropagation(); // Prevent triggering other logic when renaming
                                 }}
                             >

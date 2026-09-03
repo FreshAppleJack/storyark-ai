@@ -156,11 +156,13 @@ export interface Volume {
   chapters: Chapter[];
 }
 
+export type BookStatus = 'serializing' | 'completed';
+
 export interface Book {
   id: string;
   title: string;
   author: string;
-  status: string;
+  status: BookStatus;
   coverColor?: string;
   lastModified: number;
   volumes: Volume[];

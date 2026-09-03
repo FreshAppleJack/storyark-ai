@@ -16,7 +16,8 @@ import {
     CharacterRole,
     StoryPlanning,
     ChapterSummary,
-    PlotSetting
+    PlotSetting,
+    BookStatus
 } from '../types';
 import apiClient from '../services/api';
 import { calculateMixedWordCount } from '../utils/textUtils';
@@ -83,7 +84,7 @@ const STATUS_MAP_TO_UI = {
     2: 'completed'
 } as const;
 
-const STATUS_MAP_TO_API = {
+const STATUS_MAP_TO_API: Record<BookStatus, 1 | 2> = {
     'serializing': 1,
     'completed': 2
 } as const;
@@ -511,23 +512,37 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     };
 
-    const updateBook = async (bookId: string, data: { title?: string, status?: 'serializing' | 'completed' }) => {
-        const currentBook = books.find(b => b.id === bookId);
+    const updateBook = async (
+        bookId: string, 
+        data: { 
+            title?: string, 
+            status?: BookStatus; 
+        },
+    ) => {
+        const currentBook = books.find(book => book.id === bookId);
         if (!currentBook) return;
 
-        const newUiStatus = data.status || currentBook.status;
-        const newTitle = data.title || currentBook.title;
+        const newUiStatus: BookStatus = 
+            data.status ?? currentBook.status;
 
-        setBooks(prev => prev.map(b =>
-            b.id === bookId
-                ? { ...b, title: newTitle, status: newUiStatus, lastModified: Date.now() }
-                : b
-        ));
+        const newTitle = data.title ?? currentBook.title;
+
+        setBooks(prev => prev.map(book =>
+            book.id === bookId
+                ? { 
+                    ...book, 
+                    title: newTitle, 
+                    status: newUiStatus, 
+                    lastModified: Date.now(), 
+                }
+                : book,
+            ),
+        );
 
         const payload = {
             id: Number(bookId),
             title: newTitle,
-            status: STATUS_MAP_TO_API[newUiStatus] || 1,
+            status: STATUS_MAP_TO_API[newUiStatus],
             coverColor: currentBook.coverColor,
             userId: user?.username === currentBook.author ? 0 : 0
         };
@@ -710,25 +725,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         }
     };
 
-    const createVolume = async (bookId: string, title: string) : Promise<string | null> => {
+    const createVolume = async (
+        bookId: string, 
+        title: string,
+    ) : Promise<string | null> => {
         try {
             const response = await apiClient.post('/story/volumes', {
                 bookId: Number(bookId),
                 title: title,
                 orderIndex: 0
             });
+
             const newVolumeData = response as any;
 
-            setBooks(prev => prev.map(b => {
-                if (b.id !== bookId) return b;
+            const newVolume: Volume = {
+                id: newVolumeData.id.toString(),
+                title: newVolumeData.title,
+                chapters: [],
+            };
+
+            setBooks(prev => prev.map(book => {
+                if (book.id !== bookId) return book;
                 return {
-                    ...b,
+                    ...book,
                     lastModified: Date.now(),
-                    volumes: [...b.volumes, {
-                        id: newVolumeData.id.toString(),
-                        title: newVolumeData.title,
-                        chapters: []
-                    }]
+                    volumes: [...book.volumes, newVolume],
                 };
             }));
 
@@ -751,6 +772,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             });
             const newChapterData = response as any;
 
+            const newChapter: Chapter = {
+                id: newChapterData.id.toString(),
+                title: newChapterData.title,
+                content: '',
+                wordCount: 0,
+                status: 'draft',
+                isEditable: true,
+                foreshadowings: []
+            };
+
             setBooks(prev => prev.map(b => {
                 if (b.id !== bookId) return b;
                 return {
@@ -760,15 +791,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                         if (v.id !== volumeId) return v;
                         return {
                             ...v,
-                            chapters: [...v.chapters, {
-                                id: newChapterData.id.toString(),
-                                title: newChapterData.title,
-                                content: '',
-                                wordCount: 0,
-                                status: 'draft',
-                                isEditable: true,
-                                foreshadowings: []
-                            }]
+                            chapters: [...v.chapters, newChapter],
                         };
                     })
                 };
