@@ -25,6 +25,7 @@
     "@tiptap/starter-kit": "^3.30.1",
     "@xyflow/react": "^12.11.3",
     "axios": "^1.19.0",
+    "clsx": "^2.1.1",
     "file-saver": "^2.0.5",
     "html-docx-js-typescript": "^0.1.5",
     "html2pdf.js": "^0.14.0",
@@ -33,6 +34,7 @@
     "react-dom": "^19.2.8",
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.18.2",
+    "tailwind-merge": "^3.6.0",
     "tippy.js": "^6.3.7"
   },
   "devDependencies": {
