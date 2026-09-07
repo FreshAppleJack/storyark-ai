@@ -14,8 +14,14 @@ import Foreshadowing from "../pages/Foreshadowing.tsx";
 import StoryOutline from "../pages/StoryOutline.tsx";
 import AiBrainstorm from "../pages/AiBrainstorm.tsx";
 
+interface ProtectedRouteProps {
+  children: React.ReactNode;
+}
+
 // Protected Route Wrapper
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+function ProtectedRoute({
+  children,
+}: ProtectedRouteProps): React.ReactElement {
   const { user } = useApp();
   const location = useLocation();
 
@@ -23,10 +29,10 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
   return <>{children}</>;
-};
+}
 
 // Landing Page for Navigation
-const Home: React.FC = () => {
+function Home(): React.ReactElement {
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
       <div className="max-w-4xl w-full text-center space-y-8">
@@ -71,9 +77,9 @@ const Home: React.FC = () => {
       </div>
     </div>
   );
-};
+}
 
-const App: React.FC = () => {
+function App(): React.ReactElement {
   return (
     <AppProvider>
       <HashRouter>
@@ -128,6 +134,6 @@ const App: React.FC = () => {
       </HashRouter>
     </AppProvider>
   );
-};
+}
 
 export default App;

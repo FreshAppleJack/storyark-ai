@@ -5,21 +5,23 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { Feather } from 'lucide-react';
 
-const Login: React.FC = () => {
+function Login(): React.ReactElement {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const { login } = useApp();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
     setError('');
+
     const success = await login(username, password);
+
     if (success) {
       navigate('/dashboard');
     } else {
-      setError('Invalid credentials. Try StoryArk / 12345678');
+      setError('Invalid credentials.');
     }
   };
 
@@ -75,6 +77,6 @@ const Login: React.FC = () => {
       </div>
     </div>
   );
-};
+}
 
 export default Login;

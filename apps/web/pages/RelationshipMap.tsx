@@ -669,10 +669,12 @@ const RelationshipMapContent = () => {
     );
 };
 
-const RelationshipMap = () => (
-    <ReactFlowProvider>
-        <RelationshipMapContent />
-    </ReactFlowProvider>
-);
+function RelationshipMap(): React.ReactElement {
+    return (
+        <ReactFlowProvider>
+            <RelationshipMapContent />
+        </ReactFlowProvider>
+    );
+}
 
 export default RelationshipMap;

@@ -98,7 +98,7 @@ const getForeshadowingExcerptMap = (content: string) => {
     return normalized;
 };
 
-const Foreshadowing: React.FC = () => {
+function Foreshadowing(): React.ReactElement {
     const { bookId } = useParams<{ bookId: string }>();
     const navigate = useNavigate();
     const { getBook, updateChapterContent } = useApp();
@@ -369,6 +369,6 @@ const Foreshadowing: React.FC = () => {
             </main>
         </div>
     );
-};
+}
 
 export default Foreshadowing;

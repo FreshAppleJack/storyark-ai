@@ -5,7 +5,7 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { UserPlus } from 'lucide-react';
 
-const Register: React.FC = () => {
+function Register(): React.ReactElement {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [nickname, setNickname] = useState('');
@@ -15,7 +15,7 @@ const Register: React.FC = () => {
     const { register } = useApp();
     const navigate = useNavigate();
 
-    const handleSubmit = async (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>): Promise<void> => {
         e.preventDefault();
         setError('');
 
@@ -25,12 +25,12 @@ const Register: React.FC = () => {
         }
 
         setLoading(true);
-        // 调用 context 中的 register 方法
+        // Call the register function method in the context
         const success = await register(username, password, nickname);
         setLoading(false);
 
         if (success) {
-            // 注册成功，跳转回登录页
+            // Resister Successful, navigate to login page
             alert('Registration successful! Please log in.');
             navigate('/login');
         } else {
@@ -96,6 +96,6 @@ const Register: React.FC = () => {
             </div>
         </div>
     );
-};
+}
 
 export default Register;

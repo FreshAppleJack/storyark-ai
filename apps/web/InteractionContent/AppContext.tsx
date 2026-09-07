@@ -249,7 +249,13 @@ const loadAiContinueSettingsFromStorage = (): AiContinueSettings => {
     }
 };
 
-export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+interface AppProviderProps {
+    children: React.ReactNode;
+}
+
+export function AppProvider({
+    children,
+}: AppProviderProps): React.ReactElement {
     const [user, setUser] = useState<User | null>(null);
     const [books, setBooks] = useState<Book[]>([]);
     const [isDarkMode, setIsDarkMode] = useState<boolean>(() => localStorage.getItem('storyark_dark_mode') === 'true');
@@ -1062,7 +1068,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             {children}
         </AppContext.Provider>
     );
-};
+}
 
 export const useApp = () => {
     const context = useContext(AppContext);
