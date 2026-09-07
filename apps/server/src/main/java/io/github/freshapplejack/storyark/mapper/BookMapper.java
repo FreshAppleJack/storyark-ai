@@ -22,10 +22,10 @@ public interface BookMapper {
             @Result(property = "updatedAt", column = "updated_at"),
             // 关键点：自动调用 CharacterMapper.findByBookId 填充 characters 列表
             @Result(property = "characters", column = "id",
-                    many = @Many(select = "cdut.s5g2.storyark_sprint5_backend.mapper.CharacterMapper.findByBookId")),
+                    many = @Many(select = "io.github.freshapplejack.storyark.mapper.CharacterMapper.findByBookId")),
             // 之前的 volumes 映射保持不变...
             @Result(property = "volumes", column = "id",
-                    many = @Many(select = "cdut.s5g2.storyark_sprint5_backend.mapper.VolumeMapper.findByBookId"))
+                    many = @Many(select = "io.github.freshapplejack.storyark.mapper.VolumeMapper.findByBookId"))
     })
     List<Book> findByUserId(Long userId);
 

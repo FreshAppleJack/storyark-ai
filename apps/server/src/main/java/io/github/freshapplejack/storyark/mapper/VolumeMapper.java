@@ -14,7 +14,7 @@ public interface VolumeMapper {
             @Result(property = "id", column = "id"),
             @Result(property = "orderIndex", column = "order_index"),
             @Result(property = "chapters", column = "id",
-                    many = @Many(select = "cdut.s5g2.storyark_sprint5_backend.mapper.ChapterMapper.findByVolumeId"))
+                    many = @Many(select = "io.github.freshapplejack.storyark.mapper.ChapterMapper.findByVolumeId"))
     })
     List<Volume> findByBookId(Long bookId);
 
