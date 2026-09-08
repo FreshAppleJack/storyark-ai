@@ -1,35 +1,19 @@
 import React from 'react';
-import { HashRouter, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
+import { HashRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
 import StyleLibrary from '../pages/StyleLibrary';
 import Editor from '../pages/EditorPrototype'; // Actually the Real Editor now
 import Dashboard from '../pages/Dashboard';
 import Login from '../pages/Login';
 import Register from '../pages/Register';
 import UserSettings from '../pages/UserSettings';
-import { AppProvider, useApp } from '../InteractionContent/AppContext';
+import { AppProvider } from '../InteractionContent/AppContext';
+import ProtectedRoute from '../components/ProtectedRoute';
 import { Palette, ChevronRight, LogIn } from 'lucide-react';
 import CharacterSettings from "../pages/CharacterSettings.tsx";
 import RelationshipMap from "../pages/RelationshipMap.tsx";
 import Foreshadowing from "../pages/Foreshadowing.tsx";
 import StoryOutline from "../pages/StoryOutline.tsx";
 import AiBrainstorm from "../pages/AiBrainstorm.tsx";
-
-interface ProtectedRouteProps {
-  children: React.ReactNode;
-}
-
-// Protected Route Wrapper
-function ProtectedRoute({
-  children,
-}: ProtectedRouteProps): React.ReactElement {
-  const { user } = useApp();
-  const location = useLocation();
-
-  if (!user?.isAuthenticated) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
-  }
-  return <>{children}</>;
-}
 
 // Landing Page for Navigation
 function Home(): React.ReactElement {
