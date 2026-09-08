@@ -15,6 +15,7 @@ import { Button } from '../components/ui/Button';
 import { useApp } from '../InteractionContent/AppContext';
 import apiClient from '../services/api';
 import { BrainstormOption, BrainstormWorkspace, Chapter, Character, StoryPlanning } from '../types';
+import { escapeRegex, getCharacterMatchTerms } from '../domain/characters';
 
 interface ChapterOption {
     id: string;
@@ -66,30 +67,6 @@ const normalizeWorkspace = (data?: BrainstormResponse | null): BrainstormWorkspa
     finalContent: data?.finalContent || '',
     updatedAt: data?.updatedAt ? new Date(data.updatedAt).getTime() : undefined,
 });
-
-const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const getCharacterMatchTerms = (characters: Character[]) => {
-    const terms = new Map<string, Character>();
-
-    characters.forEach(character => {
-        const name = character.name.trim();
-        if (name) terms.set(name, character);
-    });
-
-    characters.forEach(character => {
-        (character.aliases || []).forEach(alias => {
-            const trimmed = alias.trim();
-            if (trimmed && !terms.has(trimmed)) {
-                terms.set(trimmed, character);
-            }
-        });
-    });
-
-    return Array.from(terms.entries())
-        .map(([text, character]) => ({ text, character }))
-        .sort((a, b) => b.text.length - a.text.length);
-};
 
 const extractContentSignals = (content: string) => {
     const ids = new Set<string>();

@@ -1,4 +1,5 @@
 import { CustomFontFamily, FontSize, ForeshadowingMark, PasteAutoFormat, TabIndent, transformPastedHtml } from '../features/editor/extensions';
+import { escapeRegex, getCharacterDisplayTerms, getCharacterMatchTerms, getValidNamedCharacters } from '../domain/characters';
 import React, {useEffect, useState, useImperativeHandle, forwardRef, useMemo, useRef} from 'react';
 import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
 import { Extension, mergeAttributes, Mark } from '@tiptap/core';
@@ -36,40 +37,6 @@ const dlog = (...args: any[]) => {
         // eslint-disable-next-line no-console
         console.log('[TiptapHL]', ...args);
     }
-};
-
-const getValidNamedCharacters = (characters: Character[] = []) => {
-    return characters.filter(character => typeof character.name === 'string' && character.name.trim().length > 0);
-};
-
-const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-const getCharacterHighlightTerms = (characters: Character[]) => {
-    const terms = new Map<string, Character>();
-
-    characters.forEach(character => {
-        const name = character.name.trim();
-        if (name) terms.set(name, character);
-    });
-
-    characters.forEach(character => {
-        (character.aliases || []).forEach(alias => {
-            const trimmed = alias.trim();
-            if (trimmed && !terms.has(trimmed)) {
-                terms.set(trimmed, character);
-            }
-        });
-    });
-
-    return Array.from(terms.entries())
-        .map(([text, character]) => ({ text, character }))
-        .sort((a, b) => b.text.length - a.text.length);
-};
-
-const getCharacterDisplayTerms = (character: Character) => {
-    return [character.name, ...(character.aliases || [])]
-        .map(term => term.trim())
-        .filter(Boolean);
 };
 
 export interface TiptapEditorRef {
@@ -336,7 +303,7 @@ const AutoHighlight = Extension.create<AutoHighlightOptions>({
                     // (Only meaningful when there are characters defined.)
                     // ---------------------------------------------------------
                     if (chars.length > 0) {
-                        const highlightTerms = getCharacterHighlightTerms(chars);
+                        const highlightTerms = getCharacterMatchTerms(chars);
                         if (highlightTerms.length === 0) return modified ? tr : null;
                         const pattern = new RegExp(
                             `(${highlightTerms.map(term => escapeRegex(term.text)).join('|')})`,

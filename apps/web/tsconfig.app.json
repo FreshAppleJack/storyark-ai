@@ -27,6 +27,7 @@
     "src",
     "pages",
     "components",
+    "domain",
     "features",
     "services",
     "utils",
