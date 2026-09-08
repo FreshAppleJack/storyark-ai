@@ -1,4 +1,4 @@
-import { CustomFontFamily, FontSize, ForeshadowingMark, TabIndent } from '../features/editor/extensions';
+import { CustomFontFamily, FontSize, ForeshadowingMark, PasteAutoFormat, TabIndent, transformPastedHtml } from '../features/editor/extensions';
 import React, {useEffect, useState, useImperativeHandle, forwardRef, useMemo, useRef} from 'react';
 import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
 import { Extension, mergeAttributes, Mark } from '@tiptap/core';
@@ -9,7 +9,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import { TextStyle } from '@tiptap/extension-text-style';
 //import { FontFamily } from '@tiptap/extension-font-family';
 import { Plugin, PluginKey, TextSelection} from '@tiptap/pm/state';
-import { Slice, Fragment, Node as PMNode } from '@tiptap/pm/model';
+import { Node as PMNode } from '@tiptap/pm/model';
 import Mention from '@tiptap/extension-mention';
 import tippy from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
@@ -398,54 +398,6 @@ const AutoHighlight = Extension.create<AutoHighlightOptions>({
                     }
 
                     return modified ? tr : null;
-                },
-            }),
-        ];
-    },
-});
-
-const PasteAutoFormat = Extension.create({
-    name: 'pasteAutoFormat',
-    addProseMirrorPlugins() {
-        return [
-            new Plugin({
-                props: {
-                    transformPasted: (slice: Slice, view) => {
-                        const editor = this.editor;
-                        if (!editor) return slice;
-
-                        const currentAttrs = editor.getAttributes('textStyle');
-                        const currentFontFamily = currentAttrs.fontFamily;
-                        const currentFontSize = currentAttrs.fontSize;
-                        const { schema } = view.state;
-
-                        const mapFragment = (fragment: Fragment): Fragment => {
-                            const newNodes: PMNode[] = [];
-                            fragment.forEach((node) => {
-                                if (node.isText) {
-                                    let newMarks = node.marks.filter(
-                                        m => m.type.name !== 'textStyle' && m.type.name !== 'fontFamily'
-                                    );
-                                    const textStyleAttrs: Record<string, any> = {};
-                                    if (currentFontFamily) textStyleAttrs.fontFamily = currentFontFamily;
-                                    if (currentFontSize) textStyleAttrs.fontSize = currentFontSize;
-                                    if (Object.keys(textStyleAttrs).length > 0 && schema.marks.textStyle) {
-                                        const newMark = schema.marks.textStyle.create(textStyleAttrs);
-                                        newMarks.push(newMark);
-                                    }
-                                    newNodes.push(node.mark(newMarks));
-                                } else {
-                                    if (node.content.size > 0) {
-                                        newNodes.push(node.copy(mapFragment(node.content)));
-                                    } else {
-                                        newNodes.push(node);
-                                    }
-                                }
-                            });
-                            return Fragment.fromArray(newNodes);
-                        };
-                        return new Slice(mapFragment(slice.content), slice.openStart, slice.openEnd);
-                    },
                 },
             }),
         ];
@@ -894,22 +846,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                     return false;
                 }
             },
-            transformPastedHTML(html) {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(html, 'text/html');
-                doc.body.querySelectorAll('p, h1, h2, h3, h4, h5, h6, div').forEach(node => {
-                    const style = node.getAttribute('style') || '';
-                    if (style.includes('text-indent') && !style.match(/text-indent:\s*0(pt|px|cm|in|em)?\s*(;|$)/)) {
-                        if (node.textContent && !node.textContent.startsWith('\u3000')) {
-                            node.innerHTML = '\u3000\u3000' + node.innerHTML;
-                        }
-                    }
-                });
-                doc.body.querySelectorAll('[style]').forEach(node => {
-                    node.removeAttribute('style');
-                });
-                return doc.body.innerHTML;
-            },
+            transformPastedHTML: transformPastedHtml,
         },
         // Initial content setup
         content: (() => {
