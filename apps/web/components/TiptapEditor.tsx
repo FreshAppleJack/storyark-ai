@@ -1,4 +1,4 @@
-import { CustomFontFamily, FontSize, TabIndent } from '../features/editor/extensions';
+import { CustomFontFamily, FontSize, ForeshadowingMark, TabIndent } from '../features/editor/extensions';
 import React, {useEffect, useState, useImperativeHandle, forwardRef, useMemo, useRef} from 'react';
 import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
 import { Extension, mergeAttributes, Mark } from '@tiptap/core';
@@ -186,36 +186,6 @@ const IgnoreAutoHighlight = Mark.create({
     },
     renderHTML({ HTMLAttributes }) {
         return ['span', mergeAttributes(HTMLAttributes, { 'data-ignore-highlight': 'true' }), 0];
-    },
-});
-
-const ForeshadowingMark = Mark.create({
-    name: 'foreshadowing',
-    inclusive: false,
-    addAttributes() {
-        return {
-            id: {
-                default: null,
-                parseHTML: element => element.getAttribute('data-foreshadowing-id'),
-                renderHTML: attributes => {
-                    if (!attributes.id) return {};
-                    return { 'data-foreshadowing-id': attributes.id };
-                },
-            },
-        };
-    },
-    parseHTML() {
-        return [{ tag: 'span[data-foreshadowing-id]' }];
-    },
-    renderHTML({ HTMLAttributes }) {
-        return [
-            'span',
-            mergeAttributes(HTMLAttributes, {
-                class: 'foreshadowing-mark',
-                style: 'text-decoration-line: underline; text-decoration-style: dashed; text-decoration-color: #94a3b8; text-underline-offset: 4px; cursor: pointer;',
-            }),
-            0,
-        ];
     },
 });
 
