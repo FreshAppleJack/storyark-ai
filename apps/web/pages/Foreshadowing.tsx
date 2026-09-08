@@ -4,6 +4,7 @@ import { ArrowLeft, BookOpen, CheckCircle2, ChevronRight, FileText, Loader2, Mes
 import { useApp } from '../InteractionContent/AppContext';
 import { Button } from '../components/ui/Button';
 import { ForeshadowingNote } from '../types';
+import { getFuzzyScore } from '../utils/search';
 
 interface ForeshadowingCard {
     id: string;
@@ -15,31 +16,6 @@ interface ForeshadowingCard {
     volumeTitle: string;
     score?: number;
 }
-
-const normalizeSearchText = (value: string) => value.toLowerCase().replace(/\s+/g, '');
-
-const getFuzzyScore = (value: string, query: string) => {
-    const target = normalizeSearchText(value);
-    const needle = normalizeSearchText(query);
-    if (!needle) return null;
-    if (!target) return null;
-
-    const exactIndex = target.indexOf(needle);
-    if (exactIndex >= 0) {
-        return exactIndex + Math.max(0, target.length - needle.length) * 0.01;
-    }
-
-    let targetIndex = 0;
-    let gapPenalty = 0;
-    for (const char of needle) {
-        const foundIndex = target.indexOf(char, targetIndex);
-        if (foundIndex === -1) return null;
-        gapPenalty += foundIndex - targetIndex;
-        targetIndex = foundIndex + 1;
-    }
-
-    return 100 + gapPenalty + Math.max(0, target.length - needle.length) * 0.02;
-};
 
 const getForeshadowingExcerptMap = (content: string) => {
     const excerpts = new Map<string, string[]>();

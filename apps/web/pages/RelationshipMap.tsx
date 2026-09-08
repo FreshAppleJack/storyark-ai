@@ -41,6 +41,7 @@ import {
     Search
 } from 'lucide-react';
 import { Character, HandleConfig } from '../types';
+import { getFuzzyScore } from '../utils/search';
 
 const nodeTypes = { character: CharacterNode };
 
@@ -48,31 +49,6 @@ interface CharacterSearchResult {
     character: Character;
     score: number;
 }
-
-const normalizeSearchText = (value: string) => value.toLowerCase().replace(/\s+/g, '');
-
-const getFuzzyScore = (value: string, query: string) => {
-    const target = normalizeSearchText(value);
-    const needle = normalizeSearchText(query);
-    if (!needle) return null;
-    if (!target) return null;
-
-    const exactIndex = target.indexOf(needle);
-    if (exactIndex >= 0) {
-        return exactIndex + Math.max(0, target.length - needle.length) * 0.01;
-    }
-
-    let targetIndex = 0;
-    let gapPenalty = 0;
-    for (const char of needle) {
-        const foundIndex = target.indexOf(char, targetIndex);
-        if (foundIndex === -1) return null;
-        gapPenalty += foundIndex - targetIndex;
-        targetIndex = foundIndex + 1;
-    }
-
-    return 100 + gapPenalty + Math.max(0, target.length - needle.length) * 0.02;
-};
 
 // --- Helper Function: Safe Parse JSON ---
 // This prevents white screen due to invalid JSON strings from backend

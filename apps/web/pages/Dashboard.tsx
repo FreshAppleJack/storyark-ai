@@ -4,6 +4,7 @@ import { useApp } from '../InteractionContent/AppContext';
 import { Button } from '../components/ui/Button';
 import { Plus, Book as BookIcon, Clock, LogOut, MoreVertical, Pencil, Trash2, CheckCircle2, AlertTriangle, PenTool, Settings, Search, X, MessageSquareText } from 'lucide-react';
 import { Book } from '../types';
+import { getFuzzyScore } from '../utils/search';
 
 interface ContextMenuState {
     x: number;
@@ -16,8 +17,6 @@ interface BookSearchResult {
     score: number;
 }
 
-const normalizeSearchText = (value: string) => value.toLowerCase().replace(/\s+/g, '');
-
 const getUnrecoveredForeshadowingCount = (book: Book) => (
     book.volumes.reduce((bookTotal, volume) => (
         bookTotal + volume.chapters.reduce((volumeTotal, chapter) => (
@@ -25,29 +24,6 @@ const getUnrecoveredForeshadowingCount = (book: Book) => (
         ), 0)
     ), 0)
 );
-
-const getFuzzyScore = (value: string, query: string) => {
-    const target = normalizeSearchText(value);
-    const needle = normalizeSearchText(query);
-    if (!needle) return null;
-    if (!target) return null;
-
-    const exactIndex = target.indexOf(needle);
-    if (exactIndex >= 0) {
-        return exactIndex + Math.max(0, target.length - needle.length) * 0.01;
-    }
-
-    let targetIndex = 0;
-    let gapPenalty = 0;
-    for (const char of needle) {
-        const foundIndex = target.indexOf(char, targetIndex);
-        if (foundIndex === -1) return null;
-        gapPenalty += foundIndex - targetIndex;
-        targetIndex = foundIndex + 1;
-    }
-
-    return 100 + gapPenalty + Math.max(0, target.length - needle.length) * 0.02;
-};
 
 const Dashboard: React.FC = () => {
     const { user, books, createBook, updateBook, deleteBook, logout } = useApp();
