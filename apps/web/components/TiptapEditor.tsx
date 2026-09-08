@@ -1,17 +1,16 @@
-import { CustomFontFamily, FontSize, ForeshadowingMark, PasteAutoFormat, TabIndent, transformPastedHtml } from '../features/editor/extensions';
+import { AutoHighlight, CustomFontFamily, CustomMention, FontSize, ForeshadowingMark, IgnoreAutoHighlight, PasteAutoFormat, TabIndent, transformPastedHtml } from '../features/editor/extensions';
+import { dlog } from '../features/editor/debug/editorDebug';
 import { escapeRegex, getCharacterDisplayTerms, getCharacterMatchTerms, getValidNamedCharacters } from '../domain/characters';
 import React, {useEffect, useState, useImperativeHandle, forwardRef, useMemo, useRef} from 'react';
 import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
-import { Extension, mergeAttributes, Mark } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
 import Placeholder from '@tiptap/extension-placeholder';
 import { TextStyle } from '@tiptap/extension-text-style';
 //import { FontFamily } from '@tiptap/extension-font-family';
-import { Plugin, PluginKey, TextSelection} from '@tiptap/pm/state';
+import { TextSelection } from '@tiptap/pm/state';
 import { Node as PMNode } from '@tiptap/pm/model';
-import Mention from '@tiptap/extension-mention';
 import tippy from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 import 'tippy.js/animations/shift-away.css';
@@ -26,18 +25,6 @@ import {
 } from 'lucide-react';
 import { Character, EDITOR_SPACING_LIMITS, ForeshadowingNote } from '../types';
 import { calculateMixedWordCount } from '../utils/textUtils'; // Import common utility function
-
-// ---------------------------------------------------------------------------
-// Debug helpers — toggle this flag to see traces in the console.
-// You can also set window.__DEBUG_HIGHLIGHTS__ = true at runtime to override.
-// ---------------------------------------------------------------------------
-const DEBUG_HIGHLIGHTS = false;
-const dlog = (...args: any[]) => {
-    if (DEBUG_HIGHLIGHTS || (typeof window !== 'undefined' && (window as any).__DEBUG_HIGHLIGHTS__)) {
-        // eslint-disable-next-line no-console
-        console.log('[TiptapHL]', ...args);
-    }
-};
 
 export interface TiptapEditorRef {
     insertContent: (content: string) => void;
@@ -138,237 +125,6 @@ const MentionList = forwardRef<MentionListHandle, any>((props, ref) => {
             )}
         </div>
     );
-});
-
-// --- Custom Extensions ---
-
-// 1. IgnoreAutoHighlight Mark
-// Used to mark text that users manually unhighlighted, preventing it from being captured by AutoHighlight extension
-const IgnoreAutoHighlight = Mark.create({
-    name: 'ignoreAutoHighlight',
-    // Set to false to ensure that new characters typed after the word will not inherit this ignore attribute
-    inclusive: false,
-    parseHTML() {
-        return [{ tag: 'span[data-ignore-highlight]' }];
-    },
-    renderHTML({ HTMLAttributes }) {
-        return ['span', mergeAttributes(HTMLAttributes, { 'data-ignore-highlight': 'true' }), 0];
-    },
-});
-
-const CustomMention = Mention.extend({
-    name: 'mention',
-    marks: '_', // Allow Mention node to apply marks (underline etc)
-    renderText({ node }) {
-        return `${node.attrs.label ?? node.attrs.id}`;
-    },
-    addAttributes() {
-        return {
-            ...this.parent?.(),
-            id: {
-                default: null,
-                parseHTML: element => element.getAttribute('data-id'),
-                renderHTML: attributes => {
-                    if (!attributes.id) return {};
-                    return { 'data-id': attributes.id };
-                },
-            },
-            label: {
-                default: null,
-                parseHTML: element => element.getAttribute('data-label'),
-                renderHTML: attributes => {
-                    if (!attributes.label) return {};
-                    return { 'data-label': attributes.label };
-                },
-            },
-            color: {
-                default: null,
-                parseHTML: element => element.getAttribute('data-color'),
-                renderHTML: attributes => {
-                    if (!attributes.color) return {};
-                    return {
-                        'data-color': attributes.color,
-                        style: `color: ${attributes.color}; font-weight: bold; background: rgba(0,0,0,0.03); padding: 0 2px; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone;`,
-                    };
-                },
-            },
-        };
-    },
-    renderHTML({ node, HTMLAttributes }) {
-        return [
-            'span',
-            mergeAttributes(this.options.HTMLAttributes, HTMLAttributes),
-            `${node.attrs.label ?? node.attrs.id}`,
-        ];
-    },
-});
-
-interface AutoHighlightOptions {
-    characters: Character[];
-    allCharacters: Character[];
-}
-
-const AutoHighlight = Extension.create<AutoHighlightOptions>({
-    name: 'autoHighlight',
-
-    addOptions() {
-        return {
-            characters: [],
-            allCharacters: [],
-        };
-    },
-
-    addProseMirrorPlugins() {
-        return [
-            new Plugin({
-                key: new PluginKey('autoHighlight'),
-                appendTransaction: (transactions, oldState, newState) => {
-                    // Run on either: (a) any transaction that changed the doc, or
-                    // (b) a transaction that explicitly carries our `forceRefresh` meta
-                    // (used when the React layer wants to re-reconcile after a character
-                    // settings save without an actual content change).
-                    const docChanged = transactions.some(t => t.docChanged);
-                    const forceRefresh = transactions.some(t => t.getMeta('forceRefreshHighlights'));
-                    if (!docChanged && !forceRefresh) return null;
-
-                    const chars = getValidNamedCharacters(this.options.characters || []);
-                    const allChars = getValidNamedCharacters(this.options.allCharacters || chars);
-                    const charById = new Map(allChars.map(c => [c.id, c]));
-
-                    const { tr } = newState;
-                    let modified = false;
-
-                    // ---------------------------------------------------------
-                    // PASS 1: reconcile existing mention nodes.
-                    //   - If the character was deleted        -> downgrade to text
-                    //   - If color drifted from current       -> update attrs
-                    //   - If label is no longer a known name   -> fall back to main name
-                    // We collect first, then apply in reverse order so positions
-                    // stay valid.
-                    // ---------------------------------------------------------
-                    interface MentionFix {
-                        pos: number;
-                        node: PMNode;
-                        action: 'remove' | 'update';
-                        label?: string;
-                    }
-                    const mentionFixes: MentionFix[] = [];
-
-                    newState.doc.descendants((node, pos) => {
-                        if (node.type.name !== 'mention') return;
-                        const char = charById.get(node.attrs.id);
-                        if (!char) {
-                            mentionFixes.push({ pos, node, action: 'remove' });
-                        } else {
-                            const label = typeof node.attrs.label === 'string' ? node.attrs.label : '';
-                            const labelStillValid = getCharacterDisplayTerms(char).includes(label);
-                            const nextLabel = labelStillValid ? label : char.name;
-                            if (nextLabel !== node.attrs.label || char.color !== node.attrs.color) {
-                                mentionFixes.push({ pos, node, action: 'update', label: nextLabel });
-                            }
-                        }
-                    });
-
-                    for (let i = mentionFixes.length - 1; i >= 0; i--) {
-                        const { pos, node, action, label } = mentionFixes[i];
-                        const mappedPos = tr.mapping.map(pos);
-                        if (action === 'remove') {
-                            // Character no longer exists -> replace with plain text.
-                            const fallback = node.attrs.label || node.attrs.id || '';
-                            if (!fallback) continue;
-                            const textNode = newState.schema.text(fallback, node.marks);
-                            tr.replaceWith(mappedPos, mappedPos + node.nodeSize, textNode);
-                            modified = true;
-                        } else {
-                            const char = charById.get(node.attrs.id)!;
-                            // setNodeMarkup updates the node attributes in place.
-                            tr.setNodeMarkup(mappedPos, undefined, {
-                                ...node.attrs,
-                                label: label || char.name,
-                                color: char.color,
-                            });
-                            modified = true;
-                        }
-                    }
-
-                    if (mentionFixes.length > 0) {
-                        dlog('AutoHighlight reconciled mention nodes', {
-                            removed: mentionFixes.filter(f => f.action === 'remove').length,
-                            updated: mentionFixes.filter(f => f.action === 'update').length,
-                        });
-                    }
-
-                    // ---------------------------------------------------------
-                    // PASS 2: pattern-match plain text -> create new mentions.
-                    // (Only meaningful when there are characters defined.)
-                    // ---------------------------------------------------------
-                    if (chars.length > 0) {
-                        const highlightTerms = getCharacterMatchTerms(chars);
-                        if (highlightTerms.length === 0) return modified ? tr : null;
-                        const pattern = new RegExp(
-                            `(${highlightTerms.map(term => escapeRegex(term.text)).join('|')})`,
-                            'g'
-                        );
-
-                        interface Match {
-                            from: number;
-                            to: number;
-                            char: Character;
-                            label: string;
-                            marks: any;
-                        }
-                        const matches: Match[] = [];
-
-                        // We use the *current* (post-reconcile) doc for scanning.
-                        const docForScan = modified ? tr.doc : newState.doc;
-                        docForScan.descendants((node, pos) => {
-                            if (!node.isText || !node.text) return;
-                            if (node.marks.find(m => m.type.name === 'ignoreAutoHighlight')) return;
-
-                            let match;
-                            pattern.lastIndex = 0;
-                            while ((match = pattern.exec(node.text)) !== null) {
-                                const matchedText = match[0];
-                                if (!matchedText) {
-                                    pattern.lastIndex += 1;
-                                    continue;
-                                }
-                                const from = pos + match.index;
-                                const to = from + matchedText.length;
-                                const matchedTerm = highlightTerms.find(term => term.text === matchedText);
-                                if (matchedTerm) matches.push({ from, to, char: matchedTerm.character, label: matchedText, marks: node.marks });
-                            }
-                        });
-
-                        if (matches.length > 0) {
-                            // When we scanned tr.doc (already-mapped positions) we must NOT
-                            // re-map those positions through tr.mapping again.
-                            const needsMapping = !modified;
-                            matches.sort((a, b) => a.from - b.from);
-                            matches.forEach(match => {
-                                const from = needsMapping ? tr.mapping.map(match.from) : match.from;
-                                const to = needsMapping ? tr.mapping.map(match.to) : match.to;
-                                const mentionNode = newState.schema.nodes.mention.create(
-                                    {
-                                        id: match.char.id,
-                                        label: match.label,
-                                        color: match.char.color,
-                                    },
-                                    null,
-                                    match.marks
-                                );
-                                tr.replaceWith(from, to, mentionNode);
-                                modified = true;
-                            });
-                            dlog('AutoHighlight created mention nodes', { count: matches.length });
-                        }
-                    }
-
-                    return modified ? tr : null;
-                },
-            }),
-        ];
-    },
 });
 
 const MenuBar = ({ editor, isEditable, onToggleReadOnly }: { editor: any, isEditable: boolean, onToggleReadOnly?: () => void }) => {

@@ -4,3 +4,6 @@ export { TabIndent } from './formatting/TabIndent';
 export { PasteAutoFormat } from './formatting/PasteAutoFormat';
 export { transformPastedHtml } from './formatting/pasteHtml';
 export { ForeshadowingMark } from './foreshadowing/ForeshadowingMark';
+export { AutoHighlight } from './character-mention/AutoHighlight';
+export { CustomMention } from './character-mention/CustomMention';
+export { IgnoreAutoHighlight } from './character-mention/IgnoreAutoHighlight';
