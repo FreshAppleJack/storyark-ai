@@ -27,6 +27,7 @@
     "src",
     "pages",
     "components",
+    "features",
     "services",
     "utils",
     "InteractionContent"

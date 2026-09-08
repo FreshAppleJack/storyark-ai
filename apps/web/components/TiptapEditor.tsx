@@ -1,3 +1,4 @@
+import { CustomFontFamily, FontSize, TabIndent } from '../features/editor/extensions';
 import React, {useEffect, useState, useImperativeHandle, forwardRef, useMemo, useRef} from 'react';
 import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
 import { Extension, mergeAttributes, Mark } from '@tiptap/core';
@@ -480,88 +481,6 @@ const PasteAutoFormat = Extension.create({
         ];
     },
 });
-
-const TabIndent = Extension.create({
-    name: 'TabIndent',
-    addKeyboardShortcuts() {
-        return {
-            'Tab': () => {
-                this.editor.commands.insertContent('\u3000\u3000');
-                return true;
-            },
-        };
-    },
-});
-
-const FontSize = Extension.create({
-    name: 'fontSize',
-    addOptions() {
-        return { types: ['textStyle'] };
-    },
-    addGlobalAttributes() {
-        return [
-            {
-                types: this.options.types,
-                attributes: {
-                    fontSize: {
-                        default: null,
-                        parseHTML: element => element.style.fontSize.replace(/['"]+/g, ''),
-                        renderHTML: attributes => {
-                            if (!attributes.fontSize) return {};
-                            return { style: `font-size: ${attributes.fontSize}` };
-                        },
-                    },
-                },
-            },
-        ];
-    },
-    addCommands() {
-        return {
-            setFontSize: (fontSize: string) => ({ chain }: any) => {
-                return chain().setMark('textStyle', { fontSize }).run();
-            },
-            unsetFontSize: () => ({ chain }: any) => {
-                return chain().setMark('textStyle', { fontSize: null }).run();
-            },
-        };
-    },
-});
-
-//Custom FontFamily Extension
-const CustomFontFamily = Extension.create({
-    name: 'fontFamily',
-    addOptions() {
-        return { types: ['textStyle'] };
-    },
-    addGlobalAttributes() {
-        return [
-            {
-                types: this.options.types,
-                attributes: {
-                    fontFamily: {
-                        default: null,
-                        parseHTML: element => element.style.fontFamily || null,
-                        renderHTML: attributes => {
-                            if (!attributes.fontFamily) return {};
-                            return { style: `font-family: ${attributes.fontFamily}` };
-                        },
-                    },
-                },
-            },
-        ];
-    },
-    addCommands() {
-        return {
-            setFontFamily: (fontFamily: string) => ({ chain }: any) => {
-                return chain().setMark('textStyle', { fontFamily }).run();
-            },
-            unsetFontFamily: () => ({ chain }: any) => {
-                return chain().setMark('textStyle', { fontFamily: null }).run();
-            },
-        };
-    },
-});
-
 
 const MenuBar = ({ editor, isEditable, onToggleReadOnly }: { editor: any, isEditable: boolean, onToggleReadOnly?: () => void }) => {
     if (!editor) return null;
