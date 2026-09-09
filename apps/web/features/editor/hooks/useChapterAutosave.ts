@@ -58,12 +58,13 @@ export function useChapterAutosave({
         revisionRef.current = revision;
     });
 
-    const queuedRef = useRef(false);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Chapter switch resets to a clean status; an edit (revision bump) while
-    // saved or failed re-queues the draft. The switch branch must come first
-    // so a chapter load (revision reset) is not mistaken for an edit.
+    // Chapter switch resets to a clean status; an edit while saved or failed
+    // re-queues the draft. The switch branch must come first, and only a
+    // revision INCREASE counts as an edit: the revision is monotonic per
+    // chapter, so a decrease always means a chapter load/reset (the draft
+    // hook's adjustment can lag one render pass behind chapterId).
     const [prevChapterId, setPrevChapterId] = useState(chapterId);
     const [prevRevision, setPrevRevision] = useState(revision);
     if (prevChapterId !== chapterId) {
@@ -71,23 +72,19 @@ export function useChapterAutosave({
         setPrevRevision(revision);
         setSaveStatus('saved');
     } else if (prevRevision !== revision) {
+        const wasEdit = revision > prevRevision;
         setPrevRevision(revision);
-        if (saveStatus === 'saved' || saveStatus === 'error') {
+        if (wasEdit && (saveStatus === 'saved' || saveStatus === 'error')) {
             setSaveStatus('unsaved');
         }
     }
-
-    // Drop a queued follow-up belonging to the previous chapter.
-    useEffect(() => {
-        queuedRef.current = false;
-    }, [chapterId]);
 
     const inFlightRoundRef = useRef<Promise<SaveRoundResult> | null>(null);
 
     const saveNow = useCallback((): Promise<SaveRoundResult> => {
         if (inFlightRoundRef.current) {
-            // One queued follow-up is enough: it snapshots the latest draft.
-            queuedRef.current = true;
+            // Share the in-flight round; its completion check compares
+            // revisions, so a concurrent caller never needs a queued flag.
             return inFlightRoundRef.current;
         }
         const round = (async (): Promise<SaveRoundResult> => {
@@ -100,9 +97,9 @@ export function useChapterAutosave({
                 return { ok: false, draftAdvanced: false };
             }
             fnsRef.current.markSaved(snapshot.revision);
-            const draftAdvanced = queuedRef.current || revisionRef.current !== snapshot.revision;
-            queuedRef.current = false;
-            // The draft advanced while saving: serial follow-up round.
+            // The draft advanced while saving if the revision moved on:
+            // a serial follow-up round is required.
+            const draftAdvanced = revisionRef.current !== snapshot.revision;
             setSaveStatus(draftAdvanced ? 'unsaved' : 'saved');
             return { ok: true, draftAdvanced };
         })();
