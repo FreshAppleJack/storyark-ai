@@ -6,7 +6,8 @@ import type { ForeshadowingNote } from '../../../types';
 import EditorPage from '../../../pages/EditorPrototype';
 
 const fixture = vi.hoisted(() => ({
-    save: vi.fn<(...args: unknown[]) => Promise<void>>(),
+    save: vi.fn<(...args: unknown[]) => Promise<boolean>>(),
+    toastError: vi.fn(),
     book: {
         id: 'b1', title: 'Book', author: 'Test', characters: [],
         volumes: [{ id: 'v1', title: 'Volume', chapters: [
@@ -27,6 +28,7 @@ vi.mock('../../../InteractionContent/AppContext', () => ({
     }),
 }));
 vi.mock('../../../services/api', () => ({ default: { post: vi.fn() } }));
+vi.mock('react-hot-toast', () => ({ toast: { error: fixture.toastError } }));
 vi.mock('html2pdf.js', () => ({ default: vi.fn() }));
 vi.mock('html-docx-js-typescript', () => ({ asBlob: vi.fn() }));
 vi.mock('file-saver', () => ({ saveAs: vi.fn() }));
@@ -46,7 +48,8 @@ vi.mock('../../../components/TiptapEditor', () => ({
 
 beforeEach(() => {
     vi.useFakeTimers();
-    fixture.save.mockReset().mockResolvedValue(undefined);
+    fixture.save.mockReset().mockResolvedValue(true);
+    fixture.toastError.mockClear();
     vi.stubGlobal('localStorage', { getItem: () => null, setItem: vi.fn(), removeItem: vi.fn() });
 });
 
@@ -93,9 +96,35 @@ describe('Chapter rename and draft ownership', () => {
         expect(screen.getByPlaceholderText('Chapter Title')).toHaveValue('First chapter');
     });
 
+    it('shows an error state and retries when autosave fails', async () => {
+        fixture.save.mockResolvedValue(false);
+        await openPage();
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
+
+        expect(fixture.save).toHaveBeenCalledTimes(1);
+        expect(screen.getByText('Save failed')).toBeInTheDocument();
+        expect(screen.getByPlaceholderText('Chapter Title')).toHaveValue('First chapter');
+
+        fixture.save.mockResolvedValue(true);
+        fireEvent.click(screen.getByText('Retry'));
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
+
+        expect(fixture.save).toHaveBeenCalledTimes(2);
+        expect(screen.getByText('Saved')).toBeInTheDocument();
+    });
+
+    it('warns when renaming fails to save and keeps the pending title', async () => {
+        fixture.save.mockResolvedValue(false);
+        await openPage();
+        await renameChapter('c1', 'Renamed first');
+
+        expect(fixture.toastError).toHaveBeenCalled();
+        expect(screen.getByPlaceholderText('Chapter Title')).toHaveValue('Renamed first');
+    });
+
     it('does not overwrite another chapter title when an earlier rename completes', async () => {
         let finish!: () => void;
-        fixture.save.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+        fixture.save.mockImplementation(() => new Promise<boolean>(resolve => { finish = () => resolve(true); }));
         await openPage();
         await renameChapter('c1', 'Renamed first');
         fireEvent.click(document.getElementById('sidebar-chapter-c2')!);

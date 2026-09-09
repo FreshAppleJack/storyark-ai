@@ -1,12 +1,12 @@
 import React from 'react';
 import {
-    CheckCircle2, ChevronRight, Cloud, Globe, History as HistoryIcon,
+    CheckCircle2, ChevronRight, Cloud, CloudOff, Globe, History as HistoryIcon,
     ListTree, Loader2, PanelRightClose, PanelRightOpen, Settings, Wand2,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { ExportMenu } from './ExportMenu';
 
-export type EditorSaveStatus = 'saved' | 'saving' | 'unsaved';
+export type EditorSaveStatus = 'saved' | 'saving' | 'unsaved' | 'error';
 
 interface EditorHeaderProps {
     volumeTitle?: string;
@@ -22,6 +22,7 @@ interface EditorHeaderProps {
     onNavigateWorldBuilding: () => void;
     onAIContinue: () => void;
     onToggleContextPanel: () => void;
+    onRetrySave: () => void;
     onNavigateSettings: () => void;
     onExportWord: (event: React.MouseEvent) => void;
     onExportPdf: (event: React.MouseEvent) => void;
@@ -46,6 +47,7 @@ export function EditorHeader({
     onNavigateWorldBuilding,
     onAIContinue,
     onToggleContextPanel,
+    onRetrySave,
     onNavigateSettings,
     onExportWord,
     onExportPdf,
@@ -70,6 +72,19 @@ export function EditorHeader({
                     {saveStatus === 'saved' && <><CheckCircle2 size={14} className="text-emerald-500" /><span className="text-slate-400">Saved</span></>}
                     {saveStatus === 'saving' && <><HistoryIcon size={14} className="text-brand-500 animate-spin" /><span className="text-brand-600">Saving...</span></>}
                     {saveStatus === 'unsaved' && <><Cloud size={14} className="text-amber-500" /><span className="text-amber-600">Unsaved Changes</span></>}
+                    {saveStatus === 'error' && (
+                        <>
+                            <CloudOff size={14} className="text-rose-500" />
+                            <span className="text-rose-600 dark:text-rose-300">Save failed</span>
+                            <button
+                                type="button"
+                                onClick={onRetrySave}
+                                className="rounded-md border border-rose-200 px-1.5 py-0.5 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                            >
+                                Retry
+                            </button>
+                        </>
+                    )}
                 </div>
 
                 <div className="h-4 mx-1 border-l border-slate-300 dark:border-slate-700" />

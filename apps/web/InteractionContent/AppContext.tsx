@@ -48,7 +48,9 @@ interface AppContextType {
     createBook: (title: string) => Promise<string | null>;
     getBook: (id: string) => Book | undefined;
 
-    updateChapterContent: (bookId: string, volumeId: string, chapterId: string, title: string, content: string, wordCount?: number, foreshadowings?: ForeshadowingNote[]) => Promise<void>;
+    // Returns true only when the PUT actually succeeded; the optimistic local
+    // update alone is NOT proof of persistence.
+    updateChapterContent: (bookId: string, volumeId: string, chapterId: string, title: string, content: string, wordCount?: number, foreshadowings?: ForeshadowingNote[]) => Promise<boolean>;
     toggleChapterLock: (bookId: string, volumeId: string, chapterId: string) => Promise<void>;
 
     createVolume: (bookId: string, title: string) => Promise<string | null>;
@@ -621,8 +623,10 @@ export function AppProvider({
                 isEditable: currentEditable,
                 foreshadowings: JSON.stringify(currentForeshadowings)
             });
+            return true;
         } catch (error) {
             console.error("Failed to save chapter:", error);
+            return false;
         }
     };
 

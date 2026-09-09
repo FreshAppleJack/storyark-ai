@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { toast } from 'react-hot-toast';
 import { ArrowLeft, BookOpen, CheckCircle2, ChevronRight, FileText, Loader2, MessageSquareText, Search, X } from 'lucide-react';
 import { useApp } from '../InteractionContent/AppContext';
 import { Button } from '../components/ui/Button';
@@ -27,6 +28,9 @@ function Foreshadowing(): React.ReactElement {
     const book = getBook(bookId || '');
     const [searchQuery, setSearchQuery] = useState('');
     const [recoveringId, setRecoveringId] = useState<string | null>(null);
+    // Cards whose last save failed keep an explicit retry action, because the
+    // optimistic update already flipped their local recovered state.
+    const [failedRecovery, setFailedRecovery] = useState<{ cardId: string; isRecovered: boolean } | null>(null);
 
     const allCards = useMemo<ForeshadowingCard[]>(() => {
         if (!book) return [];
@@ -112,7 +116,7 @@ function Foreshadowing(): React.ReactElement {
         ));
 
         try {
-            await updateChapterContent(
+            const ok = await updateChapterContent(
                 book.id,
                 card.volumeId,
                 card.chapterId,
@@ -121,6 +125,14 @@ function Foreshadowing(): React.ReactElement {
                 chapter.wordCount,
                 nextForeshadowings
             );
+            if (ok) {
+                setFailedRecovery(prev => (prev?.cardId === card.id ? null : prev));
+            } else {
+                setFailedRecovery({ cardId: card.id, isRecovered });
+                toast.error(isRecovered
+                    ? 'Failed to mark as recovered. Your change was not saved.'
+                    : 'Failed to undo recovery. Your change was not saved.');
+            }
         } finally {
             setRecoveringId(null);
         }
@@ -256,6 +268,19 @@ function Foreshadowing(): React.ReactElement {
                                             {card.note.note || 'No note written yet.'}
                                         </p>
                                     </div>
+                                    {failedRecovery?.cardId === card.id && (
+                                        <div className="flex items-center justify-end gap-2 text-xs text-rose-600 dark:text-rose-300">
+                                            <span>Save failed.</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setForeshadowingRecovered(card, failedRecovery.isRecovered)}
+                                                disabled={recoveringId === card.id}
+                                                className="font-semibold underline underline-offset-2 transition hover:text-rose-700 dark:hover:text-rose-200"
+                                            >
+                                                Retry
+                                            </button>
+                                        </div>
+                                    )}
                                     <div className="flex flex-wrap justify-end gap-2">
                                         {!card.note.isRecovered && (
                                             <Button

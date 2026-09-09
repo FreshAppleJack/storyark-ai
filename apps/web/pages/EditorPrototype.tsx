@@ -45,7 +45,7 @@ function Editor(): React.ReactElement {
     const [activeForeshadowingId, setActiveForeshadowingId] = useState<string | null>(null);
     const [isForeshadowingPanelOpen, setIsForeshadowingPanelOpen] = useState(false);
 
-    const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved'>('saved');
+    const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
     const [isAiLoading, setIsAiLoading] = useState(false);
     const [wordCount, setWordCount] = useState(0);
 
@@ -216,8 +216,10 @@ function Editor(): React.ReactElement {
             if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
             setSaveStatus('saving');
             autoSaveTimerRef.current = setTimeout(async () => {
-                await updateChapterContent(book.id, activeVolume!.id, activeChapter!.id, title, content, wordCount, foreshadowings);
-                setSaveStatus('saved');
+                const ok = await updateChapterContent(book.id, activeVolume!.id, activeChapter!.id, title, content, wordCount, foreshadowings);
+                // Only a successful PUT may show Saved; failures keep the draft
+                // and surface an error state the user can retry from.
+                setSaveStatus(ok ? 'saved' : 'error');
             }, 1000);
         }
     }, [content, title, foreshadowings, saveStatus, activeChapterId, wordCount]);
@@ -354,7 +356,12 @@ function Editor(): React.ReactElement {
                 setTitle(value);
                 setSaveStatus('unsaved');
             }
-            await updateChapterContent(book.id, volume.id, chapterId, value, currentContent, currentWordCount, currentForeshadowings);
+            const ok = await updateChapterContent(book.id, volume.id, chapterId, value, currentContent, currentWordCount, currentForeshadowings);
+            if (!ok) {
+                // The new title stays pending: for the active chapter the draft
+                // keeps it and autosave retries; warn either way.
+                toast.error('Failed to save the new title. Please try again.');
+            }
         }
     };
 
@@ -485,6 +492,7 @@ function Editor(): React.ReactElement {
                     onNavigateWorldBuilding={() => navigate(`/books/${bookId}/settings`)}
                     onAIContinue={handleAIContinue}
                     onToggleContextPanel={() => setIsForeshadowingPanelOpen(prev => !prev)}
+                    onRetrySave={() => setSaveStatus('unsaved')}
                     onNavigateSettings={() => navigate('/settings', { state: { returnTo: `/editor/${bookId}` } })}
                     onExportWord={handleExportWord}
                     onExportPdf={handleExportPDF}

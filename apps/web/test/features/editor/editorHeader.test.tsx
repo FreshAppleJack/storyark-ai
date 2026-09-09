@@ -18,6 +18,7 @@ function createProps(overrides: Record<string, unknown> = {}) {
         onNavigateWorldBuilding: vi.fn(),
         onAIContinue: vi.fn(),
         onToggleContextPanel: vi.fn(),
+        onRetrySave: vi.fn(),
         onNavigateSettings: vi.fn(),
         onExportWord: vi.fn(),
         onExportPdf: vi.fn(),
@@ -48,6 +49,16 @@ describe('EditorHeader', () => {
 
         rerender(<EditorHeader {...createProps({ saveStatus: 'unsaved' })} />);
         expect(screen.getByText('Unsaved Changes')).toBeInTheDocument();
+    });
+
+    it('shows a retry action when saving failed', async () => {
+        const user = userEvent.setup();
+        const props = createProps({ saveStatus: 'error' });
+        render(<EditorHeader {...props} />);
+
+        expect(screen.getByText('Save failed')).toBeInTheDocument();
+        await user.click(screen.getByText('Retry'));
+        expect(props.onRetrySave).toHaveBeenCalledTimes(1);
     });
 
     it('delegates AI continue and disables it in read-only mode', async () => {
