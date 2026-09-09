@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { ChapterNavigator } from '../../../features/editor/components/ChapterNavigator';
@@ -48,6 +48,70 @@ function createProps(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ChapterNavigator', () => {
+    it('commits a rename once on blur and does not close a newer edit on completion', async () => {
+        const user = userEvent.setup();
+        let finish!: () => void;
+        const onRenameChapter = vi.fn(() => new Promise<void>(resolve => { finish = resolve; }));
+        render(<ChapterNavigator {...createProps({ onRenameChapter })} />);
+        fireEvent.contextMenu(screen.getByText('Chapter One'));
+        await user.click(screen.getByText('Rename'));
+        fireEvent.change(screen.getByDisplayValue('Chapter One'), { target: { value: 'Renamed' } });
+        await user.click(screen.getByText('Chapter Two'));
+        expect(onRenameChapter).toHaveBeenCalledTimes(1);
+        expect(onRenameChapter).toHaveBeenCalledWith('c1', 'Renamed');
+
+        fireEvent.contextMenu(screen.getByText('Chapter Two'));
+        await user.click(screen.getByText('Rename'));
+        await act(async () => finish());
+        expect(screen.getByDisplayValue('Chapter Two')).toBeInTheDocument();
+    });
+
+    it('cancels a rename with Escape without submitting on blur', async () => {
+        const user = userEvent.setup();
+        const props = createProps();
+        render(<ChapterNavigator {...props} />);
+        fireEvent.contextMenu(screen.getByText('Chapter One'));
+        await user.click(screen.getByText('Rename'));
+        const input = screen.getByDisplayValue('Chapter One');
+        fireEvent.change(input, { target: { value: 'Cancelled' } });
+        fireEvent.keyDown(input, { key: 'Escape' });
+        await user.click(screen.getByText('Chapter Two'));
+        expect(props.onRenameChapter).not.toHaveBeenCalled();
+    });
+
+    it('preserves collapsed volumes across content updates and reordering', async () => {
+        const user = userEvent.setup();
+        const props = createProps();
+        const { rerender } = render(<ChapterNavigator {...props} />);
+        await user.click(screen.getByText('Volume 1'));
+        const updatedBook = { ...book, volumes: book.volumes.map(v => ({ ...v, chapters: v.chapters.map(c => ({ ...c, content: 'updated body' })) })).reverse() };
+        rerender(<ChapterNavigator {...props} book={updatedBook} />);
+        expect(screen.queryByText('Chapter One')).not.toBeInTheDocument();
+    });
+
+    it('expands new volumes and removes deleted volume preferences', async () => {
+        const user = userEvent.setup();
+        const props = createProps();
+        const { rerender } = render(<ChapterNavigator {...props} />);
+        await user.click(screen.getByText('Volume 1'));
+        const newVolume = { id: 'v3', title: 'Volume 3', chapters: [{ ...book.volumes[0].chapters[0], id: 'c3', title: 'New content' }] };
+        rerender(<ChapterNavigator {...props} book={{ ...book, volumes: [...book.volumes, newVolume] }} />);
+        expect(screen.getByText('New content')).toBeInTheDocument();
+        expect(screen.queryByText('Chapter One')).not.toBeInTheDocument();
+        rerender(<ChapterNavigator {...props} book={{ ...book, volumes: [newVolume] }} />);
+        rerender(<ChapterNavigator {...props} />);
+        expect(screen.getByText('Chapter One')).toBeInTheDocument();
+    });
+
+    it('initializes expansion for a different book', async () => {
+        const user = userEvent.setup();
+        const props = createProps();
+        const { rerender } = render(<ChapterNavigator {...props} />);
+        await user.click(screen.getByText('Volume 1'));
+        rerender(<ChapterNavigator {...props} book={{ ...book, id: 'another-book' }} />);
+        expect(screen.getByText('Chapter One')).toBeInTheDocument();
+    });
+
     it('renders the volume tree with chapters and an empty-volume hint', () => {
         render(<ChapterNavigator {...createProps()} />);
 

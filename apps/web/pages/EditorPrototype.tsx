@@ -344,9 +344,17 @@ function Editor(): React.ReactElement {
         const volume = book.volumes.find(v => v.chapters.some(c => c.id === chapterId));
         const chapter = volume?.chapters.find(c => c.id === chapterId);
         if (volume && chapter && chapter.title !== value) {
-            const currentWordCount = (activeChapterId === chapterId) ? wordCount : (chapter.wordCount || 0);
-            await updateChapterContent(book.id, volume.id, chapterId, value, chapter.content || '', currentWordCount, chapter.foreshadowings || []);
-            if (activeChapterId === chapterId) setTitle(value);
+            const isCurrentChapter = activeChapterId === chapterId;
+            const currentContent = isCurrentChapter ? content : (chapter.content || '');
+            const currentWordCount = isCurrentChapter ? wordCount : (chapter.wordCount || 0);
+            const currentForeshadowings = isCurrentChapter ? foreshadowings : (chapter.foreshadowings || []);
+            // Update the current title before awaiting: an old request must not
+            // overwrite the title after the user switches chapters.
+            if (isCurrentChapter) {
+                setTitle(value);
+                setSaveStatus('unsaved');
+            }
+            await updateChapterContent(book.id, volume.id, chapterId, value, currentContent, currentWordCount, currentForeshadowings);
         }
     };
 
@@ -446,6 +454,7 @@ function Editor(): React.ReactElement {
     return (
         <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden font-sans relative transition-colors duration-300">
             <ChapterNavigator
+                key={book.id}
                 book={book}
                 activeChapterId={activeChapterId}
                 onNavigateDashboard={() => navigate('/dashboard')}

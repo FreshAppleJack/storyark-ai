@@ -94,22 +94,33 @@ export function ChapterNavigator({
     const [renamingState, setRenamingState] = useState<RenamingState | null>(null);
 
     const renameInputRef = useRef<HTMLInputElement>(null);
+    const submittedRenameRef = useRef<RenamingState | null>(null);
     const dragItemRef = useRef<DragItemState | null>(null);
     const dragOverItemRef = useRef<DragItemState | null>(null);
 
-    // Re-expand all volumes whenever the book data changes (adjust-during-render pattern).
-    const [prevBook, setPrevBook] = useState(book);
-    if (prevBook !== book) {
-        setPrevBook(book);
-        setExpandedVolumes(new Set(book.volumes.map(v => v.id)));
+    // Only reconcile membership; content updates and reordering preserve user choices.
+    const volumeIds = book.volumes.map(volume => volume.id);
+    const [knownVolumes, setKnownVolumes] = useState({ bookId: book.id, ids: volumeIds });
+    if (knownVolumes.bookId !== book.id || knownVolumes.ids.length !== volumeIds.length
+        || volumeIds.some(id => !knownVolumes.ids.includes(id))) {
+        setKnownVolumes({ bookId: book.id, ids: volumeIds });
+        setExpandedVolumes(new Set(volumeIds.filter(id => knownVolumes.bookId !== book.id
+            || !knownVolumes.ids.includes(id) || expandedVolumes.has(id))));
     }
 
-    const cancelRename = useCallback(() => setRenamingState(null), []);
+    const cancelRename = useCallback(() => {
+        submittedRenameRef.current = renamingState;
+        setRenamingState(null);
+    }, [renamingState]);
 
     const submitRename = useCallback(async () => {
-        if (!renamingState) return;
+        if (!renamingState || submittedRenameRef.current === renamingState) return;
+        // Claim this edit before blur/Enter can submit it again. A completed
+        // request must not close a newer rename session.
+        submittedRenameRef.current = renamingState;
+        setRenamingState(null);
         const { id, type, value } = renamingState;
-        if (!value.trim()) { cancelRename(); return; }
+        if (!value.trim()) return;
         try {
             if (type === 'volume') {
                 await onRenameVolume(id, value);
@@ -117,18 +128,16 @@ export function ChapterNavigator({
                 await onRenameChapter(id, value);
             }
         } catch (e) { console.error("Rename failed", e); }
-        setRenamingState(null);
-    }, [renamingState, onRenameVolume, onRenameChapter, cancelRename]);
+    }, [renamingState, onRenameVolume, onRenameChapter]);
 
-    // Close the context menu / submit an in-progress rename on outside click.
+    // Rename commits on input blur or Enter, not on bubbling click events.
     useEffect(() => {
         const handleClick = () => {
             setContextMenu(null);
-            if (renamingState) submitRename();
         };
         window.addEventListener('click', handleClick);
         return () => window.removeEventListener('click', handleClick);
-    }, [renamingState, submitRename]);
+    }, []);
 
     useEffect(() => {
         if (renamingState && renameInputRef.current) {
@@ -442,9 +451,7 @@ export function ChapterNavigator({
                 )}
 
                 {/* Sidebar List */}
-                <div className="flex-1 overflow-y-auto py-2 custom-scrollbar relative" onClick={() => {
-                    if (renamingState) submitRename();
-                }}>
+                <div className="flex-1 overflow-y-auto py-2 custom-scrollbar relative">
                     {sidebarExpanded ? (
                         <div className="px-2 space-y-1">
                             {book.volumes.length === 0 && (
