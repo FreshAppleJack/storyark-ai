@@ -13,10 +13,19 @@ interface UseChapterAutosaveOptions {
 
 interface UseChapterAutosaveResult {
     saveStatus: EditorSaveStatus;
-    /** Save immediately (skipping the debounce) through the same serial entry. */
+    /**
+     * Save immediately through the same serial entry, draining follow-up
+     * rounds until the draft stops advancing. Resolves true only when the
+     * latest draft is fully persisted; false on failure.
+     */
     flush: () => Promise<boolean>;
     /** Re-queue the draft after a failure. */
     retry: () => void;
+}
+
+interface SaveRoundResult {
+    ok: boolean;
+    draftAdvanced: boolean;
 }
 
 /**
@@ -49,7 +58,6 @@ export function useChapterAutosave({
         revisionRef.current = revision;
     });
 
-    const inFlightRef = useRef(false);
     const queuedRef = useRef(false);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -74,31 +82,35 @@ export function useChapterAutosave({
         queuedRef.current = false;
     }, [chapterId]);
 
-    const saveNow = useCallback(async (): Promise<boolean> => {
-        if (inFlightRef.current) {
+    const inFlightRoundRef = useRef<Promise<SaveRoundResult> | null>(null);
+
+    const saveNow = useCallback((): Promise<SaveRoundResult> => {
+        if (inFlightRoundRef.current) {
             // One queued follow-up is enough: it snapshots the latest draft.
             queuedRef.current = true;
-            return false;
+            return inFlightRoundRef.current;
         }
-        inFlightRef.current = true;
-        setSaveStatus('saving');
-        const snapshot = fnsRef.current.getSnapshot();
-        const ok = await fnsRef.current.saveChapter(snapshot);
-        inFlightRef.current = false;
+        const round = (async (): Promise<SaveRoundResult> => {
+            setSaveStatus('saving');
+            const snapshot = fnsRef.current.getSnapshot();
+            const ok = await fnsRef.current.saveChapter(snapshot).catch(() => false);
 
-        if (!ok) {
-            setSaveStatus('error');
-            return false;
-        }
-        fnsRef.current.markSaved(snapshot.revision);
-        if (queuedRef.current || revisionRef.current !== snapshot.revision) {
-            // The draft advanced while saving: serial follow-up round.
+            if (!ok) {
+                setSaveStatus('error');
+                return { ok: false, draftAdvanced: false };
+            }
+            fnsRef.current.markSaved(snapshot.revision);
+            const draftAdvanced = queuedRef.current || revisionRef.current !== snapshot.revision;
             queuedRef.current = false;
-            setSaveStatus('unsaved');
-        } else {
-            setSaveStatus('saved');
-        }
-        return true;
+            // The draft advanced while saving: serial follow-up round.
+            setSaveStatus(draftAdvanced ? 'unsaved' : 'saved');
+            return { ok: true, draftAdvanced };
+        })();
+        inFlightRoundRef.current = round;
+        round.finally(() => {
+            if (inFlightRoundRef.current === round) inFlightRoundRef.current = null;
+        });
+        return round;
     }, []);
 
     // Debounce: every edit (revision bump) restarts the timer; switching
@@ -122,7 +134,14 @@ export function useChapterAutosave({
             clearTimeout(timerRef.current);
             timerRef.current = null;
         }
-        return saveNow();
+        // Drain the serial queue: a user editing during the flush requires
+        // further rounds, so keep saving until the draft stops advancing.
+        for (let rounds = 0; rounds < 10; rounds++) {
+            const { ok, draftAdvanced } = await saveNow();
+            if (!ok) return false;
+            if (!draftAdvanced) return true;
+        }
+        return false;
     }, [saveNow]);
 
     const retry = useCallback(() => {

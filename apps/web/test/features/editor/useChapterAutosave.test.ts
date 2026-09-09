@@ -190,6 +190,45 @@ describe('useChapterAutosave', () => {
         expect(view.result.current.saveStatus).toBe('saved');
     });
 
+    it('flush drains follow-up rounds without waiting for the debounce', async () => {
+        const { view, edit, saveChapter } = setup();
+        const deferreds: Deferred[] = [];
+        saveChapter.mockImplementation(() => new Promise<boolean>(resolve => {
+            deferreds.push({ resolve });
+        }));
+
+        act(() => edit('v1'));
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
+        act(() => edit('v2'));
+
+        let flushResult: boolean | undefined;
+        const flushPromise = view.result.current.flush().then(result => { flushResult = result; });
+
+        await act(async () => { deferreds[0].resolve(true); });
+        // The second round starts inside the flush, not via the debounce timer.
+        expect(saveChapter).toHaveBeenCalledTimes(2);
+        expect(saveChapter).toHaveBeenLastCalledWith(makeSnapshot('c1', 2, 'v2'));
+
+        await act(async () => { deferreds[1].resolve(true); });
+        await act(async () => { await flushPromise; });
+        expect(flushResult).toBe(true);
+        expect(view.result.current.saveStatus).toBe('saved');
+    });
+
+    it('flush resolves false when a round fails mid-drain', async () => {
+        const { view, edit, saveChapter } = setup();
+        saveChapter.mockResolvedValueOnce(false);
+
+        act(() => edit('v1'));
+        let flushResult: boolean | undefined;
+        await act(async () => {
+            flushResult = await view.result.current.flush();
+        });
+
+        expect(flushResult).toBe(false);
+        expect(view.result.current.saveStatus).toBe('error');
+    });
+
     it('resets the status and cancels the pending save on chapter switch', async () => {
         const { view, edit, saveChapter, switchChapter } = setup();
 

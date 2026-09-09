@@ -60,12 +60,16 @@ afterEach(() => {
     vi.unstubAllGlobals();
 });
 
-async function openPage() {
+async function renderPage() {
     await act(async () => {
         render(<MemoryRouter initialEntries={['/editor/b1']}>
             <Routes><Route path="/editor/:bookId" element={<EditorPage />} /></Routes>
         </MemoryRouter>);
     });
+}
+
+async function openPage() {
+    await renderPage();
     fireEvent.click(screen.getByRole('button', { name: 'Edit draft' }));
 }
 
@@ -78,15 +82,18 @@ async function renameChapter(id: string, title: string) {
 }
 
 describe('Chapter rename and draft ownership', () => {
-    it('saves the current body, word count and notes when renaming the active chapter', async () => {
+    it('persists the renamed title with the current draft through one unified save', async () => {
         await openPage();
         await renameChapter('c1', 'Renamed first');
+
+        // Renaming the active chapter only updates the draft — no direct PUT,
+        // so the rename cannot double-write with the autosave.
+        expect(fixture.save).not.toHaveBeenCalled();
+
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
         expect(fixture.save).toHaveBeenCalledTimes(1);
         expect(fixture.save).toHaveBeenCalledWith('b1', 'v1', 'c1', 'Renamed first', 'unsaved body', 7,
             [expect.objectContaining({ id: 'f1', note: 'unsaved note' })]);
-        // Any pending autosave must also use the renamed title and current draft.
-        await act(async () => vi.advanceTimersByTimeAsync(1000));
-        expect(fixture.save.mock.calls.every(call => call[3] === 'Renamed first' && call[4] === 'unsaved body')).toBe(true);
     });
 
     it('uses stored data when renaming a different chapter', async () => {
@@ -113,23 +120,82 @@ describe('Chapter rename and draft ownership', () => {
         expect(screen.getByText('Saved')).toBeInTheDocument();
     });
 
-    it('warns when renaming fails to save and keeps the pending title', async () => {
+    it('surfaces a save error when renaming the active chapter fails and keeps the pending title', async () => {
         fixture.save.mockResolvedValue(false);
         await openPage();
         await renameChapter('c1', 'Renamed first');
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
 
-        expect(fixture.toastError).toHaveBeenCalled();
+        expect(screen.getByText('Save failed')).toBeInTheDocument();
         expect(screen.getByPlaceholderText('Chapter Title')).toHaveValue('Renamed first');
     });
 
-    it('does not overwrite another chapter title when an earlier rename completes', async () => {
-        let finish!: () => void;
-        fixture.save.mockImplementation(() => new Promise<boolean>(resolve => { finish = () => resolve(true); }));
+    it('warns when renaming a different chapter fails to save', async () => {
+        fixture.save.mockResolvedValue(false);
         await openPage();
-        await renameChapter('c1', 'Renamed first');
+        await renameChapter('c2', 'Renamed second');
+
+        expect(fixture.toastError).toHaveBeenCalled();
+    });
+
+    it('saves the current draft before switching chapters', async () => {
+        await openPage();
         fireEvent.click(document.getElementById('sidebar-chapter-c2')!);
+        await act(async () => {});
+
+        expect(fixture.save).toHaveBeenCalledTimes(1);
+        expect(fixture.save).toHaveBeenCalledWith('b1', 'v1', 'c1', 'First chapter', 'unsaved body', 7,
+            [expect.objectContaining({ id: 'f1' })]);
         expect(screen.getByPlaceholderText('Chapter Title')).toHaveValue('Second chapter');
-        await act(async () => finish());
+    });
+
+    it('switches without saving when the draft is clean', async () => {
+        await renderPage();
+        fireEvent.click(document.getElementById('sidebar-chapter-c2')!);
+        await act(async () => {});
+
+        expect(fixture.save).not.toHaveBeenCalled();
+        expect(screen.getByPlaceholderText('Chapter Title')).toHaveValue('Second chapter');
+    });
+
+    it('stays on the current chapter when the pre-switch save fails', async () => {
+        fixture.save.mockResolvedValue(false);
+        await openPage();
+        fireEvent.click(document.getElementById('sidebar-chapter-c2')!);
+        await act(async () => {});
+
+        expect(screen.getByPlaceholderText('Chapter Title')).toHaveValue('First chapter');
+        expect(screen.getByText('Save failed')).toBeInTheDocument();
+
+        fixture.save.mockResolvedValue(true);
+        fireEvent.click(screen.getByText('Retry'));
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
+        expect(screen.queryByText('Save failed')).not.toBeInTheDocument();
+
+        fireEvent.click(document.getElementById('sidebar-chapter-c2')!);
+        await act(async () => {});
+        expect(screen.getByPlaceholderText('Chapter Title')).toHaveValue('Second chapter');
+    });
+
+    it('completes the in-flight save before switching chapters', async () => {
+        const resolvers: Array<() => void> = [];
+        fixture.save.mockImplementation(() => new Promise<boolean>(resolve => {
+            resolvers.push(() => resolve(true));
+        }));
+        await openPage();
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
+        expect(fixture.save).toHaveBeenCalledTimes(1);
+
+        // The switch waits for the in-flight save and its queued follow-up.
+        fireEvent.click(document.getElementById('sidebar-chapter-c2')!);
+        await act(async () => {});
+        expect(screen.getByPlaceholderText('Chapter Title')).toHaveValue('First chapter');
+
+        await act(async () => { resolvers[0](); });
+        expect(fixture.save).toHaveBeenCalledTimes(2);
+        await act(async () => { resolvers[1](); });
+
+        // The earlier requests resolving must not corrupt the new chapter.
         expect(screen.getByPlaceholderText('Chapter Title')).toHaveValue('Second chapter');
     });
 });

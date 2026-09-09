@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, NavigateOptions } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { useApp } from '../InteractionContent/AppContext';
 import apiClient from '../services/api';
@@ -14,6 +14,7 @@ import { WritingContextPanel } from '../features/editor/components/WritingContex
 import { getEditorPlainText, getForeshadowingExcerptMap } from '../domain/chapterContent';
 import { buildChapterExportHtml, buildWordExportDocument } from '../features/editor/utils/exportHtml';
 import { useChapterDraft } from '../features/editor/hooks/useChapterDraft';
+import { useChapterAutosave } from '../features/editor/hooks/useChapterAutosave';
 
 function Editor(): React.ReactElement {
     const { bookId } = useParams<{ bookId: string }>();
@@ -46,15 +47,25 @@ function Editor(): React.ReactElement {
     const [activeForeshadowingId, setActiveForeshadowingId] = useState<string | null>(null);
     const [isForeshadowingPanelOpen, setIsForeshadowingPanelOpen] = useState(false);
 
-    const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
     const [isAiLoading, setIsAiLoading] = useState(false);
 
     // Export State
     const [isExporting, setIsExporting] = useState(false);
 
-    const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
     const editorRef = useRef<TiptapEditorRef>(null);
+
+    // Save scheduler: debounce, serial saves, flush and retry all go through
+    // this single entry — no page-level timers or save status state.
+    const autosave = useChapterAutosave({
+        chapterId: activeChapterId,
+        revision: chapterDraft.revision,
+        getSnapshot: chapterDraft.getSnapshot,
+        markSaved: chapterDraft.markSaved,
+        saveChapter: (snapshot) => {
+            if (!book || !activeVolume) return Promise.resolve(false);
+            return updateChapterContent(book.id, activeVolume.id, snapshot.chapterId, snapshot.title, snapshot.content, snapshot.wordCount, snapshot.foreshadowings);
+        },
+    });
 
     // Reset the panel selection when the active chapter changes (adjust-during-render).
     const [prevChapterId, setPrevChapterId] = useState(activeChapterId);
@@ -98,6 +109,7 @@ function Editor(): React.ReactElement {
             }
 
             if (targetChapterId && !activeChapterId) {
+                // Initial load: the draft is still empty, so no flush is needed.
                 setActiveChapterId(targetChapterId);
             }
         }
@@ -196,23 +208,28 @@ function Editor(): React.ReactElement {
         return () => timers.forEach(timer => window.clearTimeout(timer));
     }, [bookId, activeChapterId, chapterDraft.content, chapterDraft.foreshadowings]);
 
-    // Auto Save Logic
-    useEffect(() => {
-        if (!activeChapter || !activeVolume || !book) return;
-
-        if (saveStatus === 'unsaved') {
-            if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-            setSaveStatus('saving');
-            autoSaveTimerRef.current = setTimeout(async () => {
-                const snapshot = chapterDraft.getSnapshot();
-                const ok = await updateChapterContent(book.id, activeVolume!.id, activeChapter!.id, snapshot.title, snapshot.content, snapshot.wordCount, snapshot.foreshadowings);
-                if (ok) chapterDraft.markSaved(snapshot.revision);
-                // Only a successful PUT may show Saved; failures keep the draft
-                // and surface an error state the user can retry from.
-                setSaveStatus(ok ? 'saved' : 'error');
-            }, 1000);
+    // Switching chapters waits until the current draft is fully saved; on
+    // failure the user stays on the current chapter (the header shows the
+    // error and a retry). Deleting the current chapter bypasses this on
+    // purpose — there is nothing left to save.
+    const requestChapterSwitch = async (targetChapterId: string) => {
+        if (targetChapterId === activeChapterId) return;
+        if (chapterDraft.isDirty) {
+            const ok = await autosave.flush();
+            if (!ok) return;
         }
-    }, [chapterDraft.title, chapterDraft.content, chapterDraft.wordCount, chapterDraft.foreshadowings, saveStatus, activeChapterId]);
+        setActiveChapterId(targetChapterId);
+    };
+
+    // Leaving the editor in-app gets the same protection: flush first,
+    // stay on failure.
+    const navigateAfterSave = async (to: string, options?: NavigateOptions) => {
+        if (chapterDraft.isDirty) {
+            const ok = await autosave.flush();
+            if (!ok) return;
+        }
+        navigate(to, options);
+    };
 
     // Handle toggle read only state
     const handleToggleReadOnly = async () => {
@@ -224,21 +241,17 @@ function Editor(): React.ReactElement {
 
     // --- Editor Interaction Handlers ---
     const handleEditorUpdate = (newContent: string, newWordCount: number) => {
-        if (newContent !== chapterDraft.content) {
-            setSaveStatus('unsaved');
-        }
         chapterDraft.applyEditorUpdate(newContent, newWordCount);
     };
 
     const handleCharacterClick = (charId: string) => {
-        navigate(`/books/${bookId}/settings?charId=${charId}`);
+        void navigateAfterSave(`/books/${bookId}/settings?charId=${charId}`);
     };
 
     const handleForeshadowingCreate = (note: ForeshadowingNote) => {
         chapterDraft.addForeshadowing(note);
         setActiveForeshadowingId(note.id);
         setIsForeshadowingPanelOpen(true);
-        setSaveStatus('unsaved');
     };
 
     const handleForeshadowingClick = (id: string) => {
@@ -248,14 +261,12 @@ function Editor(): React.ReactElement {
 
     const handleForeshadowingNoteChange = (id: string, noteText: string) => {
         chapterDraft.updateForeshadowingNote(id, noteText, Date.now());
-        setSaveStatus('unsaved');
     };
 
     const handleDeleteForeshadowing = (id: string) => {
         editorRef.current?.removeForeshadowing(id);
         chapterDraft.removeForeshadowing(id);
         setActiveForeshadowingId(prev => prev === id ? null : prev);
-        setSaveStatus('unsaved');
     };
 
     const handleFocusForeshadowing = (id: string) => {
@@ -302,9 +313,7 @@ function Editor(): React.ReactElement {
     };
 
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const newTitle = e.target.value;
-        chapterDraft.setTitle(newTitle);
-        setSaveStatus('unsaved');
+        chapterDraft.setTitle(e.target.value);
     };
 
     // --- Navigator Callbacks (book id binding + draft state live here) ---
@@ -317,7 +326,7 @@ function Editor(): React.ReactElement {
         if (!book) return null;
         const newChapterId = await createChapter(book.id, volId, chapTitle);
         if (newChapterId) {
-            setActiveChapterId(newChapterId);
+            await requestChapterSwitch(newChapterId);
         }
         return newChapterId;
     };
@@ -334,19 +343,17 @@ function Editor(): React.ReactElement {
         const chapter = volume?.chapters.find(c => c.id === chapterId);
         if (volume && chapter && chapter.title !== value) {
             const isCurrentChapter = activeChapterId === chapterId;
-            const currentContent = isCurrentChapter ? chapterDraft.content : (chapter.content || '');
-            const currentWordCount = isCurrentChapter ? chapterDraft.wordCount : (chapter.wordCount || 0);
-            const currentForeshadowings = isCurrentChapter ? chapterDraft.foreshadowings : (chapter.foreshadowings || []);
-            // Update the current title before awaiting: an old request must not
-            // overwrite the title after the user switches chapters.
             if (isCurrentChapter) {
+                // The active chapter is owned by the draft + scheduler: update
+                // the draft only and let the unified entry persist it. This
+                // removes the previous direct-PUT + autosave double write.
                 chapterDraft.setTitle(value);
-                setSaveStatus('unsaved');
+                return;
             }
-            const ok = await updateChapterContent(book.id, volume.id, chapterId, value, currentContent, currentWordCount, currentForeshadowings);
+            // Non-active chapters have no draft or in-flight scheduler save,
+            // so a direct save cannot race anything.
+            const ok = await updateChapterContent(book.id, volume.id, chapterId, value, chapter.content || '', chapter.wordCount || 0, chapter.foreshadowings || []);
             if (!ok) {
-                // The new title stays pending: for the active chapter the draft
-                // keeps it and autosave retries; warn either way.
                 toast.error('Failed to save the new title. Please try again.');
             }
         }
@@ -354,6 +361,8 @@ function Editor(): React.ReactElement {
 
     const handleDeleteItem = async (target: NavigatorDeleteTarget) => {
         if (!book) return;
+        // Deleting the current chapter discards its draft instead of saving
+        // it first — the chapter is gone either way.
         if (target.type === 'volume') {
             await deleteVolume(book.id, target.id);
             if (activeVolume && activeVolume.id === target.id) setActiveChapterId('');
@@ -451,8 +460,8 @@ function Editor(): React.ReactElement {
                 key={book.id}
                 book={book}
                 activeChapterId={activeChapterId}
-                onNavigateDashboard={() => navigate('/dashboard')}
-                onSelectChapter={setActiveChapterId}
+                onNavigateDashboard={() => void navigateAfterSave('/dashboard')}
+                onSelectChapter={requestChapterSwitch}
                 onAddVolume={handleAddVolume}
                 onAddChapter={handleAddChapter}
                 onRenameVolume={handleRenameVolume}
@@ -460,7 +469,7 @@ function Editor(): React.ReactElement {
                 onDeleteItem={handleDeleteItem}
                 onReorderVolumes={handleReorderVolumes}
                 onReorderChapters={handleReorderChapters}
-                onOpenPlotSetting={(chapterId) => navigate(`/books/${bookId}/story-outline?chapterId=${chapterId}`)}
+                onOpenPlotSetting={(chapterId) => void navigateAfterSave(`/books/${bookId}/story-outline?chapterId=${chapterId}`)}
             />
 
             {/* Main Area */}
@@ -469,18 +478,18 @@ function Editor(): React.ReactElement {
                     volumeTitle={activeVolume?.title}
                     chapterTitle={chapterDraft.title}
                     hasActiveChapter={!!activeChapter}
-                    saveStatus={saveStatus}
+                    saveStatus={autosave.saveStatus}
                     isAiLoading={isAiLoading}
                     isReadOnly={chapterDraft.isReadOnly}
                     isContextPanelOpen={isForeshadowingPanelOpen}
                     contextPanelItemCount={contextPanelItemCount}
                     isExporting={isExporting}
-                    onNavigateForeshadowingBoard={() => navigate(`/books/${bookId}/foreshadowing`)}
-                    onNavigateWorldBuilding={() => navigate(`/books/${bookId}/settings`)}
+                    onNavigateForeshadowingBoard={() => void navigateAfterSave(`/books/${bookId}/foreshadowing`)}
+                    onNavigateWorldBuilding={() => void navigateAfterSave(`/books/${bookId}/settings`)}
                     onAIContinue={handleAIContinue}
                     onToggleContextPanel={() => setIsForeshadowingPanelOpen(prev => !prev)}
-                    onRetrySave={() => setSaveStatus('unsaved')}
-                    onNavigateSettings={() => navigate('/settings', { state: { returnTo: `/editor/${bookId}` } })}
+                    onRetrySave={autosave.retry}
+                    onNavigateSettings={() => void navigateAfterSave('/settings', { state: { returnTo: `/editor/${bookId}` } })}
                     onExportWord={handleExportWord}
                     onExportPdf={handleExportPDF}
                 />
@@ -546,7 +555,7 @@ function Editor(): React.ReactElement {
                         onFocusForeshadowing={handleFocusForeshadowing}
                         onNoteChange={handleForeshadowingNoteChange}
                         onDeleteForeshadowing={handleDeleteForeshadowing}
-                        onOpenOutline={() => navigate(`/books/${bookId}/story-outline?chapterId=${activeChapterId}`)}
+                        onOpenOutline={() => void navigateAfterSave(`/books/${bookId}/story-outline?chapterId=${activeChapterId}`)}
                     />
                 </div>
 
