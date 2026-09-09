@@ -5,6 +5,9 @@ import { useApp } from '../InteractionContent/AppContext';
 import { Button } from '../components/ui/Button';
 import { ForeshadowingNote } from '../types';
 import { getFuzzyScore } from '../utils/search';
+import { getForeshadowingExcerptMap } from '../domain/chapterContent';
+
+const EXCERPT_MAX_LENGTH = 220;
 
 interface ForeshadowingCard {
     id: string;
@@ -16,63 +19,6 @@ interface ForeshadowingCard {
     volumeTitle: string;
     score?: number;
 }
-
-const getForeshadowingExcerptMap = (content: string) => {
-    const excerpts = new Map<string, string[]>();
-    const getForeshadowingIds = (node: any) : string[]=> {
-        if (!Array.isArray(node?.marks)) return [];
-        return node.marks
-            .filter((mark: any) => mark.type === 'foreshadowing' && mark.attrs?.id)
-            .map((mark: any) => mark.attrs.id as string);
-    };
-
-    const appendText = (id: string, text: string) => {
-        if (!text) return;
-        const existing = excerpts.get(id) || [];
-        existing.push(text);
-        excerpts.set(id, existing);
-    };
-
-    const visit = (node: any) => {
-        const ids = getForeshadowingIds(node);
-        if (ids.length > 0) {
-            const text = node.type === 'mention'
-                ? (node.attrs?.label || node.attrs?.id || '')
-                : node.type === 'text'
-                    ? (node.text || '')
-                    : node.type === 'hardBreak'
-                        ? ' '
-                        : '';
-            ids.forEach(id => appendText(id, text));
-        }
-
-        if (Array.isArray(node.content)) {
-            node.content.forEach(visit);
-            if (['paragraph', 'heading', 'blockquote'].includes(node.type)) {
-                const idsInBlock = new Set<string>();
-                const collectIds = (child: any) => {
-                    getForeshadowingIds(child).forEach((id: string) => idsInBlock.add(id));
-                    if (Array.isArray(child.content)) child.content.forEach(collectIds);
-                };
-                node.content.forEach(collectIds);
-                idsInBlock.forEach(id => appendText(id, ' '));
-            }
-        }
-    };
-
-    try {
-        visit(JSON.parse(content));
-    } catch (error) {
-        return new Map<string, string>();
-    }
-
-    const normalized = new Map<string, string>();
-    excerpts.forEach((parts, id) => {
-        const text = parts.join('').replace(/[\s\u3000]+/g, ' ').trim();
-        if (text) normalized.set(id, text.length > 220 ? `${text.slice(0, 220)}...` : text);
-    });
-    return normalized;
-};
 
 function Foreshadowing(): React.ReactElement {
     const { bookId } = useParams<{ bookId: string }>();
@@ -86,7 +32,7 @@ function Foreshadowing(): React.ReactElement {
         if (!book) return [];
         return book.volumes.flatMap(volume => (
             volume.chapters.flatMap(chapter => {
-                const excerptMap = getForeshadowingExcerptMap(chapter.content || '');
+                const excerptMap = getForeshadowingExcerptMap(chapter.content || '', EXCERPT_MAX_LENGTH);
                 return (chapter.foreshadowings || []).map(note => ({
                     id: note.id,
                     note,
