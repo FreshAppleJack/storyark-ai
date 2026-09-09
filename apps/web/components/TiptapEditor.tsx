@@ -1,8 +1,10 @@
-import { AutoHighlight, CustomFontFamily, CustomMention, FontSize, ForeshadowingMark, IgnoreAutoHighlight, PasteAutoFormat, TabIndent, transformPastedHtml } from '../features/editor/extensions';
+import { AutoHighlight, CustomFontFamily, CustomMention, FontSize, forceDowngradeMentions, ForeshadowingMark, IgnoreAutoHighlight, PasteAutoFormat, TabIndent, transformPastedHtml } from '../features/editor/extensions';
 import { dlog } from '../features/editor/debug/editorDebug';
+import { createMentionSuggestion } from '../features/editor/integrations/mentionSuggestion';
+import { createCharacterTooltipHandler } from '../features/editor/integrations/characterTooltip';
 import { escapeRegex, getCharacterDisplayTerms, getCharacterMatchTerms, getValidNamedCharacters } from '../domain/characters';
 import React, {useEffect, useState, useImperativeHandle, forwardRef, useMemo, useRef} from 'react';
-import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
+import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
@@ -11,7 +13,6 @@ import { TextStyle } from '@tiptap/extension-text-style';
 //import { FontFamily } from '@tiptap/extension-font-family';
 import { TextSelection } from '@tiptap/pm/state';
 import { Node as PMNode } from '@tiptap/pm/model';
-import tippy from 'tippy.js';
 import 'tippy.js/dist/tippy.css';
 import 'tippy.js/animations/shift-away.css';
 
@@ -54,78 +55,6 @@ interface TiptapEditorProps {
     // Callback function for parent component to toggle read only state
     onToggleReadOnly?: () => void;
 }
-
-interface MentionListHandle {
-    onKeyDown: (props: { event: KeyboardEvent }) => boolean;
-}
-
-const MentionList = forwardRef<MentionListHandle, any>((props, ref) => {
-    const [selectedIndex, setSelectedIndex] = useState(0);
-
-    const selectItem = (index: number) => {
-        const item = props.items[index];
-        if (item) {
-            props.command({ id: item.id, label: item.name, color: item.color });
-        }
-    };
-
-    const upHandler = () => {
-        setSelectedIndex((selectedIndex + props.items.length - 1) % props.items.length);
-    };
-
-    const downHandler = () => {
-        setSelectedIndex((selectedIndex + 1) % props.items.length);
-    };
-
-    const enterHandler = () => {
-        selectItem(selectedIndex);
-    };
-
-    useEffect(() => setSelectedIndex(0), [props.items]);
-
-    useImperativeHandle(ref, () => ({
-        onKeyDown: ({ event }: { event: KeyboardEvent }) => {
-            if (event.key === 'ArrowUp') {
-                upHandler();
-                return true;
-            }
-            if (event.key === 'ArrowDown') {
-                downHandler();
-                return true;
-            }
-            if (event.key === 'Enter') {
-                enterHandler();
-                return true;
-            }
-            return false;
-        },
-    }));
-
-    return (
-        <div className="bg-white rounded-md shadow-xl border border-slate-200 overflow-hidden min-w-[180px] py-1 z-50 animate-in fade-in zoom-in duration-75">
-            {props.items.length ? (
-                props.items.map((item: Character, index: number) => (
-                    <button
-                        key={item.id}
-                        className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors ${
-                            index === selectedIndex ? 'bg-brand-50 text-brand-700' : 'text-slate-700 hover:bg-slate-50'
-                        }`}
-                        onClick={() => selectItem(index)}
-                    >
-                        <div
-                            className="w-4 h-4 rounded-full flex-shrink-0 border border-slate-100 shadow-sm"
-                            style={{ backgroundColor: item.color }}
-                        />
-                        <span className="truncate font-medium">{item.name}</span>
-                        {item.role && <span className="text-[10px] text-slate-400 uppercase ml-auto">{item.role}</span>}
-                    </button>
-                ))
-            ) : (
-                <div className="px-3 py-2 text-sm text-slate-400">No characters found</div>
-            )}
-        </div>
-    );
-});
 
 const MenuBar = ({ editor, isEditable, onToggleReadOnly }: { editor: any, isEditable: boolean, onToggleReadOnly?: () => void }) => {
     if (!editor) return null;
@@ -351,128 +280,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 HTMLAttributes: {
                     class: 'mention',
                 },
-                suggestion: {
-                    items: ({ query }) => {
-                        return getValidNamedCharacters(characters).filter(item =>
-                            item.name.toLowerCase().startsWith(query.toLowerCase())
-                        ).slice(0, 5);
-                    },
-                    findSuggestionMatch: (config) => {
-                        const { char, $position } = config;
-                        const text = $position.doc.textBetween(
-                            Math.max(0, $position.pos - 50),
-                            $position.pos,
-                            '\n',
-                            '\0'
-                        );
-                        const regex = new RegExp(`(?:^|[\\s\\u3000])(${char})(.*)$`);
-                        const match = text.match(regex);
-                        if (!match) return null;
-                        const fullMatch = match[0];
-                        const query = match[2];
-                        const matchOffset = fullMatch.indexOf(char);
-                        const fromPos = $position.pos - fullMatch.length + matchOffset;
-                        const toPos = $position.pos;
-                        return { range: { from: fromPos, to: toPos }, query: query, text: query };
-                    },
-                    command: ({ editor, range, props }) => {
-                        const currentMarks: any[] = [];
-                        const textStyleAttrs = editor.getAttributes('textStyle');
-                        if (textStyleAttrs && Object.keys(textStyleAttrs).length > 0) {
-                            currentMarks.push({ type: 'textStyle', attrs: textStyleAttrs });
-                        }
-                        ['bold', 'italic', 'underline', 'strike'].forEach(markName => {
-                            if (editor.isActive(markName)) {
-                                currentMarks.push({ type: markName });
-                            }
-                        });
-
-                        // Smart space logic for inserting space before mention if necessary
-                        const charBefore = editor.state.doc.textBetween(Math.max(0, range.from - 1), range.from);
-                        const charBeforeTwo = editor.state.doc.textBetween(Math.max(0, range.from - 2), range.from - 1);
-                        const isChinese = (char: string) => /[\u4e00-\u9fa5\u3000-\u303f\uff00-\uffef\uff02\u2000-\u206f]/.test(char);
-
-                        let replaceFrom = range.from;
-                        let insertSpaceBefore = false;
-
-                        if (charBefore === ' ') {
-                            if (isChinese(charBeforeTwo)) {
-                                replaceFrom = range.from - 1;
-                            }
-                        } else {
-                            if (charBefore && !isChinese(charBefore)) {
-                                insertSpaceBefore = true;
-                            }
-                        }
-
-                        const contentToInsert: any[] = [];
-                        if (insertSpaceBefore) {
-                            contentToInsert.push({ type: 'text', text: ' ', marks: currentMarks });
-                        }
-
-                        contentToInsert.push({
-                            type: 'mention',
-                            attrs: props,
-                            marks: currentMarks
-                        });
-
-                        contentToInsert.push({
-                            type: 'text',
-                            text: '\u200B',
-                            marks: currentMarks
-                        });
-
-                        editor
-                            .chain()
-                            .focus()
-                            .insertContentAt({ from: replaceFrom, to: range.to }, contentToInsert)
-                            .run();
-                    },
-                    render: () => {
-                        let component: ReactRenderer;
-                        let popup: any;
-
-                        return {
-                            onStart: (props) => {
-                                component = new ReactRenderer(MentionList, {
-                                    props,
-                                    editor: props.editor,
-                                });
-
-                                if (!props.clientRect) return;
-
-                                popup = tippy('body', {
-                                    getReferenceClientRect: props.clientRect,
-                                    appendTo: () => document.body,
-                                    content: component.element,
-                                    showOnCreate: true,
-                                    interactive: true,
-                                    trigger: 'manual',
-                                    placement: 'bottom-start',
-                                    arrow: false,
-                                });
-                            },
-                            onUpdate(props) {
-                                component.updateProps(props);
-                                if (!props.clientRect) return;
-                                popup[0].setProps({
-                                    getReferenceClientRect: props.clientRect,
-                                });
-                            },
-                            onKeyDown(props) {
-                                if (props.event.key === 'Escape') {
-                                    popup[0].hide();
-                                    return true;
-                                }
-                                return (component.ref as any)?.onKeyDown(props);
-                            },
-                            onExit() {
-                                popup[0].destroy();
-                                component.destroy();
-                            },
-                        };
-                    },
-                },
+                suggestion: createMentionSuggestion(() => characters),
             }),
             AutoHighlight.configure({
                 characters: autoHighlightCharacters,
@@ -599,32 +407,6 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
         editorElement.style.paddingRight = `${normalizedEditorMarginPx}px`;
         editorElement.style.paddingBottom = '96px';
     }, [editor, normalizedEditorLineHeight, normalizedEditorMarginPx]);
-
-    // The core shuffling function extracted: forcibly downgrade the mention to plain text
-    const forceDowngradeMentions = (targetEditor: any, currentCharacters: Character[]) => {
-        if (!targetEditor || !currentCharacters || currentCharacters.length === 0) return;
-        let modified = false;
-        const { tr } = targetEditor.state;
-        const nodesToDowngrade: { pos: number, node: any }[] = [];
-
-        targetEditor.state.doc.descendants((node: any, pos: number) => {
-            if (node.type.name === 'mention') nodesToDowngrade.push({ pos, node });
-        });
-
-        if (nodesToDowngrade.length === 0) return;
-
-        for (let i = nodesToDowngrade.length - 1; i >= 0; i--) {
-            const { pos, node } = nodesToDowngrade[i];
-            const charId = node.attrs.id;
-            const updatedChar = currentCharacters.find((c: Character) => c.id === charId);
-            const text = node.attrs.label || (updatedChar ? updatedChar.name : node.attrs.id);
-            const textNode = targetEditor.state.schema.text(text, node.marks);
-            tr.replaceWith(pos, pos + node.nodeSize, textNode);
-            modified = true;
-        }
-
-        if (modified) targetEditor.view.dispatch(tr);
-    };
 
     // Reference to store the last character data snapshot, to prevent frequent shuffling causing cursor jumps
     const prevCharactersStrRef = useRef<string | null>(null);
@@ -918,61 +700,11 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
     useEffect(() => {
         if (!editor || !characters) return;
         const editorElement = editor.options.element;
-        const getTooltipContent = (charId: string) => {
-            const char = characters.find(c => c.id === charId);
-            if (!char) return null;
-            const initial = char.name.charAt(0);
-            return `
-                <div class="p-3 bg-white text-slate-800 rounded-lg shadow-xl border border-slate-100 max-w-xs animate-in fade-in zoom-in duration-100 font-sans text-left">
-                    <div class="flex items-start gap-3 mb-2">
-                        <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-sm flex-shrink-0" style="background-color: ${char.color}">
-                            ${initial}
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <div class="font-bold text-sm truncate">${char.name}</div>
-                            ${char.role ? `<div class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mt-0.5">${char.role}</div>` : ''}
-                        </div>
-                    </div>
-                    ${char.tags && char.tags.length > 0 ? `
-                        <div class="flex flex-wrap gap-1 mb-2">
-                            ${char.tags.map(tag =>
-                `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">${tag}</span>`
-            ).join('')}
-                        </div>
-                    ` : ''}
-                    ${char.description ? `
-                        <div class="text-xs text-slate-600 leading-relaxed line-clamp-4 border-t border-slate-50 pt-2 mt-1">
-                            ${char.description}
-                        </div>
-                    ` : ''}
-                </div>
-            `;
-        };
-
-        const handleMouseOver = (event: MouseEvent) => {
-            const target = (event.target as HTMLElement).closest('.mention');
-            if (target && !((target as any)._tippy)) {
-                // If context menu is already displayed, do not show tooltip to avoid visual interference
-                if (contextMenu) return;
-
-                const charId = target.getAttribute('data-id');
-                if (charId) {
-                    const content = getTooltipContent(charId);
-                    if (content) {
-                        tippy(target, {
-                            content: content,
-                            allowHTML: true,
-                            interactive: true,
-                            placement: 'top',
-                            animation: 'shift-away',
-                            duration: [200, 150],
-                            delay: [200, 0],
-                            appendTo: document.body,
-                        });
-                    }
-                }
-            }
-        };
+        // If a context menu is displayed, the tooltip is suppressed to avoid visual interference
+        const handleMouseOver = createCharacterTooltipHandler({
+            getCharacter: (charId) => characters.find(c => c.id === charId),
+            shouldSuppress: () => !!contextMenu,
+        });
 
         if ("addEventListener" in editorElement) {
             editorElement.addEventListener('mouseover', handleMouseOver);
