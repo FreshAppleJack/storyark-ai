@@ -7,6 +7,8 @@ import { Chapter, ForeshadowingNote } from '../../../types';
  * recognize stale save results.
  */
 export interface ChapterDraftSnapshot {
+    bookId: string;
+    volumeId: string;
     chapterId: string;
     revision: number;
     title: string;
@@ -16,6 +18,8 @@ export interface ChapterDraftSnapshot {
 }
 
 interface UseChapterDraftOptions {
+    bookId?: string;
+    volumeId?: string;
     chapterId: string;
     chapter?: Chapter;
 }
@@ -61,16 +65,18 @@ function draftFromChapter(chapter: Chapter, revision: number, isDirty: boolean):
  * same-chapter update (e.g. the optimistic echo of a save) only syncs a
  * clean draft — unsaved user input is never overwritten.
  */
-export function useChapterDraft({ chapterId, chapter }: UseChapterDraftOptions) {
+export function useChapterDraft({ bookId = '', volumeId = '', chapterId, chapter }: UseChapterDraftOptions) {
     const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT);
-    const [loaded, setLoaded] = useState<{ id: string; chapter?: Chapter }>({ id: '' });
+    const identity = JSON.stringify([bookId, volumeId, chapter ? chapterId : '']);
+    const [loaded, setLoaded] = useState<{ id: string; chapter?: Chapter; session: number }>({ id: '', session: 0 });
 
     // Adjust-during-render: react to chapter switches and same-chapter
     // updates without an effect.
-    if (chapter && (loaded.id !== chapterId || loaded.chapter !== chapter)) {
-        const isSwitch = loaded.id !== chapterId;
-        setLoaded({ id: chapterId, chapter });
+    if (loaded.id !== identity || loaded.chapter !== chapter) {
+        const isSwitch = loaded.id !== identity;
+        setLoaded({ id: identity, chapter, session: loaded.session + (isSwitch ? 1 : 0) });
         setDraft(current => {
+            if (!chapter) return EMPTY_DRAFT;
             if (isSwitch) return draftFromChapter(chapter, 0, false);
             if (current.isDirty) return current;
             return draftFromChapter(chapter, current.revision, current.isDirty);
@@ -131,16 +137,19 @@ export function useChapterDraft({ chapterId, chapter }: UseChapterDraftOptions) 
     }, []);
 
     const getSnapshot = useCallback((): ChapterDraftSnapshot => ({
-        chapterId,
+        bookId,
+        volumeId,
+        chapterId: chapter ? chapterId : '',
         revision: draft.revision,
         title: draft.title,
         content: draft.content,
         wordCount: draft.wordCount,
-        foreshadowings: draft.foreshadowings,
-    }), [chapterId, draft]);
+        foreshadowings: draft.foreshadowings.map(note => ({ ...note })),
+    }), [bookId, volumeId, chapterId, chapter, draft]);
 
     return {
         ...draft,
+        sessionKey: `${identity}:${loaded.session}`,
         setTitle,
         applyEditorUpdate,
         addForeshadowing,

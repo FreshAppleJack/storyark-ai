@@ -1,6 +1,6 @@
 import React, { forwardRef, useImperativeHandle } from 'react';
 import { act, cleanup, fireEvent, render, RenderResult, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { afterEach, beforeEach, vi } from 'vitest';
 import type { ForeshadowingNote } from '../../../types';
 import EditorPage from '../../../pages/EditorPrototype';
@@ -10,6 +10,7 @@ import EditorPage from '../../../pages/EditorPrototype';
 export const fixture = {
     save: vi.fn<(...args: unknown[]) => Promise<boolean>>(),
     toastError: vi.fn(),
+    deleteChapter: vi.fn<() => Promise<void>>(),
     book: {
         id: 'b1', title: 'Book', author: 'Test', characters: [],
         volumes: [{ id: 'v1', title: 'Volume', chapters: [
@@ -18,11 +19,18 @@ export const fixture = {
         ] }],
     },
 };
+const initialBook = structuredClone(fixture.book);
 
 vi.mock('../../../InteractionContent/AppContext', () => ({
     useApp: () => ({
         getBook: () => fixture.book,
         updateChapterContent: fixture.save,
+        deleteChapter: (_bookId: string, volumeId: string, chapterId: string) => {
+            fixture.book = { ...fixture.book, volumes: fixture.book.volumes.map(volume => volume.id !== volumeId ? volume : {
+                ...volume, chapters: volume.chapters.filter(chapter => chapter.id !== chapterId),
+            }) };
+            return fixture.deleteChapter();
+        },
         editorSpacingSettings: { editorMarginPx: 20, editorLineHeight: 1.8 },
         aiContinueSettings: { contextChars: 100, outputChars: 100 },
         autoHighlightSettings: { disabledRoles: [] },
@@ -56,6 +64,8 @@ export function setupEditorPageHarness() {
     beforeEach(() => {
         vi.useFakeTimers();
         fixture.save.mockReset().mockResolvedValue(true);
+        fixture.book = structuredClone(initialBook);
+        fixture.deleteChapter.mockReset().mockResolvedValue(undefined);
         fixture.toastError.mockClear();
         vi.stubGlobal('localStorage', { getItem: () => null, setItem: vi.fn(), removeItem: vi.fn() });
     });
@@ -68,12 +78,17 @@ export function setupEditorPageHarness() {
     });
 }
 
+export function createEditorRouter(initialEntries = ['/editor/b1'], initialIndex = initialEntries.length - 1) {
+    return createMemoryRouter([
+        { path: '/editor/:bookId', element: <EditorPage /> },
+        { path: '/dashboard', element: <div>Dashboard destination</div> },
+    ], { initialEntries, initialIndex });
+}
+
 export async function renderPage(): Promise<RenderResult> {
     let view!: RenderResult;
     await act(async () => {
-        view = render(<MemoryRouter initialEntries={['/editor/b1']}>
-            <Routes><Route path="/editor/:bookId" element={<EditorPage />} /></Routes>
-        </MemoryRouter>);
+        view = render(<RouterProvider router={createEditorRouter()} />);
     });
     return view;
 }

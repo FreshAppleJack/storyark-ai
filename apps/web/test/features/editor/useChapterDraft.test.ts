@@ -25,6 +25,34 @@ function renderDraft(chapterId = 'c1', chapter: Chapter | undefined = makeChapte
 }
 
 describe('useChapterDraft', () => {
+    it('captures book and volume identity and resets across books with matching chapter IDs', () => {
+        const chapter = makeChapter();
+        const { result, rerender } = renderHook(props => useChapterDraft(props), {
+            initialProps: { bookId: 'b1', volumeId: 'v1', chapterId: 'c1', chapter },
+        });
+        act(() => result.current.setTitle('old draft'));
+        const snapshot = result.current.getSnapshot();
+        const session = result.current.sessionKey;
+        rerender({ bookId: 'b2', volumeId: 'v2', chapterId: 'c1', chapter });
+        expect(snapshot).toMatchObject({ bookId: 'b1', volumeId: 'v1', title: 'old draft' });
+        expect(result.current.getSnapshot()).toMatchObject({ bookId: 'b2', volumeId: 'v2', title: 'Chapter One' });
+        expect(result.current.sessionKey).not.toBe(session);
+        expect(result.current.isDirty).toBe(false);
+    });
+
+    it('discards the draft and advances the session when the chapter disappears', () => {
+        const { result, rerender } = renderDraft();
+        act(() => result.current.setTitle('discarded'));
+        const session = result.current.sessionKey;
+        rerender({ chapterId: '', chapter: undefined });
+        expect(result.current.content).toBe('');
+        expect(result.current.foreshadowings).toEqual([]);
+        expect(result.current.isDirty).toBe(false);
+        expect(result.current.getSnapshot().chapterId).toBe('');
+        rerender({ chapterId: 'c1', chapter: makeChapter() });
+        expect(result.current.sessionKey).not.toBe(session);
+    });
+
     it('loads the chapter data on mount', () => {
         const { result } = renderDraft('c1', makeChapter({ isEditable: false, foreshadowings: [note] }));
 
@@ -115,6 +143,8 @@ describe('useChapterDraft', () => {
         act(() => result.current.setTitle('snap title'));
 
         expect(result.current.getSnapshot()).toEqual({
+            bookId: '',
+            volumeId: '',
             chapterId: 'c1',
             revision: 1,
             title: 'snap title',

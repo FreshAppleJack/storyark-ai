@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { EditorSaveStatus } from '../components/EditorHeader';
 import { ChapterDraftSnapshot } from './useChapterDraft';
 
 interface UseChapterAutosaveOptions {
     chapterId: string;
+    sessionKey?: string;
     revision: number;
     getSnapshot: () => ChapterDraftSnapshot;
     markSaved: (revision: number) => void;
@@ -41,6 +42,7 @@ interface SaveRoundResult {
  */
 export function useChapterAutosave({
     chapterId,
+    sessionKey = chapterId,
     revision,
     getSnapshot,
     markSaved,
@@ -53,7 +55,7 @@ export function useChapterAutosave({
     // stable across renders even though the page passes fresh closures.
     const fnsRef = useRef({ getSnapshot, markSaved, saveChapter });
     const revisionRef = useRef(revision);
-    useEffect(() => {
+    useLayoutEffect(() => {
         fnsRef.current = { getSnapshot, markSaved, saveChapter };
         revisionRef.current = revision;
     });
@@ -65,10 +67,10 @@ export function useChapterAutosave({
     // revision INCREASE counts as an edit: the revision is monotonic per
     // chapter, so a decrease always means a chapter load/reset (the draft
     // hook's adjustment can lag one render pass behind chapterId).
-    const [prevChapterId, setPrevChapterId] = useState(chapterId);
+    const [prevChapterId, setPrevChapterId] = useState(sessionKey);
     const [prevRevision, setPrevRevision] = useState(revision);
-    if (prevChapterId !== chapterId) {
-        setPrevChapterId(chapterId);
+    if (prevChapterId !== sessionKey) {
+        setPrevChapterId(sessionKey);
         setPrevRevision(revision);
         setSaveStatus('saved');
     } else if (prevRevision !== revision) {
@@ -80,6 +82,16 @@ export function useChapterAutosave({
     }
 
     const inFlightRoundRef = useRef<Promise<SaveRoundResult> | null>(null);
+    const epochRef = useRef(0);
+    useLayoutEffect(() => {
+        epochRef.current += 1;
+        inFlightRoundRef.current = null;
+        return () => {
+            epochRef.current += 1;
+            if (timerRef.current) clearTimeout(timerRef.current);
+            timerRef.current = null;
+        };
+    }, [sessionKey]);
 
     const saveNow = useCallback((): Promise<SaveRoundResult> => {
         if (inFlightRoundRef.current) {
@@ -88,9 +100,14 @@ export function useChapterAutosave({
             return inFlightRoundRef.current;
         }
         const round = (async (): Promise<SaveRoundResult> => {
-            setSaveStatus('saving');
+            const epoch = epochRef.current;
             const snapshot = fnsRef.current.getSnapshot();
+            if (!snapshot.chapterId) return { ok: true, draftAdvanced: false };
+            setSaveStatus('saving');
             const ok = await fnsRef.current.saveChapter(snapshot).catch(() => false);
+
+            // A different chapter/load or unmount invalidates this response.
+            if (epoch !== epochRef.current) return { ok: false, draftAdvanced: false };
 
             if (!ok) {
                 setSaveStatus('error');
@@ -124,9 +141,10 @@ export function useChapterAutosave({
                 timerRef.current = null;
             }
         };
-    }, [saveStatus, revision, chapterId, debounceMs, saveNow]);
+    }, [saveStatus, revision, sessionKey, debounceMs, saveNow]);
 
     const flush = useCallback(async (): Promise<boolean> => {
+        const epoch = epochRef.current;
         if (timerRef.current) {
             clearTimeout(timerRef.current);
             timerRef.current = null;
@@ -134,6 +152,7 @@ export function useChapterAutosave({
         // Drain the serial queue: a user editing during the flush requires
         // further rounds, so keep saving until the draft stops advancing.
         for (let rounds = 0; rounds < 10; rounds++) {
+            if (epoch !== epochRef.current) return false;
             const { ok, draftAdvanced } = await saveNow();
             if (!ok) return false;
             if (!draftAdvanced) return true;

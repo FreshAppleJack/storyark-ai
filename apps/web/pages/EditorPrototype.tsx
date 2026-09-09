@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useParams, useNavigate, NavigateOptions } from 'react-router-dom';
+import { useParams, useNavigate, useBlocker, NavigateOptions } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { useApp } from '../InteractionContent/AppContext';
 import apiClient from '../services/api';
@@ -42,7 +42,7 @@ function Editor(): React.ReactElement {
     // 3. State Management
     // The chapter draft (values + revision + dirty tracking) lives in a hook;
     // this page only keeps UI state and the save lifecycle.
-    const chapterDraft = useChapterDraft({ chapterId: activeChapterId, chapter: activeChapter });
+    const chapterDraft = useChapterDraft({ bookId, volumeId: activeVolume?.id, chapterId: activeChapterId, chapter: activeChapter });
     const [plotSettings, setPlotSettings] = useState<PlotSetting[]>([]);
     const [activeForeshadowingId, setActiveForeshadowingId] = useState<string | null>(null);
     const [isForeshadowingPanelOpen, setIsForeshadowingPanelOpen] = useState(false);
@@ -57,15 +57,29 @@ function Editor(): React.ReactElement {
     // Save scheduler: debounce, serial saves, flush and retry all go through
     // this single entry — no page-level timers or save status state.
     const autosave = useChapterAutosave({
-        chapterId: activeChapterId,
+        chapterId: activeChapter ? activeChapterId : '',
+        sessionKey: chapterDraft.sessionKey,
         revision: chapterDraft.revision,
         getSnapshot: chapterDraft.getSnapshot,
         markSaved: chapterDraft.markSaved,
         saveChapter: (snapshot) => {
-            if (!book || !activeVolume) return Promise.resolve(false);
-            return updateChapterContent(book.id, activeVolume.id, snapshot.chapterId, snapshot.title, snapshot.content, snapshot.wordCount, snapshot.foreshadowings);
+            if (!snapshot.bookId || !snapshot.volumeId || !snapshot.chapterId) return Promise.resolve(false);
+            return updateChapterContent(snapshot.bookId, snapshot.volumeId, snapshot.chapterId, snapshot.title, snapshot.content, snapshot.wordCount, snapshot.foreshadowings);
         },
     });
+
+    const blocker = useBlocker(chapterDraft.isDirty);
+    const { flush } = autosave;
+    useEffect(() => {
+        if (blocker.state !== 'blocked') return;
+        let cancelled = false;
+        void flush().then(ok => {
+            if (cancelled) return;
+            if (ok) blocker.proceed();
+            else blocker.reset();
+        });
+        return () => { cancelled = true; };
+    }, [blocker, flush]);
 
     // Reset the panel selection when the active chapter changes (adjust-during-render).
     const [prevChapterId, setPrevChapterId] = useState(activeChapterId);
@@ -341,17 +355,16 @@ function Editor(): React.ReactElement {
         if (!book) return;
         const volume = book.volumes.find(v => v.chapters.some(c => c.id === chapterId));
         const chapter = volume?.chapters.find(c => c.id === chapterId);
-        if (volume && chapter && chapter.title !== value) {
+        if (volume && chapter) {
             const isCurrentChapter = activeChapterId === chapterId;
             if (isCurrentChapter) {
                 // The active chapter is owned by the draft + scheduler: update
                 // the draft only and let the unified entry persist it. This
                 // removes the previous direct-PUT + autosave double write.
-                chapterDraft.setTitle(value);
+                if (chapterDraft.title !== value) chapterDraft.setTitle(value);
                 return;
             }
-            // Non-active chapters have no draft or in-flight scheduler save,
-            // so a direct save cannot race anything.
+            // AppProvider serializes this with every write to the same chapter.
             const ok = await updateChapterContent(book.id, volume.id, chapterId, value, chapter.content || '', chapter.wordCount || 0, chapter.foreshadowings || []);
             if (!ok) {
                 toast.error('Failed to save the new title. Please try again.');
@@ -364,11 +377,11 @@ function Editor(): React.ReactElement {
         // Deleting the current chapter discards its draft instead of saving
         // it first — the chapter is gone either way.
         if (target.type === 'volume') {
-            await deleteVolume(book.id, target.id);
             if (activeVolume && activeVolume.id === target.id) setActiveChapterId('');
+            await deleteVolume(book.id, target.id);
         } else if (target.type === 'chapter' && target.parentId) {
-            await deleteChapter(book.id, target.parentId, target.id);
             if (activeChapterId === target.id) setActiveChapterId('');
+            await deleteChapter(book.id, target.parentId, target.id);
         }
     };
 
@@ -570,4 +583,9 @@ function Editor(): React.ReactElement {
     );
 }
 
-export default Editor;
+// Changing books starts a new draft and save session after the route blocker
+// has finished protecting the previous book.
+export default function EditorRoute(): React.ReactElement {
+    const { bookId } = useParams<{ bookId: string }>();
+    return <Editor key={bookId} />;
+}

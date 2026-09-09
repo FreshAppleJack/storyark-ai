@@ -56,6 +56,27 @@ async function loginAndLoadBooks() {
 }
 
 describe('AppContext updateChapterContent', () => {
+    it('serializes chapter writes across callers and continues after failure', async () => {
+        const result = await loginAndLoadBooks();
+        let fail!: (error: Error) => void;
+        api.put.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+        let first!: Promise<boolean>;
+        let second!: Promise<boolean>;
+        await act(async () => {
+            first = result.current.updateChapterContent('1', '2', '3', 'First rename', 'body 1', 1, []);
+            second = result.current.updateChapterContent('1', '2', '3', 'Second rename', 'body 2', 2, []);
+        });
+        expect(api.put).toHaveBeenCalledTimes(1);
+        await act(async () => {
+            fail(new Error('network down'));
+            expect(await first).toBe(false);
+            expect(await second).toBe(true);
+        });
+        expect(api.put).toHaveBeenCalledTimes(2);
+        expect(api.put).toHaveBeenLastCalledWith('/story/chapters/3?bookId=1', expect.objectContaining({ title: 'Second rename', content: 'body 2' }));
+        expect(result.current.getBook('1')?.volumes[0].chapters[0].title).toBe('Second rename');
+    });
+
     it('returns true and applies the optimistic update when the PUT succeeds', async () => {
         const result = await loginAndLoadBooks();
 

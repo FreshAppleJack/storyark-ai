@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
+import { createChapterWriteQueue } from '../services/chapterWrites';
 import {
     Book,
     User,
@@ -260,6 +261,7 @@ export function AppProvider({
 }: AppProviderProps): React.ReactElement {
     const [user, setUser] = useState<User | null>(null);
     const [books, setBooks] = useState<Book[]>([]);
+    const [chapterWrites] = useState(createChapterWriteQueue);
     const [isDarkMode, setIsDarkMode] = useState<boolean>(() => localStorage.getItem('storyark_dark_mode') === 'true');
     const [editorSpacingSettings, setEditorSpacingSettings] = useState<EditorSpacingSettings>(loadEditorSpacingSettingsFromStorage);
     const [aiContinueSettings, setAiContinueSettings] = useState<AiContinueSettings>(loadAiContinueSettingsFromStorage);
@@ -614,7 +616,7 @@ export function AppProvider({
         }));
 
         try {
-            await apiClient.put(`/story/chapters/${chapterId}?bookId=${bookId}`, {
+            await chapterWrites.run(bookId, chapterId, () => apiClient.put(`/story/chapters/${chapterId}?bookId=${bookId}`, {
                 title: title,
                 content: content,
                 wordCount: finalWordCount,
@@ -622,7 +624,7 @@ export function AppProvider({
                 volumeId: Number(volumeId),
                 isEditable: currentEditable,
                 foreshadowings: JSON.stringify(currentForeshadowings)
-            });
+            }));
             return true;
         } catch (error) {
             console.error("Failed to save chapter:", error);
@@ -657,7 +659,7 @@ export function AppProvider({
         }));
 
         try {
-            await apiClient.put(`/story/chapters/${chapterId}?bookId=${bookId}`, {
+            await chapterWrites.run(bookId, chapterId, () => apiClient.put(`/story/chapters/${chapterId}?bookId=${bookId}`, {
                 title: chapter.title,
                 content: chapter.content,
                 wordCount: chapter.wordCount,
@@ -665,7 +667,7 @@ export function AppProvider({
                 volumeId: Number(volumeId),
                 isEditable: newStatus,
                 foreshadowings: JSON.stringify(chapter.foreshadowings || [])
-            });
+            }));
         } catch (error) {
             console.error("Failed to toggle chapter lock:", error);
         }
@@ -697,6 +699,7 @@ export function AppProvider({
     };
 
     const deleteVolume = async (bookId: string, volumeId: string) => {
+        const chapterIds = books.find(book => book.id === bookId)?.volumes.find(volume => volume.id === volumeId)?.chapters.map(chapter => chapter.id) ?? [];
         setBooks(prev => prev.map(b => {
             if (b.id !== bookId) return b;
             return {
@@ -706,6 +709,7 @@ export function AppProvider({
         }));
 
         try {
+            await Promise.all(chapterIds.map(id => chapterWrites.drain(bookId, id)));
             await apiClient.delete(`/story/volumes/${volumeId}?bookId=${bookId}`);
         } catch (error) {
             console.error("Failed to delete volume:", error);
@@ -729,7 +733,7 @@ export function AppProvider({
         }));
 
         try {
-            await apiClient.delete(`/story/chapters/${chapterId}?bookId=${bookId}`);
+            await chapterWrites.run(bookId, chapterId, () => apiClient.delete(`/story/chapters/${chapterId}?bookId=${bookId}`));
         } catch (error) {
             console.error("Failed to delete chapter:", error);
         }

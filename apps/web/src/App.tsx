@@ -1,5 +1,5 @@
 import React from 'react';
-import { HashRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
+import { createHashRouter, createRoutesFromElements, RouterProvider, Route, Link, Navigate } from 'react-router-dom';
 import StyleLibrary from '../pages/StyleLibrary';
 import Editor from '../pages/EditorPrototype'; // Actually the Real Editor now
 import Dashboard from '../pages/Dashboard';
@@ -63,11 +63,8 @@ function Home(): React.ReactElement {
   );
 }
 
-function App(): React.ReactElement {
-  return (
-    <AppProvider>
-      <HashRouter>
-        <Routes>
+const router = createHashRouter(createRoutesFromElements(
+        <>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/intro" element={<Home />} />
           <Route path="/style-library" element={<StyleLibrary />} />
@@ -114,10 +111,11 @@ function App(): React.ReactElement {
               <Editor />
             </ProtectedRoute>
           } />
-        </Routes>
-      </HashRouter>
-    </AppProvider>
-  );
+        </>
+));
+
+function App(): React.ReactElement {
+  return <AppProvider><RouterProvider router={router} /></AppProvider>;
 }
 
 export default App;

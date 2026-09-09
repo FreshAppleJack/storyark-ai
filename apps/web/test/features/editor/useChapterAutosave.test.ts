@@ -4,7 +4,7 @@ import { useChapterAutosave } from '../../../features/editor/hooks/useChapterAut
 import { ChapterDraftSnapshot } from '../../../features/editor/hooks/useChapterDraft';
 
 function makeSnapshot(chapterId: string, revision: number, content: string): ChapterDraftSnapshot {
-    return { chapterId, revision, title: 't', content, wordCount: 1, foreshadowings: [] };
+    return { bookId: 'b1', volumeId: 'v1', chapterId, revision, title: 't', content, wordCount: 1, foreshadowings: [] };
 }
 
 interface Deferred {
@@ -54,6 +54,51 @@ afterEach(() => {
 });
 
 describe('useChapterAutosave', () => {
+    it.each([true, false])('ignores a stale chapter response (%s) even when revisions match', async (ok) => {
+        const { view, edit, switchChapter, saveChapter, markSaved } = setup();
+        let finish!: (ok: boolean) => void;
+        saveChapter.mockImplementationOnce(() => new Promise<boolean>(resolve => { finish = resolve; }));
+        act(() => edit('old draft'));
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
+        act(() => switchChapter('c2'));
+        act(() => edit('new draft'));
+        await act(async () => finish(ok));
+        expect(markSaved).not.toHaveBeenCalled();
+        expect(view.result.current.saveStatus).toBe('unsaved');
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
+        expect(saveChapter).toHaveBeenLastCalledWith(makeSnapshot('c2', 1, 'new draft'));
+        expect(view.result.current.saveStatus).toBe('saved');
+    });
+
+    it('invalidates an old flush when the chapter changes', async () => {
+        const { view, edit, switchChapter, saveChapter, markSaved } = setup();
+        let finish!: (ok: boolean) => void;
+        saveChapter.mockImplementationOnce(() => new Promise<boolean>(resolve => { finish = resolve; }));
+        act(() => edit('old draft'));
+        let flushed!: Promise<boolean>;
+        act(() => { flushed = view.result.current.flush(); });
+        act(() => switchChapter('c2'));
+        await act(async () => finish(true));
+        expect(await flushed).toBe(false);
+        expect(markSaved).not.toHaveBeenCalled();
+        expect(saveChapter).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not drain more writes or acknowledge a save after unmount', async () => {
+        const { view, edit, saveChapter, markSaved } = setup();
+        let finish!: (ok: boolean) => void;
+        saveChapter.mockImplementationOnce(() => new Promise<boolean>(resolve => { finish = resolve; }));
+        act(() => edit('old draft'));
+        let flushed!: Promise<boolean>;
+        act(() => { flushed = view.result.current.flush(); });
+        act(() => edit('new draft'));
+        view.unmount();
+        await act(async () => finish(true));
+        expect(await flushed).toBe(false);
+        expect(markSaved).not.toHaveBeenCalled();
+        expect(saveChapter).toHaveBeenCalledTimes(1);
+    });
+
     it('saves the draft after the debounce and confirms via markSaved', async () => {
         const { view, edit, saveChapter, markSaved } = setup();
 
