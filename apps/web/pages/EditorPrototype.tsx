@@ -13,6 +13,7 @@ import { EditorHeader } from '../features/editor/components/EditorHeader';
 import { WritingContextPanel } from '../features/editor/components/WritingContextPanel';
 import { getEditorPlainText, getForeshadowingExcerptMap } from '../domain/chapterContent';
 import { buildChapterExportHtml, buildWordExportDocument } from '../features/editor/utils/exportHtml';
+import { useChapterDraft } from '../features/editor/hooks/useChapterDraft';
 
 function Editor(): React.ReactElement {
     const { bookId } = useParams<{ bookId: string }>();
@@ -38,34 +39,36 @@ function Editor(): React.ReactElement {
     let activeChapter = activeVolume?.chapters.find(c => c.id === activeChapterId);
 
     // 3. State Management
-    const [content, setContent] = useState<string>('');
-    const [title, setTitle] = useState<string>('');
-    const [foreshadowings, setForeshadowings] = useState<ForeshadowingNote[]>([]);
+    // The chapter draft (values + revision + dirty tracking) lives in a hook;
+    // this page only keeps UI state and the save lifecycle.
+    const chapterDraft = useChapterDraft({ chapterId: activeChapterId, chapter: activeChapter });
     const [plotSettings, setPlotSettings] = useState<PlotSetting[]>([]);
     const [activeForeshadowingId, setActiveForeshadowingId] = useState<string | null>(null);
     const [isForeshadowingPanelOpen, setIsForeshadowingPanelOpen] = useState(false);
 
     const [saveStatus, setSaveStatus] = useState<'saved' | 'saving' | 'unsaved' | 'error'>('saved');
     const [isAiLoading, setIsAiLoading] = useState(false);
-    const [wordCount, setWordCount] = useState(0);
 
     // Export State
     const [isExporting, setIsExporting] = useState(false);
 
-    // Read Only State Management
-    const [isReadOnly, setIsReadOnly] = useState(false);
-
-    const lastLoadedChapterIdRef = useRef<string | null>(null);
     const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const editorRef = useRef<TiptapEditorRef>(null);
 
-    const foreshadowingExcerptMap = useMemo(() => getForeshadowingExcerptMap(content, 120), [content]);
+    // Reset the panel selection when the active chapter changes (adjust-during-render).
+    const [prevChapterId, setPrevChapterId] = useState(activeChapterId);
+    if (prevChapterId !== activeChapterId) {
+        setPrevChapterId(activeChapterId);
+        setActiveForeshadowingId(null);
+    }
+
+    const foreshadowingExcerptMap = useMemo(() => getForeshadowingExcerptMap(chapterDraft.content, 120), [chapterDraft.content]);
     const linkedPlotSettings = useMemo(
         () => plotSettings.filter(plot => plot.chapterIds.includes(activeChapterId)),
         [plotSettings, activeChapterId]
     );
-    const contextPanelItemCount = foreshadowings.length + linkedPlotSettings.length;
+    const contextPanelItemCount = chapterDraft.foreshadowings.length + linkedPlotSettings.length;
 
     // Redirect if book not found
     // Prevent users from editing deleted books
@@ -155,21 +158,6 @@ function Editor(): React.ReactElement {
         });
     }, [book?.characters]);
 
-    // Sync data to state when chapter switch
-    useEffect(() => {
-        if (activeChapter) {
-            setTitle(activeChapter.title || '');
-            if (activeChapterId !== lastLoadedChapterIdRef.current) {
-                setContent(activeChapter.content || '');
-                setForeshadowings(activeChapter.foreshadowings || []);
-                setActiveForeshadowingId(null);
-                lastLoadedChapterIdRef.current = activeChapterId;
-                setWordCount(activeChapter.wordCount || 0);
-                setIsReadOnly(activeChapter.isEditable === false);
-            }
-        }
-    }, [activeChapterId, activeChapter]);
-
     useEffect(() => {
         if (!bookId || !activeChapterId) return;
 
@@ -188,7 +176,7 @@ function Editor(): React.ReactElement {
         if (
             pendingTarget.chapterId !== activeChapterId ||
             !pendingTarget.foreshadowingId ||
-            !foreshadowings.some(item => item.id === pendingTarget.foreshadowingId)
+            !chapterDraft.foreshadowings.some(item => item.id === pendingTarget.foreshadowingId)
         ) {
             return;
         }
@@ -206,7 +194,7 @@ function Editor(): React.ReactElement {
         }, delay));
 
         return () => timers.forEach(timer => window.clearTimeout(timer));
-    }, [bookId, activeChapterId, content, foreshadowings]);
+    }, [bookId, activeChapterId, chapterDraft.content, chapterDraft.foreshadowings]);
 
     // Auto Save Logic
     useEffect(() => {
@@ -216,29 +204,30 @@ function Editor(): React.ReactElement {
             if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
             setSaveStatus('saving');
             autoSaveTimerRef.current = setTimeout(async () => {
-                const ok = await updateChapterContent(book.id, activeVolume!.id, activeChapter!.id, title, content, wordCount, foreshadowings);
+                const snapshot = chapterDraft.getSnapshot();
+                const ok = await updateChapterContent(book.id, activeVolume!.id, activeChapter!.id, snapshot.title, snapshot.content, snapshot.wordCount, snapshot.foreshadowings);
+                if (ok) chapterDraft.markSaved(snapshot.revision);
                 // Only a successful PUT may show Saved; failures keep the draft
                 // and surface an error state the user can retry from.
                 setSaveStatus(ok ? 'saved' : 'error');
             }, 1000);
         }
-    }, [content, title, foreshadowings, saveStatus, activeChapterId, wordCount]);
+    }, [chapterDraft.title, chapterDraft.content, chapterDraft.wordCount, chapterDraft.foreshadowings, saveStatus, activeChapterId]);
 
     // Handle toggle read only state
     const handleToggleReadOnly = async () => {
         if (!book || !activeVolume || !activeChapter) return;
-        const nextReadOnlyState = !isReadOnly;
-        setIsReadOnly(nextReadOnlyState);
+        const nextReadOnlyState = !chapterDraft.isReadOnly;
+        chapterDraft.setReadOnly(nextReadOnlyState);
         await toggleChapterLock(book.id, activeVolume.id, activeChapter.id);
     };
 
     // --- Editor Interaction Handlers ---
     const handleEditorUpdate = (newContent: string, newWordCount: number) => {
-        if (newContent !== content) {
-            setContent(newContent);
+        if (newContent !== chapterDraft.content) {
             setSaveStatus('unsaved');
         }
-        setWordCount(newWordCount);
+        chapterDraft.applyEditorUpdate(newContent, newWordCount);
     };
 
     const handleCharacterClick = (charId: string) => {
@@ -246,7 +235,7 @@ function Editor(): React.ReactElement {
     };
 
     const handleForeshadowingCreate = (note: ForeshadowingNote) => {
-        setForeshadowings(prev => [note, ...prev]);
+        chapterDraft.addForeshadowing(note);
         setActiveForeshadowingId(note.id);
         setIsForeshadowingPanelOpen(true);
         setSaveStatus('unsaved');
@@ -258,15 +247,13 @@ function Editor(): React.ReactElement {
     };
 
     const handleForeshadowingNoteChange = (id: string, noteText: string) => {
-        setForeshadowings(prev => prev.map(item => (
-            item.id === id ? { ...item, note: noteText, updatedAt: Date.now() } : item
-        )));
+        chapterDraft.updateForeshadowingNote(id, noteText, Date.now());
         setSaveStatus('unsaved');
     };
 
     const handleDeleteForeshadowing = (id: string) => {
         editorRef.current?.removeForeshadowing(id);
-        setForeshadowings(prev => prev.filter(item => item.id !== id));
+        chapterDraft.removeForeshadowing(id);
         setActiveForeshadowingId(prev => prev === id ? null : prev);
         setSaveStatus('unsaved');
     };
@@ -277,14 +264,14 @@ function Editor(): React.ReactElement {
     };
 
     const handleAIContinue = async () => {
-        if (!content || isAiLoading) return;
+        if (!chapterDraft.content || isAiLoading) return;
         setIsAiLoading(true);
         try {
             let contextToSend = "";
             if (editorRef.current && editorRef.current.editor) {
                 contextToSend = editorRef.current.editor.getText().slice(-aiContinueSettings.contextChars);
             } else {
-                contextToSend = getEditorPlainText(content).slice(-aiContinueSettings.contextChars);
+                contextToSend = getEditorPlainText(chapterDraft.content).slice(-aiContinueSettings.contextChars);
             }
 
             const response = await apiClient.post('/ai/continue', {
@@ -316,7 +303,7 @@ function Editor(): React.ReactElement {
 
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const newTitle = e.target.value;
-        setTitle(newTitle);
+        chapterDraft.setTitle(newTitle);
         setSaveStatus('unsaved');
     };
 
@@ -347,13 +334,13 @@ function Editor(): React.ReactElement {
         const chapter = volume?.chapters.find(c => c.id === chapterId);
         if (volume && chapter && chapter.title !== value) {
             const isCurrentChapter = activeChapterId === chapterId;
-            const currentContent = isCurrentChapter ? content : (chapter.content || '');
-            const currentWordCount = isCurrentChapter ? wordCount : (chapter.wordCount || 0);
-            const currentForeshadowings = isCurrentChapter ? foreshadowings : (chapter.foreshadowings || []);
+            const currentContent = isCurrentChapter ? chapterDraft.content : (chapter.content || '');
+            const currentWordCount = isCurrentChapter ? chapterDraft.wordCount : (chapter.wordCount || 0);
+            const currentForeshadowings = isCurrentChapter ? chapterDraft.foreshadowings : (chapter.foreshadowings || []);
             // Update the current title before awaiting: an old request must not
             // overwrite the title after the user switches chapters.
             if (isCurrentChapter) {
-                setTitle(value);
+                chapterDraft.setTitle(value);
                 setSaveStatus('unsaved');
             }
             const ok = await updateChapterContent(book.id, volume.id, chapterId, value, currentContent, currentWordCount, currentForeshadowings);
@@ -389,7 +376,7 @@ function Editor(): React.ReactElement {
     const prepareContentForExport = () => {
         if (!editorRef.current || !activeChapter) return null;
         // Concat title and editor HTML
-        return buildChapterExportHtml(title, editorRef.current.getHTML());
+        return buildChapterExportHtml(chapterDraft.title, editorRef.current.getHTML());
     };
 
     const handleExportWord = async (e: React.MouseEvent) => {
@@ -400,14 +387,14 @@ function Editor(): React.ReactElement {
             const htmlContent = prepareContentForExport();
             if (!htmlContent) return;
 
-            const htmlDocument = buildWordExportDocument(title, htmlContent);
+            const htmlDocument = buildWordExportDocument(chapterDraft.title, htmlContent);
 
             if (asBlob) {
                 const buffer = await asBlob(htmlDocument, {
                     orientation: 'portrait',
                     margins: { top: 720, right: 720, bottom: 720, left: 720 } // Twips (1/1440 inch)
                 });
-                saveAs(buffer as Blob, `${title}.docx`);
+                saveAs(buffer as Blob, `${chapterDraft.title}.docx`);
             } else {
                 alert("Libraries 'html-docx-js-typescript' and 'file-saver' are required.");
             }
@@ -437,7 +424,7 @@ function Editor(): React.ReactElement {
 
             const opt = {
                 margin: 1, // inch
-                filename: `${title}.pdf`,
+                filename: `${chapterDraft.title}.pdf`,
                 image: { type: 'jpeg', quality: 0.98 },
                 html2canvas: { scale: 2, useCORS: true }, // scale: 2 improves clarity
                 jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
@@ -480,11 +467,11 @@ function Editor(): React.ReactElement {
             <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-950 shadow-xl z-10">
                 <EditorHeader
                     volumeTitle={activeVolume?.title}
-                    chapterTitle={title}
+                    chapterTitle={chapterDraft.title}
                     hasActiveChapter={!!activeChapter}
                     saveStatus={saveStatus}
                     isAiLoading={isAiLoading}
-                    isReadOnly={isReadOnly}
+                    isReadOnly={chapterDraft.isReadOnly}
                     isContextPanelOpen={isForeshadowingPanelOpen}
                     contextPanelItemCount={contextPanelItemCount}
                     isExporting={isExporting}
@@ -514,16 +501,16 @@ function Editor(): React.ReactElement {
                                         <input
                                             className="w-full text-4xl font-bold text-slate-900 dark:text-white placeholder-slate-300 dark:placeholder-slate-600 border-none focus:ring-0 focus:outline-none font-serif bg-transparent p-0 disabled:opacity-70 disabled:cursor-not-allowed"
                                             placeholder="Chapter Title"
-                                            value={title}
+                                            value={chapterDraft.title}
                                             onChange={handleTitleChange}
-                                            disabled={isReadOnly}
+                                            disabled={chapterDraft.isReadOnly}
                                         />
                                     </div>
                                     <div className="mt-4 h-px bg-slate-100 dark:bg-slate-800 w-full"></div>
 
                                     <TiptapEditor
                                         ref={editorRef}
-                                        content={content}
+                                        content={chapterDraft.content}
                                         contentId = {activeChapterId}
                                         characters={book?.characters}
                                         autoHighlightCharacters={autoHighlightCharacters}
@@ -531,7 +518,7 @@ function Editor(): React.ReactElement {
                                         onCharacterClick={handleCharacterClick}
                                         onForeshadowingCreate={handleForeshadowingCreate}
                                         onForeshadowingClick={handleForeshadowingClick}
-                                        isEditable={!isReadOnly}
+                                        isEditable={!chapterDraft.isReadOnly}
                                         onToggleReadOnly={handleToggleReadOnly}
                                         placeholder="Start writing your story here... Type '@' to mention a character."
                                         editorMarginPx={editorSpacingSettings.editorMarginPx}
@@ -549,11 +536,11 @@ function Editor(): React.ReactElement {
 
                     <WritingContextPanel
                         isOpen={isForeshadowingPanelOpen}
-                        foreshadowings={foreshadowings}
+                        foreshadowings={chapterDraft.foreshadowings}
                         excerptMap={foreshadowingExcerptMap}
                         activeForeshadowingId={activeForeshadowingId}
                         plotSettings={linkedPlotSettings}
-                        isReadOnly={isReadOnly}
+                        isReadOnly={chapterDraft.isReadOnly}
                         canOpenOutline={!!activeChapterId}
                         onClose={() => setIsForeshadowingPanelOpen(false)}
                         onFocusForeshadowing={handleFocusForeshadowing}
@@ -565,7 +552,7 @@ function Editor(): React.ReactElement {
 
                 <footer className="h-8 bg-white dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 text-xs text-slate-500 dark:text-slate-400 select-none flex-shrink-0 z-20">
                     <div className="flex gap-4">
-                        <span>Words: <span className="font-mono text-slate-700 dark:text-slate-200">{wordCount}</span></span>
+                        <span>Words: <span className="font-mono text-slate-700 dark:text-slate-200">{chapterDraft.wordCount}</span></span>
                     </div>
                     <div><span>StoryArk Sprint 5</span></div>
                 </footer>
