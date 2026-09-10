@@ -7,6 +7,8 @@ import Login from '../pages/Login';
 import Register from '../pages/Register';
 import UserSettings from '../pages/UserSettings';
 import { AppProvider } from '../InteractionContent/AppContext';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { queryClient } from '../InteractionContent/queryClient';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { Palette, ChevronRight, LogIn } from 'lucide-react';
 import CharacterSettings from "../pages/CharacterSettings.tsx";
@@ -115,7 +117,13 @@ const router = createHashRouter(createRoutesFromElements(
 ));
 
 function App(): React.ReactElement {
-  return <AppProvider><RouterProvider router={router} /></AppProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppProvider>
+        <RouterProvider router={router} />
+      </AppProvider>
+    </QueryClientProvider>
+  );
 }
 
 export default App;

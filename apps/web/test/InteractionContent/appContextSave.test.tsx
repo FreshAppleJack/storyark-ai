@@ -1,5 +1,6 @@
 import React from 'react';
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const api = vi.hoisted(() => ({
@@ -31,8 +32,12 @@ const booksResponse = [
     },
 ];
 
-function wrapper({ children }: { children: React.ReactNode }) {
-    return <AppProvider>{children}</AppProvider>;
+function createWrapper() {
+    // Fresh client per test so cached books never bleed between cases.
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return function wrapper({ children }: { children: React.ReactNode }) {
+        return <QueryClientProvider client={client}><AppProvider>{children}</AppProvider></QueryClientProvider>;
+    };
 }
 
 beforeEach(() => {
@@ -50,10 +55,12 @@ afterEach(() => {
 });
 
 async function loginAndLoadBooks() {
-    const { result } = renderHook(() => useApp(), { wrapper });
+    const { result } = renderHook(() => useApp(), { wrapper: createWrapper() });
     await act(async () => {
         await result.current.login('tester', 'pw');
     });
+    // Login is auth-only; the books query loads asynchronously once user is set.
+    await waitFor(() => expect(result.current.getBook('1')).toBeDefined());
     return result;
 }
 
@@ -67,6 +74,9 @@ describe('AppContext updateChapterContent', () => {
         let remove!: Promise<boolean>;
         let removeVolume!: Promise<boolean>;
         await act(async () => { save = result.current.updateChapterContent('1', '2', '3', 'Saved', 'New body', 2); });
+        // Query cache updates reach the render-closure books on the next
+        // observer notification; wait for it before the lock reads them.
+        await waitFor(() => expect(result.current.getBook('1')?.volumes[0].chapters[0].content).toBe('New body'));
         await act(async () => { lock = result.current.toggleChapterLock('1', '2', '3'); });
         // Start both deletions from the same render so volume deletion sees its chapters.
         await act(async () => {
@@ -131,9 +141,11 @@ describe('AppContext updateChapterContent', () => {
             content: 'new body',
             wordCount: 5,
         }));
-        const chapter = result.current.getBook('1')?.volumes[0].chapters[0];
-        expect(chapter?.title).toBe('Renamed');
-        expect(chapter?.content).toBe('new body');
+        await waitFor(() => {
+            const chapter = result.current.getBook('1')?.volumes[0].chapters[0];
+            expect(chapter?.title).toBe('Renamed');
+            expect(chapter?.content).toBe('new body');
+        });
     });
 
     it('returns false but keeps the optimistic update when the PUT fails', async () => {
@@ -148,8 +160,10 @@ describe('AppContext updateChapterContent', () => {
         // The caller decides how to surface the failure; the local draft must
         // not be rolled back silently.
         expect(ok).toBe(false);
-        const chapter = result.current.getBook('1')?.volumes[0].chapters[0];
-        expect(chapter?.title).toBe('Renamed');
-        expect(chapter?.content).toBe('new body');
+        await waitFor(() => {
+            const chapter = result.current.getBook('1')?.volumes[0].chapters[0];
+            expect(chapter?.title).toBe('Renamed');
+            expect(chapter?.content).toBe('new body');
+        });
     });
 });
