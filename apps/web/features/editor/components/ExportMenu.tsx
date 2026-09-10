@@ -23,11 +23,13 @@ export function ExportMenu({ isExporting, onExportWord, onExportPdf }: ExportMen
     }, []);
 
     const handleExportWord = (event: React.MouseEvent) => {
+        if (isExporting) return;
         setIsOpen(false);
         onExportWord(event);
     };
 
     const handleExportPdf = (event: React.MouseEvent) => {
+        if (isExporting) return;
         setIsOpen(false);
         onExportPdf(event);
     };
@@ -50,6 +52,7 @@ export function ExportMenu({ isExporting, onExportWord, onExportPdf }: ExportMen
                         Export as...
                     </div>
                     <button
+                        disabled={isExporting}
                         onClick={handleExportWord}
                         className="w-full text-left px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-brand-50 dark:hover:bg-brand-950/40 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-3 transition-colors"
                     >
@@ -63,6 +66,7 @@ export function ExportMenu({ isExporting, onExportWord, onExportPdf }: ExportMen
                     </button>
                     <div className="h-px bg-slate-100 dark:bg-slate-800 w-full"></div>
                     <button
+                        disabled={isExporting}
                         onClick={handleExportPdf}
                         className="w-full text-left px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-brand-50 dark:hover:bg-brand-950/40 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-3 transition-colors"
                     >

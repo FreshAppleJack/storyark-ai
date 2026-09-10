@@ -5,17 +5,14 @@ import { useApp } from '../InteractionContent/AppContext';
 import apiClient from '../services/api';
 import TiptapEditor, { TiptapEditorRef } from '../components/TiptapEditor';
 import { Chapter, ForeshadowingNote, PlotSetting, Volume } from '../types';
-import { saveAs } from 'file-saver';
-import { asBlob } from 'html-docx-js-typescript';
-import html2pdf from 'html2pdf.js';
 import { ChapterNavigator, NavigatorDeleteTarget } from '../features/editor/components/ChapterNavigator';
 import { EditorHeader } from '../features/editor/components/EditorHeader';
 import { WritingContextPanel } from '../features/editor/components/WritingContextPanel';
 import { getEditorPlainText, getForeshadowingExcerptMap } from '../domain/chapterContent';
-import { buildChapterExportHtml, buildWordExportDocument } from '../features/editor/utils/exportHtml';
 import { useChapterDraft } from '../features/editor/hooks/useChapterDraft';
 import { useChapterAutosave } from '../features/editor/hooks/useChapterAutosave';
 import { useAiContinue } from '../features/editor/hooks/useAiContinue';
+import { useChapterExport } from '../features/editor/export/useChapterExport';
 
 function Editor(): React.ReactElement {
     const { bookId } = useParams<{ bookId: string }>();
@@ -48,10 +45,17 @@ function Editor(): React.ReactElement {
     const [activeForeshadowingId, setActiveForeshadowingId] = useState<string | null>(null);
     const [isForeshadowingPanelOpen, setIsForeshadowingPanelOpen] = useState(false);
 
-    // Export State
-    const [isExporting, setIsExporting] = useState(false);
-
     const editorRef = useRef<TiptapEditorRef>(null);
+
+    const { isExporting, runExport } = useChapterExport({
+        getSnapshot: () => activeChapter && editorRef.current
+            ? { title: chapterDraft.title, editorHtml: editorRef.current.getHTML() }
+            : null,
+        onError: (format, error) => {
+            console.error(`${format.toUpperCase()} export failed:`, error);
+            toast.error(`${format === 'docx' ? 'Word' : 'PDF'} export failed. Please try again.`);
+        },
+    });
 
     // AI continuation with chapter-switch protection: results arriving after
     // a switch are dropped, and a stale request never clears a newer one.
@@ -383,76 +387,14 @@ function Editor(): React.ReactElement {
         if (book) reorderChapters(book.id, volumeId, chapters);
     };
 
-    // --- EXPORT LOGIC ---
-
-    const prepareContentForExport = () => {
-        if (!editorRef.current || !activeChapter) return null;
-        // Concat title and editor HTML
-        return buildChapterExportHtml(chapterDraft.title, editorRef.current.getHTML());
+    const handleExportWord = (event: React.MouseEvent) => {
+        event.stopPropagation();
+        void runExport('docx');
     };
 
-    const handleExportWord = async (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setIsExporting(true);
-
-        try {
-            const htmlContent = prepareContentForExport();
-            if (!htmlContent) return;
-
-            const htmlDocument = buildWordExportDocument(chapterDraft.title, htmlContent);
-
-            if (asBlob) {
-                const buffer = await asBlob(htmlDocument, {
-                    orientation: 'portrait',
-                    margins: { top: 720, right: 720, bottom: 720, left: 720 } // Twips (1/1440 inch)
-                });
-                saveAs(buffer as Blob, `${chapterDraft.title}.docx`);
-            } else {
-                alert("Libraries 'html-docx-js-typescript' and 'file-saver' are required.");
-            }
-        } catch (error) {
-            console.error("Export Word failed:", error);
-            alert("Export failed.");
-        } finally {
-            setIsExporting(false);
-        }
-    };
-
-    const handleExportPDF = (e: React.MouseEvent) => {
-        e.stopPropagation();
-        setIsExporting(true);
-
-        // For better PDF effect, we clone a hidden DOM element to generate PDF
-        // Avoid including editor's cursor, UI controls, etc.
-        try {
-            const element = document.createElement('div');
-            element.innerHTML = prepareContentForExport() || '';
-            // Temporarily apply styles to the cloned element
-            element.style.fontFamily = '"Songti SC", serif';
-            element.style.fontSize = '12pt';
-            element.style.lineHeight = '1.8';
-            element.style.color = '#000';
-            element.style.padding = '40px';
-
-            const opt = {
-                margin: 1, // inch
-                filename: `${chapterDraft.title}.pdf`,
-                image: { type: 'jpeg', quality: 0.98 },
-                html2canvas: { scale: 2, useCORS: true }, // scale: 2 improves clarity
-                jsPDF: { unit: 'in', format: 'a4', orientation: 'portrait' },
-                pagebreak: { mode: ['avoid-all', 'css', 'legacy'] } // Avoid cutting text
-            };
-
-            if (html2pdf) {
-                html2pdf().set(opt as any).from(element).save();
-            } else {
-                alert("Library 'html2pdf.js' is required.");
-            }
-        } catch (error) {
-            console.error("Export PDF failed:", error);
-        } finally {
-            setIsExporting(false);
-        }
+    const handleExportPDF = (event: React.MouseEvent) => {
+        event.stopPropagation();
+        void runExport('pdf');
     };
 
     if (!book) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-400">Loading Book Data...</div>;

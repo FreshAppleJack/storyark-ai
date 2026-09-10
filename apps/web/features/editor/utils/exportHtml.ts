@@ -1,6 +1,6 @@
 /**
  * Pure HTML builders for chapter export (Word / PDF).
- * The handlers in the page own editor access and file saving; these functions
+ * The page captures editor content and the export service owns file saving; these functions
  * only assemble the markup so they can be unit-tested without a DOM editor.
  */
 
