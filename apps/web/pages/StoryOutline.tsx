@@ -58,6 +58,8 @@ const StoryOutline: React.FC = () => {
     const [plotSearchQuery, setPlotSearchQuery] = useState('');
     const [linkedChapterSearchQuery, setLinkedChapterSearchQuery] = useState('');
     const [isLoading, setIsLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
+    const [loadAttempt, setLoadAttempt] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saved'>('idle');
     const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -74,8 +76,14 @@ const StoryOutline: React.FC = () => {
         const loadPlanning = async () => {
             if (!bookId) return;
             setIsLoading(true);
+            setLoadError(false);
             const loadedPlanning = await fetchStoryPlanning(bookId);
             if (!isMounted) return;
+            if (!loadedPlanning) {
+                setLoadError(true);
+                setIsLoading(false);
+                return;
+            }
             setPlanning(loadedPlanning);
             setSelectedPlotId(loadedPlanning.plotSettings[0]?.id || null);
             setSaveState('idle');
@@ -84,7 +92,7 @@ const StoryOutline: React.FC = () => {
 
         void loadPlanning();
         return () => { isMounted = false; };
-    }, [bookId]);
+    }, [bookId, loadAttempt]);
 
     const chapterOptions = useMemo<ChapterOption[]>(() => {
         if (!book) return [];
@@ -335,7 +343,7 @@ const StoryOutline: React.FC = () => {
                             Saved
                         </span>
                     )}
-                    <Button onClick={handleSave} disabled={isSaving || isLoading} icon={isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}>
+                    <Button onClick={handleSave} disabled={isSaving || isLoading || loadError} icon={isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}>
                         {isSaving ? 'Saving...' : 'Save Planning'}
                     </Button>
                     <Button variant="secondary" onClick={openAiBrainstorm} icon={<BrainCircuit size={16} />}>
@@ -344,7 +352,12 @@ const StoryOutline: React.FC = () => {
                 </div>
             </header>
 
-            {isLoading ? (
+            {loadError ? (
+                <div role="alert" className="flex-1 flex flex-col items-center justify-center gap-4 text-slate-500">
+                    <p>Could not load this workspace. Retry before making changes.</p>
+                    <Button onClick={() => setLoadAttempt(attempt => attempt + 1)}>Retry</Button>
+                </div>
+            ) : isLoading ? (
                 <div className="flex-1 flex items-center justify-center text-slate-400">
                     <Loader2 size={22} className="animate-spin mr-2" />
                     Loading planning workspace...

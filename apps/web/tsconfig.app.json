@@ -28,6 +28,7 @@
     "pages",
     "components",
     "domain",
+    "data",
     "features",
     "services",
     "utils",

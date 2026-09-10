@@ -9,27 +9,34 @@ import {
     Relation,
     ForeshadowingNote,
     EditorSpacingSettings,
-    EDITOR_SPACING_LIMITS,
     AiContinueSettings,
-    AI_CONTINUE_LIMITS,
     AutoHighlightSettings,
-    CHARACTER_ROLE_OPTIONS,
     CharacterRole,
     StoryPlanning,
-    ChapterSummary,
-    PlotSetting,
     BookStatus
 } from '../types';
-import apiClient from '../services/api';
+import { normalizeCharacterPatch } from '../domain/characterInput';
+import { normalizeStoryPlanning } from '../domain/storyPlanning';
+import {
+    DEFAULT_EDITOR_SPACING_SETTINGS, DEFAULT_AI_CONTINUE_SETTINGS,
+    normalizeEditorSpacingSettings, normalizeAiContinueSettings, normalizeAutoHighlightSettings,
+} from '../domain/preferences';
+import { accountApi } from '../data/accountApi';
+import { booksApi } from '../data/booksApi';
+import { chaptersApi } from '../data/chaptersApi';
+import { charactersApi } from '../data/charactersApi';
+import { workspaceApi } from '../data/workspaceApi';
 import { calculateMixedWordCount } from '../utils/textUtils';
 import type { Node, Edge } from '@xyflow/react';
 
-// Add graph data interface definition
-interface GraphData {
-    nodes: any[]; // Correspond to the GraphNode in backend
-    edges: any[]; // Correspond to the Relation in backend (use nodeKey)
-}
+import type { GraphData } from '../data/dto';
 
+/** Remote writes return true only after persistence; false keeps optimistic drafts.
+ * Book/volume/chapter creates return an ID or null; character creation returns a boolean.
+ * Remote reads return null on failure, never fake empty data.
+ * Preference setters are local-first; remote preference sync is best effort.
+ * Login reports authentication only; initial settings/books load independently.
+ */
 interface AppContextType {
     user: User | null;
     books: Book[];
@@ -52,186 +59,40 @@ interface AppContextType {
     // Returns true only when the PUT actually succeeded; the optimistic local
     // update alone is NOT proof of persistence.
     updateChapterContent: (bookId: string, volumeId: string, chapterId: string, title: string, content: string, wordCount?: number, foreshadowings?: ForeshadowingNote[]) => Promise<boolean>;
-    toggleChapterLock: (bookId: string, volumeId: string, chapterId: string) => Promise<void>;
+    toggleChapterLock: (bookId: string, volumeId: string, chapterId: string) => Promise<boolean>;
 
     createVolume: (bookId: string, title: string) => Promise<string | null>;
-    updateVolume: (bookId: string, volumeId: string, title: string) => Promise<void>;
-    deleteVolume: (bookId: string, volumeId: string) => Promise<void>;
+    updateVolume: (bookId: string, volumeId: string, title: string) => Promise<boolean>;
+    deleteVolume: (bookId: string, volumeId: string) => Promise<boolean>;
     createChapter: (bookId: string, volumeId: string, title: string) => Promise<string | null>;
-    deleteChapter: (bookId: string, volumeId: string, chapterId: string) => Promise<void>;
+    deleteChapter: (bookId: string, volumeId: string, chapterId: string) => Promise<boolean>;
 
-    reorderVolumes: (bookId: string, newVolumes: Volume[]) => Promise<void>;
-    reorderChapters: (bookId: string, volumeId: string, newChapters: Chapter[]) => Promise<void>;
-    reorderCharacters: (bookId: string, newCharacters: Character[]) => Promise<void>;
+    reorderVolumes: (bookId: string, newVolumes: Volume[]) => Promise<boolean>;
+    reorderChapters: (bookId: string, volumeId: string, newChapters: Chapter[]) => Promise<boolean>;
+    reorderCharacters: (bookId: string, newCharacters: Character[]) => Promise<boolean>;
 
-    updateBook: (bookId: string, data: { title?: string, status?: 'serializing' | 'completed' }) => Promise<void>;
-    deleteBook: (bookId: string) => Promise<void>;
+    updateBook: (bookId: string, data: { title?: string, status?: 'serializing' | 'completed' }) => Promise<boolean>;
+    deleteBook: (bookId: string) => Promise<boolean>;
 
-    createCharacter: (bookId: string, data: Partial<Character>) => Promise<void>;
-    updateCharacter: (bookId: string, charId: string, data: Partial<Character>) => Promise<void>;
-    deleteCharacter: (bookId: string, charId: string) => Promise<void>;
+    createCharacter: (bookId: string, data: Partial<Character>) => Promise<boolean>;
+    updateCharacter: (bookId: string, charId: string, data: Partial<Character>) => Promise<boolean>;
+    deleteCharacter: (bookId: string, charId: string) => Promise<boolean>;
 
-    getRelations: (bookId: string) => Promise<Relation[]>;
+    getRelations: (bookId: string) => Promise<Relation[] | null>;
 
     // Add graph data methods methods
     fetchGraphData: (bookId: string) => Promise<GraphData | null>;
     saveGraphData: (bookId: string, nodes: Node[], edges: Edge[]) => Promise<boolean>;
-    fetchStoryPlanning: (bookId: string) => Promise<StoryPlanning>;
+    fetchStoryPlanning: (bookId: string) => Promise<StoryPlanning | null>;
     saveStoryPlanning: (bookId: string, planning: StoryPlanning) => Promise<boolean>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const STATUS_MAP_TO_UI = {
-    1: 'serializing',
-    2: 'completed'
-} as const;
-
-const STATUS_MAP_TO_API: Record<BookStatus, 1 | 2> = {
-    'serializing': 1,
-    'completed': 2
-} as const;
-
-const parseJsonSafe = (jsonStr: any, fallback: any) => {
-    if (typeof jsonStr !== 'string') return jsonStr || fallback;
-    try {
-        return JSON.parse(jsonStr);
-    } catch (e) {
-        return fallback;
-    }
-};
-
-const parseTags = (tags: any): string[] => {
-    if (Array.isArray(tags)) return tags;
-    if (typeof tags === 'string') {
-        try {
-            const parsed = JSON.parse(tags);
-            if (Array.isArray(parsed)) return parsed;
-        } catch (e) {
-            return tags.split(/[,，\s]+/).filter(Boolean);
-        }
-    }
-    return [];
-};
-
-const normalizeCharacterName = (name: any, fallback = 'Unknown') => {
-    return typeof name === 'string' && name.trim() ? name.trim() : fallback;
-};
-
-const normalizeCharacterAliases = (aliases: any, primaryName?: string): string[] => {
-    const rawAliases = Array.isArray(aliases) ? aliases : parseJsonSafe(aliases, []);
-    if (!Array.isArray(rawAliases)) return [];
-
-    const primary = typeof primaryName === 'string' ? primaryName.trim() : '';
-    const seen = new Set<string>();
-    const normalized: string[] = [];
-
-    for (const alias of rawAliases) {
-        if (typeof alias !== 'string') continue;
-        const trimmed = alias.trim();
-        if (!trimmed || trimmed === primary || seen.has(trimmed)) continue;
-        seen.add(trimmed);
-        normalized.push(trimmed);
-        if (normalized.length >= 3) break;
-    }
-
-    return normalized;
-};
-
-const DEFAULT_EDITOR_SPACING_SETTINGS: EditorSpacingSettings = {
-    editorMarginPx: EDITOR_SPACING_LIMITS.marginPx.default,
-    editorLineHeight: EDITOR_SPACING_LIMITS.lineHeight.default,
-};
-
-const DEFAULT_AI_CONTINUE_SETTINGS: AiContinueSettings = {
-    contextChars: AI_CONTINUE_LIMITS.contextChars.default,
-    outputChars: AI_CONTINUE_LIMITS.outputChars.default,
-};
-
-const DEFAULT_STORY_PLANNING: StoryPlanning = {
-    storySummary: '',
-    storyBackground: '',
-    chapterSummaries: [],
-    plotSettings: [],
-};
-
-const VALID_CHARACTER_ROLES = new Set<CharacterRole>(CHARACTER_ROLE_OPTIONS.map(role => role.value));
-
-const normalizeAutoHighlightSettings = (settings?: Partial<AutoHighlightSettings> | null): AutoHighlightSettings => {
-    const disabledRoles = Array.isArray(settings?.disabledRoles) ? settings.disabledRoles : [];
-    const uniqueDisabledRoles = Array.from(new Set(disabledRoles.filter((role): role is CharacterRole => VALID_CHARACTER_ROLES.has(role as CharacterRole))));
-
-    return {
-        disabledRoles: uniqueDisabledRoles,
-    };
-};
-
-const clampNumber = (value: number, min: number, max: number) => {
-    if (!Number.isFinite(value)) return min;
-    return Math.min(max, Math.max(min, value));
-};
-
-const normalizeEditorSpacingSettings = (settings?: Partial<EditorSpacingSettings> | null): EditorSpacingSettings => {
-    const rawMargin = Number(settings?.editorMarginPx ?? DEFAULT_EDITOR_SPACING_SETTINGS.editorMarginPx);
-    const rawLineHeight = Number(settings?.editorLineHeight ?? DEFAULT_EDITOR_SPACING_SETTINGS.editorLineHeight);
-
-    return {
-        editorMarginPx: clampNumber(rawMargin, EDITOR_SPACING_LIMITS.marginPx.min, EDITOR_SPACING_LIMITS.marginPx.max),
-        editorLineHeight: Number(clampNumber(rawLineHeight, EDITOR_SPACING_LIMITS.lineHeight.min, EDITOR_SPACING_LIMITS.lineHeight.max).toFixed(2)),
-    };
-};
-
-const normalizeAiContinueSettings = (settings?: Partial<AiContinueSettings> | null): AiContinueSettings => {
-    const rawContextChars = Number(settings?.contextChars ?? DEFAULT_AI_CONTINUE_SETTINGS.contextChars);
-    const rawOutputChars = Number(settings?.outputChars ?? DEFAULT_AI_CONTINUE_SETTINGS.outputChars);
-
-    return {
-        contextChars: Math.round(clampNumber(rawContextChars, AI_CONTINUE_LIMITS.contextChars.min, AI_CONTINUE_LIMITS.contextChars.max)),
-        outputChars: Math.round(clampNumber(rawOutputChars, AI_CONTINUE_LIMITS.outputChars.min, AI_CONTINUE_LIMITS.outputChars.max)),
-    };
-};
-
-const normalizeChapterSummaries = (value: any): ChapterSummary[] => {
-    const summaries = Array.isArray(value) ? value : parseJsonSafe(value, []);
-    if (!Array.isArray(summaries)) return [];
-
-    return summaries
-        .filter((item: any) => item?.chapterId)
-        .map((item: any) => ({
-            chapterId: String(item.chapterId),
-            summary: item.summary || '',
-            updatedAt: Number(item.updatedAt || Date.now()),
-        }));
-};
-
-const normalizePlotSettings = (value: any): PlotSetting[] => {
-    const settings = Array.isArray(value) ? value : parseJsonSafe(value, []);
-    if (!Array.isArray(settings)) return [];
-
-    return settings
-        .filter((item: any) => item?.id)
-        .map((item: any) => ({
-            id: String(item.id),
-            title: item.title || 'Untitled Plot',
-            details: item.details || '',
-            chapterIds: Array.isArray(item.chapterIds) ? item.chapterIds.map((id: any) => String(id)) : [],
-            createdAt: Number(item.createdAt || Date.now()),
-            updatedAt: Number(item.updatedAt || Date.now()),
-        }));
-};
-
-const normalizeStoryPlanning = (data?: any): StoryPlanning => ({
-    storySummary: data?.storySummary || '',
-    storyBackground: data?.storyBackground || '',
-    chapterSummaries: normalizeChapterSummaries(data?.chapterSummaries),
-    plotSettings: normalizePlotSettings(data?.plotSettings),
-    updatedAt: data?.updatedAt ? new Date(data.updatedAt).getTime() : undefined,
-});
-
 const loadEditorSpacingSettingsFromStorage = (): EditorSpacingSettings => {
     try {
         return normalizeEditorSpacingSettings(JSON.parse(localStorage.getItem('storyark_editor_spacing') || 'null'));
-    } catch (e) {
+    } catch {
         return DEFAULT_EDITOR_SPACING_SETTINGS;
     }
 };
@@ -239,7 +100,7 @@ const loadEditorSpacingSettingsFromStorage = (): EditorSpacingSettings => {
 const loadAutoHighlightSettingsFromStorage = (): AutoHighlightSettings => {
     try {
         return normalizeAutoHighlightSettings(JSON.parse(localStorage.getItem('storyark_auto_highlight') || 'null'));
-    } catch (e) {
+    } catch {
         return { disabledRoles: [] };
     }
 };
@@ -247,7 +108,7 @@ const loadAutoHighlightSettingsFromStorage = (): AutoHighlightSettings => {
 const loadAiContinueSettingsFromStorage = (): AiContinueSettings => {
     try {
         return normalizeAiContinueSettings(JSON.parse(localStorage.getItem('storyark_ai_continue') || 'null'));
-    } catch (e) {
+    } catch {
         return DEFAULT_AI_CONTINUE_SETTINGS;
     }
 };
@@ -287,21 +148,11 @@ export function AppProvider({
 
     const loadUserSettingsPreference = async () => {
         try {
-            const settings = await apiClient.get('/user-settings/me') as any;
-            if (typeof settings.darkMode === 'boolean') {
-                setIsDarkMode(settings.darkMode);
-            }
-            setEditorSpacingSettings(normalizeEditorSpacingSettings({
-                editorMarginPx: settings.editorMarginPx,
-                editorLineHeight: settings.editorLineHeight,
-            }));
-            setAiContinueSettings(normalizeAiContinueSettings({
-                contextChars: settings.aiContinueContextChars,
-                outputChars: settings.aiContinueOutputChars,
-            }));
-            setAutoHighlightSettings(normalizeAutoHighlightSettings({
-                disabledRoles: parseJsonSafe(settings.autoHighlightTags, []),
-            }));
+            const settings = await accountApi.getPreferences();
+            if (typeof settings.darkMode === 'boolean') setIsDarkMode(settings.darkMode);
+            setEditorSpacingSettings(settings.spacing);
+            setAiContinueSettings(settings.aiContinue);
+            setAutoHighlightSettings(settings.autoHighlight);
         } catch (error) {
             console.error("Failed to load user settings:", error);
         }
@@ -310,7 +161,7 @@ export function AppProvider({
     const persistDarkModePreference = async (enabled: boolean) => {
         if (!user) return;
         try {
-            await apiClient.put('/user-settings/me/dark-mode', { darkMode: enabled });
+            await accountApi.saveDarkMode(enabled);
         } catch (error) {
             console.error("Failed to save dark mode setting:", error);
         }
@@ -319,7 +170,7 @@ export function AppProvider({
     const persistEditorSpacingPreference = async (settings: EditorSpacingSettings) => {
         if (!user) return;
         try {
-            await apiClient.put('/user-settings/me/editor-spacing', settings);
+            await accountApi.saveSpacing(settings);
         } catch (error) {
             console.error("Failed to save editor spacing settings:", error);
         }
@@ -328,10 +179,7 @@ export function AppProvider({
     const persistAiContinuePreference = async (settings: AiContinueSettings) => {
         if (!user) return;
         try {
-            await apiClient.put('/user-settings/me/ai-continue', {
-                aiContinueContextChars: settings.contextChars,
-                aiContinueOutputChars: settings.outputChars,
-            });
+            await accountApi.saveAiContinue(settings);
         } catch (error) {
             console.error("Failed to save AI continue settings:", error);
         }
@@ -340,7 +188,7 @@ export function AppProvider({
     const persistAutoHighlightPreference = async (settings: AutoHighlightSettings) => {
         if (!user) return;
         try {
-            await apiClient.put('/user-settings/me/auto-highlight', settings);
+            await accountApi.saveAutoHighlight(settings);
         } catch (error) {
             console.error("Failed to save auto-highlight settings:", error);
         }
@@ -403,7 +251,7 @@ export function AppProvider({
         setBooks(prev => prev.map(book => ({ ...book, author: normalizedNickname })));
 
         try {
-            const response = await apiClient.put('/auth/me/nickname', { nickname: normalizedNickname }) as any;
+            const response = await accountApi.updateNickname(normalizedNickname);
             const updatedNickname = response.nickname || normalizedNickname;
             setUser(prev => prev ? { ...prev, nickname: updatedNickname } : prev);
             setBooks(prev => prev.map(book => ({ ...book, author: updatedNickname })));
@@ -418,17 +266,10 @@ export function AppProvider({
 
     const login = async (username: string, pass: string) => {
         try {
-            const response = await apiClient.post('/auth/login', { username, password: pass });
-            const userData = response as any;
-            const appUser: User = {
-                id: userData.id,
-                username: userData.username,
-                nickname: userData.nickname,
-                isAuthenticated: true
-            };
+            const appUser = await accountApi.login(username, pass);
             setUser(appUser);
             await loadUserSettingsPreference();
-            await fetchBooks(userData.id, userData.nickname);
+            await fetchBooks(appUser.id, appUser.nickname);
             return true;
         } catch (error) {
             console.error("Login failed:", error);
@@ -438,7 +279,7 @@ export function AppProvider({
 
     const register = async (username: string, pass: string, nickname: string) => {
         try {
-            await apiClient.post('/auth/register', { username, password: pass, nickname });
+            await accountApi.register(username, pass, nickname);
             return true;
         } catch (error) {
             console.error("Registration failed:", error);
@@ -451,71 +292,23 @@ export function AppProvider({
         setBooks([]);
     };
 
-    const fetchBooks = async (userId: number, currentNickname?: string) => {
+    const fetchBooks = async (userId: string | number, currentNickname?: string) => {
         try {
-            const response = await apiClient.get(`/books?userId=${userId}`);
-            const bookList = response as unknown as any[];
-            const authorName = currentNickname || user?.nickname || 'Unknown';
-
-            const frontendBooks: Book[] = bookList.map((b: any) => {
-                const timeStr = b.updatedAt || b.createdAt;
-                return {
-                    id: b.id.toString(),
-                    title: b.title,
-                    author: authorName,
-                    coverColor: b.coverColor || 'bg-blue-600',
-                    lastModified: timeStr ? new Date(timeStr).getTime() : Date.now(),
-                    status: STATUS_MAP_TO_UI[b.status as 1 | 2] || 'serializing',
-                    volumes: b.volumes ? b.volumes.map((v: any) => ({
-                        id: v.id.toString(),
-                        title: v.title,
-                        chapters: v.chapters ? v.chapters.map((c: any) => ({
-                            id: c.id.toString(),
-                            title: c.title,
-                            content: c.content || '',
-                            wordCount: c.wordCount || 0,
-                            status: c.status || 'draft',
-                            isEditable: c.isEditable !== false,
-                            foreshadowings: parseJsonSafe(c.foreshadowings, [])
-                        })) : []
-                    })) : [],
-                    characters: Array.isArray(b.characters) ? b.characters.map((c: any) => ({
-                        id: c.id.toString(),
-                        bookId: b.id.toString(),
-                        name: normalizeCharacterName(c.name),
-                        aliases: normalizeCharacterAliases(c.aliases, c.name),
-                        role: c.role || 'supporting',
-                        description: c.description || '',
-                        avatar: c.avatar,
-                        color: c.color || '#3b82f6',
-                        tags: parseTags(c.tags),
-                        handleConfig: parseJsonSafe(c.handleConfig, null),
-                        // Compatibility with old fields in backend
-                        positionX: c.positionX,
-                        positionY: c.positionY
-                    })) : []
-                };
-            });
-
+            const frontendBooks = await booksApi.list(userId, currentNickname || user?.nickname || 'Unknown');
             setBooks(frontendBooks);
         } catch (error) {
             console.error("Failed to fetch books:", error);
         }
     };
 
-    // ... (createBook, updateBook, deleteBook, getBook, updateChapterContent, etc. unchanged)
     const createBook = async (title: string): Promise<string | null> => {
-        const userId = 1;
+        if (!user) return null;
+        const userId = user.id;
         try {
-            const response = await apiClient.post('/books', {
-                userId: userId,
-                title: title,
-                coverColor: `bg-${['blue', 'emerald', 'rose', 'amber', 'purple'][Math.floor(Math.random() * 5)]}-600`,
-                status: 1
-            });
-            const newBook = response as any;
+            const newBookId = await booksApi.create(userId, title,
+                `bg-${['blue', 'emerald', 'rose', 'amber', 'purple'][Math.floor(Math.random() * 5)]}-600`);
             await fetchBooks(userId, user?.nickname);
-            return newBook.id.toString();
+            return newBookId;
         } catch (error) {
             console.error("Failed to create book:", error);
             return null;
@@ -530,7 +323,7 @@ export function AppProvider({
         },
     ) => {
         const currentBook = books.find(book => book.id === bookId);
-        if (!currentBook) return;
+        if (!currentBook) return false;
 
         const newUiStatus: BookStatus = 
             data.status ?? currentBook.status;
@@ -549,26 +342,23 @@ export function AppProvider({
             ),
         );
 
-        const payload = {
-            id: Number(bookId),
-            title: newTitle,
-            status: STATUS_MAP_TO_API[newUiStatus],
-            coverColor: currentBook.coverColor,
-            userId: user?.username === currentBook.author ? 0 : 0
-        };
         try {
-            await apiClient.put(`/books/${bookId}`, payload);
+            await booksApi.update({ ...currentBook, title: newTitle, status: newUiStatus });
+            return true;
         } catch (error) {
             console.error("Failed to update book:", error);
+            return false;
         }
     };
 
     const deleteBook = async (bookId: string) => {
         setBooks(prev => prev.filter(b => b.id !== bookId));
         try {
-            await apiClient.delete(`/books/${bookId}`);
+            await booksApi.remove(bookId);
+            return true;
         } catch (error) {
             console.error("Failed to delete book:", error);
+            return false;
         }
     };
 
@@ -616,14 +406,13 @@ export function AppProvider({
         }));
 
         try {
-            await chapterWrites.run(bookId, chapterId, () => apiClient.put(`/story/chapters/${chapterId}?bookId=${bookId}`, {
+            await chapterWrites.run(bookId, chapterId, () => chaptersApi.updateChapter(bookId, volumeId, chapterId, {
                 title: title,
                 content: content,
                 wordCount: finalWordCount,
                 status: 'draft',
-                volumeId: Number(volumeId),
                 isEditable: currentEditable,
-                foreshadowings: JSON.stringify(currentForeshadowings)
+                foreshadowings: currentForeshadowings
             }));
             return true;
         } catch (error) {
@@ -637,7 +426,7 @@ export function AppProvider({
         const volume = book?.volumes.find(v => v.id === volumeId);
         const chapter = volume?.chapters.find(c => c.id === chapterId);
 
-        if (!chapter) return;
+        if (!chapter) return false;
 
         const newStatus = !chapter.isEditable;
 
@@ -659,17 +448,18 @@ export function AppProvider({
         }));
 
         try {
-            await chapterWrites.run(bookId, chapterId, () => apiClient.put(`/story/chapters/${chapterId}?bookId=${bookId}`, {
+            await chapterWrites.run(bookId, chapterId, () => chaptersApi.updateChapter(bookId, volumeId, chapterId, {
                 title: chapter.title,
                 content: chapter.content,
                 wordCount: chapter.wordCount,
                 status: chapter.status,
-                volumeId: Number(volumeId),
                 isEditable: newStatus,
-                foreshadowings: JSON.stringify(chapter.foreshadowings || [])
+                foreshadowings: chapter.foreshadowings || []
             }));
+            return true;
         } catch (error) {
             console.error("Failed to toggle chapter lock:", error);
+            return false;
         }
     };
 
@@ -687,14 +477,11 @@ export function AppProvider({
         }));
 
         try {
-            await apiClient.put(`/story/volumes/${volumeId}`, {
-                id: Number(volumeId),
-                title: title,
-                bookId: Number(bookId),
-                orderIndex: 0
-            });
+            await chaptersApi.updateVolume(bookId, volumeId, title);
+            return true;
         } catch (error) {
             console.error("Failed to update volume:", error);
+            return false;
         }
     };
 
@@ -710,9 +497,11 @@ export function AppProvider({
 
         try {
             await Promise.all(chapterIds.map(id => chapterWrites.drain(bookId, id)));
-            await apiClient.delete(`/story/volumes/${volumeId}?bookId=${bookId}`);
+            await chaptersApi.deleteVolume(bookId, volumeId);
+            return true;
         } catch (error) {
             console.error("Failed to delete volume:", error);
+            return false;
         }
     };
 
@@ -733,9 +522,11 @@ export function AppProvider({
         }));
 
         try {
-            await chapterWrites.run(bookId, chapterId, () => apiClient.delete(`/story/chapters/${chapterId}?bookId=${bookId}`));
+            await chapterWrites.run(bookId, chapterId, () => chaptersApi.deleteChapter(bookId, chapterId));
+            return true;
         } catch (error) {
             console.error("Failed to delete chapter:", error);
+            return false;
         }
     };
 
@@ -744,19 +535,7 @@ export function AppProvider({
         title: string,
     ) : Promise<string | null> => {
         try {
-            const response = await apiClient.post('/story/volumes', {
-                bookId: Number(bookId),
-                title: title,
-                orderIndex: 0
-            });
-
-            const newVolumeData = response as any;
-
-            const newVolume: Volume = {
-                id: newVolumeData.id.toString(),
-                title: newVolumeData.title,
-                chapters: [],
-            };
+            const newVolume = await chaptersApi.createVolume(bookId, title);
 
             setBooks(prev => prev.map(book => {
                 if (book.id !== bookId) return book;
@@ -767,7 +546,7 @@ export function AppProvider({
                 };
             }));
 
-            return newVolumeData.id.toString();
+            return newVolume.id;
         } catch (error) {
             console.error("Failed to create volume:", error);
             return null;
@@ -776,25 +555,7 @@ export function AppProvider({
 
     const createChapter = async (bookId: string, volumeId: string, title: string): Promise<string | null> => {
         try {
-            const response = await apiClient.post(`/story/chapters?bookId=${bookId}`, {
-                volumeId: Number(volumeId),
-                title: title,
-                content: '',
-                status: 'draft',
-                isEditable: true,
-                foreshadowings: '[]'
-            });
-            const newChapterData = response as any;
-
-            const newChapter: Chapter = {
-                id: newChapterData.id.toString(),
-                title: newChapterData.title,
-                content: '',
-                wordCount: 0,
-                status: 'draft',
-                isEditable: true,
-                foreshadowings: []
-            };
+            const newChapter = await chaptersApi.createChapter(bookId, volumeId, title);
 
             setBooks(prev => prev.map(b => {
                 if (b.id !== bookId) return b;
@@ -811,7 +572,7 @@ export function AppProvider({
                 };
             }));
 
-            return newChapterData.id.toString();
+            return newChapter.id;
         } catch (error) {
             console.error("Failed to create chapter:", error);
             return null;
@@ -828,11 +589,12 @@ export function AppProvider({
             };
         }));
 
-        const volumeIds = newVolumes.map(v => Number(v.id));
         try {
-            await apiClient.post(`/story/volumes/reorder?bookId=${bookId}`, volumeIds);
+            await chaptersApi.reorderVolumes(bookId, newVolumes.map(item => item.id));
+            return true;
         } catch (error) {
             console.error("Failed to reorder volumes:", error);
+            return false;
         }
     };
 
@@ -849,40 +611,18 @@ export function AppProvider({
             };
         }));
 
-        const chapterIds = newChapters.map(c => Number(c.id));
         try {
-            await apiClient.post(`/story/chapters/reorder?bookId=${bookId}`, chapterIds);
+            await chaptersApi.reorderChapters(bookId, newChapters.map(item => item.id));
+            return true;
         } catch (error) {
             console.error("Failed to reorder chapters:", error);
+            return false;
         }
     };
 
     const createCharacter = async (bookId: string, data: Partial<Character>) => {
         try {
-            const payload = {
-                name: normalizeCharacterName(data.name, 'New Character'),
-                aliases: normalizeCharacterAliases(data.aliases, data.name),
-                role: data.role || 'supporting',
-                description: data.description || '',
-                color: data.color || '#3b82f6',
-                tags: data.tags || [],
-                avatar: data.avatar
-            };
-
-            const response = await apiClient.post(`/books/${bookId}/characters`, payload);
-            const createdData = response as any;
-
-            const newChar: Character = {
-                id: createdData.id.toString(),
-                bookId: bookId,
-                name: normalizeCharacterName(createdData.name),
-                aliases: normalizeCharacterAliases(createdData.aliases, createdData.name),
-                role: createdData.role,
-                description: createdData.description,
-                color: createdData.color,
-                tags: parseTags(createdData.tags),
-                avatar: createdData.avatar
-            };
+            const newChar = await charactersApi.create(bookId, data);
 
             setBooks(prev => prev.map(b => {
                 if (b.id !== bookId) return b;
@@ -891,23 +631,18 @@ export function AppProvider({
                     characters: [...(b.characters || []), newChar]
                 };
             }));
+            return true;
         } catch (error) {
             console.error("Failed to create character:", error);
+            return false;
         }
     };
 
     const updateCharacter = async (bookId: string, charId: string, data: Partial<Character>) => {
-        const sanitizedData = { ...data };
-        if (typeof sanitizedData.name === 'string') {
-            const trimmedName = sanitizedData.name.trim();
-            if (!trimmedName) {
-                console.error("Failed to update character: character name cannot be empty");
-                return;
-            }
-            sanitizedData.name = trimmedName;
-        }
-        if (Array.isArray(sanitizedData.aliases)) {
-            sanitizedData.aliases = normalizeCharacterAliases(sanitizedData.aliases, sanitizedData.name);
+        const sanitizedData = normalizeCharacterPatch(data);
+        if (!sanitizedData) {
+            console.error("Failed to update character: character name cannot be empty");
+            return false;
         }
 
         setBooks(prev => prev.map(b => {
@@ -919,9 +654,11 @@ export function AppProvider({
         }));
 
         try {
-            await apiClient.put(`/books/${bookId}/characters/${charId}`, sanitizedData);
+            await charactersApi.update(bookId, charId, sanitizedData);
+            return true;
         } catch (error) {
             console.error("Failed to update character:", error);
+            return false;
         }
     };
 
@@ -935,9 +672,11 @@ export function AppProvider({
         }));
 
         try {
-            await apiClient.delete(`/books/${bookId}/characters/${charId}`);
+            await charactersApi.remove(bookId, charId);
+            return true;
         } catch (error) {
             console.error("Failed to delete character:", error);
+            return false;
         }
     };
 
@@ -950,35 +689,29 @@ export function AppProvider({
             };
         }));
 
-        const charIds = newCharacters.map(c => Number(c.id));
         try {
-            await apiClient.post(`/books/${bookId}/characters/reorder`, charIds);
+            await charactersApi.reorder(bookId, newCharacters.map(item => item.id));
+            return true;
         } catch (error) {
             console.error("Failed to reorder characters:", error);
+            return false;
         }
     };
 
     // this method for compatibility, but mainly use fetchGraphData to get relations
-    const getRelations = async (bookId: string): Promise<Relation[]> => {
+    const getRelations = async (bookId: string): Promise<Relation[] | null> => {
         try {
-            const response = await apiClient.get(`/books/${bookId}/relations`);
-            return (response as unknown as any[]).map(r => ({
-                id: r.id.toString(),
-                sourceCharId: r.sourceNodeKey || r.sourceCharId.toString(), // Compatibility with old fields in backend
-                targetCharId: r.targetNodeKey || r.targetCharId.toString(),
-                label: r.label
-            }));
+            return await workspaceApi.getRelations(bookId);
         } catch (error) {
             console.error("Failed to fetch relations:", error);
-            return [];
+            return null;
         }
     };
 
     // --- Get complete graph data (Nodes + Edges) ---
     const fetchGraphData = async (bookId: string): Promise<GraphData | null> => {
         try {
-            const response = await apiClient.get(`/books/${bookId}/graph`);
-            return response as unknown as GraphData;
+            return await workspaceApi.getGraph(bookId);
         } catch (error) {
             console.error("Failed to fetch graph data:", error);
             return null;
@@ -988,28 +721,7 @@ export function AppProvider({
     // --- Save complete graph data (Support multiple instance nodes) ---
     const saveGraphData = async (bookId: string, nodes: Node[], edges: Edge[]): Promise<boolean> => {
         try {
-            // Construct the payload to match the GraphController's payload
-            const payload = {
-                // Nodes: Save each React Flow node instance data
-                nodes: nodes.map(node => ({
-                    id: node.id, // React Flow ID (nodeKey)
-                    characterId: Number(node.data.id), // Original Character ID
-                    x: node.position.x,
-                    y: node.position.y,
-                    handleConfig: node.data.handleConfig
-                })),
-                // Edges: Connect React Flow ID (nodeKey)
-                // Save sourceHandle and targetHandle
-                edges: edges.map(edge => ({
-                    source: edge.source,
-                    target: edge.target,
-                    sourceHandle: edge.sourceHandle, // Save sourceHandle
-                    targetHandle: edge.targetHandle, // Save targetHandle
-                    label: edge.label || ''
-                }))
-            };
-
-            await apiClient.post(`/books/${bookId}/graph`, payload);
+            await workspaceApi.saveGraph(bookId, nodes, edges);
             return true;
 
         } catch (error) {
@@ -1018,10 +730,9 @@ export function AppProvider({
         }
     };
 
-    const fetchStoryPlanning = async (bookId: string): Promise<StoryPlanning> => {
+    const fetchStoryPlanning = async (bookId: string): Promise<StoryPlanning | null> => {
         try {
-            const response = await apiClient.get(`/books/${bookId}/planning`);
-            const planning = normalizeStoryPlanning(response);
+            const planning = await workspaceApi.getPlanning(bookId);
 
             setBooks(prev => prev.map(book => (
                 book.id === bookId ? { ...book, storyPlanning: planning } : book
@@ -1030,12 +741,12 @@ export function AppProvider({
             return planning;
         } catch (error) {
             console.error("Failed to fetch story planning:", error);
-            return DEFAULT_STORY_PLANNING;
+            return null;
         }
     };
 
     const saveStoryPlanning = async (bookId: string, planning: StoryPlanning): Promise<boolean> => {
-        const normalizedPlanning = normalizeStoryPlanning(planning);
+        const normalizedPlanning = normalizeStoryPlanning(planning, Date.now());
 
         setBooks(prev => prev.map(book => (
             book.id === bookId
@@ -1044,13 +755,7 @@ export function AppProvider({
         )));
 
         try {
-            const response = await apiClient.put(`/books/${bookId}/planning`, {
-                storySummary: normalizedPlanning.storySummary,
-                storyBackground: normalizedPlanning.storyBackground,
-                chapterSummaries: JSON.stringify(normalizedPlanning.chapterSummaries),
-                plotSettings: JSON.stringify(normalizedPlanning.plotSettings),
-            });
-            const savedPlanning = normalizeStoryPlanning(response);
+            const savedPlanning = await workspaceApi.savePlanning(bookId, normalizedPlanning);
             setBooks(prev => prev.map(book => (
                 book.id === bookId
                     ? { ...book, storyPlanning: savedPlanning, lastModified: Date.now() }

@@ -174,6 +174,11 @@ function Editor(): React.ReactElement {
             if (!bookId) return;
             const planning = await fetchStoryPlanning(bookId);
             if (!isMounted) return;
+            if (!planning) {
+                setPlotSettings([]);
+                toast.error('Could not load plot settings. Reopen the book to retry.');
+                return;
+            }
             setPlotSettings(planning.plotSettings);
         };
 

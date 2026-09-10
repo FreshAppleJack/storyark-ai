@@ -6,6 +6,7 @@ const api = vi.hoisted(() => ({
     get: vi.fn(),
     post: vi.fn(),
     put: vi.fn(),
+    delete: vi.fn(),
 }));
 
 vi.mock('../../services/api', () => ({ default: api }));
@@ -39,6 +40,7 @@ beforeEach(() => {
     api.post.mockResolvedValue({ id: 1, username: 'tester', nickname: 'Tester' });
     api.get.mockImplementation((url: string) => Promise.resolve(url.startsWith('/books') ? booksResponse : {}));
     api.put.mockResolvedValue({});
+    api.delete.mockResolvedValue({});
     // jsdom in this setup exposes no usable Storage (same as the page harness).
     vi.stubGlobal('localStorage', { getItem: () => null, setItem: vi.fn(), removeItem: vi.fn() });
 });
@@ -56,6 +58,44 @@ async function loginAndLoadBooks() {
 }
 
 describe('AppContext updateChapterContent', () => {
+    it('shares the save queue with lock and delete, then drains it before volume deletion', async () => {
+        const result = await loginAndLoadBooks();
+        let finish!: () => void;
+        api.put.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+        let save!: Promise<boolean>;
+        let lock!: Promise<boolean>;
+        let remove!: Promise<boolean>;
+        let removeVolume!: Promise<boolean>;
+        await act(async () => { save = result.current.updateChapterContent('1', '2', '3', 'Saved', 'New body', 2); });
+        await act(async () => { lock = result.current.toggleChapterLock('1', '2', '3'); });
+        // Start both deletions from the same render so volume deletion sees its chapters.
+        await act(async () => {
+            remove = result.current.deleteChapter('1', '2', '3');
+            removeVolume = result.current.deleteVolume('1', '2');
+        });
+        expect(api.put).toHaveBeenCalledTimes(1);
+        expect(api.delete).not.toHaveBeenCalled();
+        await act(async () => {
+            finish();
+            expect(await Promise.all([save, lock, remove, removeVolume])).toEqual([true, true, true, true]);
+        });
+        expect(api.put).toHaveBeenLastCalledWith('/story/chapters/3?bookId=1', expect.objectContaining({ content: 'New body', isEditable: false }));
+        expect(api.delete.mock.calls.map(call => call[0])).toEqual(['/story/chapters/3?bookId=1', '/story/volumes/2?bookId=1']);
+        expect(api.put.mock.invocationCallOrder[1]).toBeLessThan(api.delete.mock.invocationCallOrder[0]);
+    });
+
+    it('distinguishes failed reads from empty data and reports other failed writes', async () => {
+        const result = await loginAndLoadBooks();
+        api.get.mockRejectedValue(new Error('network down'));
+        api.put.mockRejectedValue(new Error('network down'));
+        await act(async () => {
+            expect(await result.current.fetchStoryPlanning('1')).toBeNull();
+            expect(await result.current.getRelations('1')).toBeNull();
+            expect(await result.current.updateVolume('1', '2', 'Unsaved title')).toBe(false);
+        });
+        expect(result.current.getBook('1')?.storyPlanning).toBeUndefined();
+    });
+
     it('serializes chapter writes across callers and continues after failure', async () => {
         const result = await loginAndLoadBooks();
         let fail!: (error: Error) => void;

@@ -144,6 +144,8 @@ const AiBrainstorm: React.FC = () => {
     const [selectedChapterIds, setSelectedChapterIds] = useState<string[]>([]);
     const [relationships, setRelationships] = useState<Array<{ source: string; target: string; label: string }>>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
+    const [loadAttempt, setLoadAttempt] = useState(0);
     const [isGenerating, setIsGenerating] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saved'>('idle');
@@ -198,30 +200,40 @@ const AiBrainstorm: React.FC = () => {
         const load = async () => {
             if (!bookId) return;
             setIsLoading(true);
-            const [loadedPlanning, brainstormData, graphData] = await Promise.all([
-                fetchStoryPlanning(bookId),
-                apiClient.get(`/books/${bookId}/brainstorm`) as Promise<BrainstormResponse>,
-                fetchGraphData(bookId),
-            ]);
-            if (!isMounted) return;
+            setLoadError(false);
+            try {
 
-            const loadedWorkspace = normalizeWorkspace(brainstormData);
-            const chapterParam = searchParams.get('chapterId');
-            const initialChapterIds = chapterParam
-                ? [chapterParam]
-                : loadedWorkspace.selectedChapterIds;
+                const [loadedPlanning, brainstormData, graphData] = await Promise.all([
+                    fetchStoryPlanning(bookId),
+                    apiClient.get(`/books/${bookId}/brainstorm`) as Promise<BrainstormResponse>,
+                    fetchGraphData(bookId),
+                ]);
+                if (!isMounted) return;
 
-            setPlanning(loadedPlanning);
-            setWorkspace(loadedWorkspace);
-            setSelectedChapterIds(initialChapterIds);
-            setRelationships(buildRelationships(graphData, book?.characters || []));
-            setSaveState('idle');
-            setIsLoading(false);
+                if (!loadedPlanning || !graphData) throw new Error('Planning or graph unavailable');
+
+                const loadedWorkspace = normalizeWorkspace(brainstormData);
+                const chapterParam = searchParams.get('chapterId');
+                const initialChapterIds = chapterParam
+                    ? [chapterParam]
+                    : loadedWorkspace.selectedChapterIds;
+
+                setPlanning(loadedPlanning);
+                setWorkspace(loadedWorkspace);
+                setSelectedChapterIds(initialChapterIds);
+                setRelationships(buildRelationships(graphData, book?.characters || []));
+                setSaveState('idle');
+            } catch (error) {
+                console.error('Failed to load brainstorming workspace:', error);
+                if (isMounted) setLoadError(true);
+            } finally {
+                if (isMounted) setIsLoading(false);
+            }
         };
 
         void load();
         return () => { isMounted = false; };
-    }, [bookId]);
+    }, [bookId, loadAttempt]);
 
     const buildContextSnapshot = () => {
         const characterNameById = new Map((book?.characters || []).map(character => [character.id, character.name]));
@@ -367,17 +379,22 @@ const AiBrainstorm: React.FC = () => {
                         )}
                     </div>
                     <div className="flex items-center gap-3">
-                        <Button onClick={handleSave} disabled={isSaving || isLoading} icon={isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}>
+                        <Button onClick={handleSave} disabled={isSaving || isLoading || loadError} icon={isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}>
                             {isSaving ? 'Saving...' : 'Save Result'}
                         </Button>
-                        <Button variant="secondary" onClick={handleGenerate} disabled={isGenerating || isLoading} icon={isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}>
+                        <Button variant="secondary" onClick={handleGenerate} disabled={isGenerating || isLoading || loadError} icon={isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}>
                             {isGenerating ? 'Brainstorming...' : 'Regenerate'}
                         </Button>
                     </div>
                 </div>
             </header>
 
-            {isLoading ? (
+            {loadError ? (
+                <div role="alert" className="flex-1 flex flex-col items-center justify-center gap-4 text-slate-500">
+                    <p>Could not load this workspace. Retry before making changes.</p>
+                    <Button onClick={() => setLoadAttempt(attempt => attempt + 1)}>Retry</Button>
+                </div>
+            ) : isLoading ? (
                 <div className="flex-1 flex items-center justify-center text-slate-400">
                     <Loader2 size={22} className="animate-spin mr-2" />
                     Loading brainstorm workspace...

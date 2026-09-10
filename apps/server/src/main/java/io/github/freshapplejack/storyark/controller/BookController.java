@@ -41,7 +41,7 @@ public class BookController {
 
     // create a new book (POST /api/books)
     @PostMapping
-    public String createBook(@RequestBody Book book, HttpSession session) {
+    public Book createBook(@RequestBody Book book, HttpSession session) {
         // map the JSON request body to the Book object
         // set default values
         User loginUser = (User) session.getAttribute("loginUser");
@@ -57,7 +57,7 @@ public class BookController {
         book.setStatus(1); // default status is 1 (serializing)
 
         bookMapper.insert(book);
-        return "Book created successfully!";
+        return book;
     }
 
     // 更新书本 (重命名 / 修改状态)

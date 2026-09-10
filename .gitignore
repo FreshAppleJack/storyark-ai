@@ -28,6 +28,8 @@ logs/
 *.log
 uploads/
 data/
+!/apps/web/data/
+!/apps/web/test/data/
 backups/
 *.bak
 *.dump
