@@ -1,4 +1,4 @@
-import tippy from 'tippy.js';
+import tippy, { Instance } from 'tippy.js';
 import type { Character } from '../../../types';
 
 /** Builds the HTML card shown when hovering a character mention. */
@@ -37,22 +37,34 @@ export interface CharacterTooltipHandlerOptions {
     shouldSuppress?: () => boolean;
 }
 
+export interface CharacterTooltipController {
+    handleMouseOver: (event: MouseEvent) => void;
+    /** Destroys every tooltip instance created by this controller. */
+    destroy: () => void;
+}
+
 /**
  * Creates the mouseover handler that attaches a character card tooltip
- * to mention elements inside the editor. The editor component wires it
- * to the editor element and owns the listener lifecycle.
+ * to mention elements inside the editor, plus a destroy() that cleans up
+ * every tooltip it created. The editor component wires the handler to the
+ * editor element and owns the listener + instance lifecycle: detaching
+ * the listener without destroy() would leak popper elements into
+ * document.body when the editor DOM is replaced (chapter switch, rebuild).
  */
-export const createCharacterTooltipHandler = ({ getCharacter, shouldSuppress }: CharacterTooltipHandlerOptions) => {
-    return (event: MouseEvent) => {
+export const createCharacterTooltipHandler = ({ getCharacter, shouldSuppress }: CharacterTooltipHandlerOptions): CharacterTooltipController => {
+    const instances = new Set<Instance>();
+
+    const handleMouseOver = (event: MouseEvent) => {
         const target = (event.target as HTMLElement).closest('.mention');
-        if (target && !((target as any)._tippy)) {
+        if (target && !((target as HTMLElement & { _tippy?: unknown })._tippy)) {
             if (shouldSuppress?.()) return;
 
             const charId = target.getAttribute('data-id');
             if (charId) {
                 const char = getCharacter(charId);
                 if (char) {
-                    tippy(target, {
+                    // A single-element target yields a single Instance.
+                    instances.add(tippy(target, {
                         content: buildCharacterTooltipContent(char),
                         allowHTML: true,
                         interactive: true,
@@ -61,9 +73,16 @@ export const createCharacterTooltipHandler = ({ getCharacter, shouldSuppress }: 
                         duration: [200, 150],
                         delay: [200, 0],
                         appendTo: document.body,
-                    });
+                    }));
                 }
             }
         }
     };
+
+    const destroy = () => {
+        instances.forEach(instance => instance.destroy());
+        instances.clear();
+    };
+
+    return { handleMouseOver, destroy };
 };

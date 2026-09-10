@@ -1,6 +1,6 @@
 import { ReactRenderer } from '@tiptap/react';
 import type { MentionOptions } from '@tiptap/extension-mention';
-import tippy from 'tippy.js';
+import tippy, { Instance } from 'tippy.js';
 import type { Character } from '../../../types';
 import { getValidNamedCharacters } from '../../../domain/characters';
 import { MentionList } from './MentionList';
@@ -95,8 +95,11 @@ export const createMentionSuggestion = (getCharacters: () => Character[]): Menti
             .run();
     },
     render: () => {
-        let component: ReactRenderer;
-        let popup: any;
+        // The popup only exists when a clientRect was available at onStart;
+        // every later hook must tolerate its absence (Escape/exit before
+        // placement, missing rect mid-session).
+        let component: ReactRenderer | undefined;
+        let popup: Instance[] | undefined;
 
         return {
             onStart: (props) => {
@@ -119,22 +122,24 @@ export const createMentionSuggestion = (getCharacters: () => Character[]): Menti
                 });
             },
             onUpdate(props) {
-                component.updateProps(props);
-                if (!props.clientRect) return;
+                component?.updateProps(props);
+                if (!props.clientRect || !popup) return;
                 popup[0].setProps({
                     getReferenceClientRect: props.clientRect,
                 });
             },
             onKeyDown(props) {
                 if (props.event.key === 'Escape') {
-                    popup[0].hide();
+                    popup?.[0]?.hide();
                     return true;
                 }
-                return (component.ref as any)?.onKeyDown(props);
+                return (component?.ref as any)?.onKeyDown(props);
             },
             onExit() {
-                popup[0].destroy();
-                component.destroy();
+                popup?.[0]?.destroy();
+                popup = undefined;
+                component?.destroy();
+                component = undefined;
             },
         };
     },

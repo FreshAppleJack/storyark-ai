@@ -6,7 +6,6 @@ import { escapeRegex, getCharacterDisplayTerms, getCharacterMatchTerms, getValid
 import React, {useEffect, useState, useImperativeHandle, forwardRef, useMemo, useRef} from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
 import Placeholder from '@tiptap/extension-placeholder';
 import { TextStyle } from '@tiptap/extension-text-style';
@@ -118,8 +117,9 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
 
     const extensions = useMemo(() => {
         return [
+            // StarterKit already registers Underline; a standalone copy was a
+            // duplicate registration (console warning, single mark anyway).
             StarterKit,
-            Underline,
             TextAlign.configure({ types: ['heading', 'paragraph'] }),
             TextStyle,
             CustomFontFamily,
@@ -552,24 +552,26 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
         }
     }));
 
-    // Tooltip logic
+    // Tooltip logic: the effect owns both the DOM listener and every tippy
+    // instance created through it (destroyed together on cleanup).
     useEffect(() => {
         if (!editor || !characters) return;
         const editorElement = editor.options.element;
         // If a context menu is displayed, the tooltip is suppressed to avoid visual interference
-        const handleMouseOver = createCharacterTooltipHandler({
+        const tooltip = createCharacterTooltipHandler({
             getCharacter: (charId) => characters.find(c => c.id === charId),
             shouldSuppress: () => !!contextMenu,
         });
 
         if ("addEventListener" in editorElement) {
-            editorElement.addEventListener('mouseover', handleMouseOver);
+            editorElement.addEventListener('mouseover', tooltip.handleMouseOver);
         }
 
         return () => {
             if ("removeEventListener" in editorElement) {
-                editorElement.removeEventListener('mouseover', handleMouseOver);
+                editorElement.removeEventListener('mouseover', tooltip.handleMouseOver);
             }
+            tooltip.destroy();
         };
     }, [editor, characters, contextMenu, isEditable]);
 

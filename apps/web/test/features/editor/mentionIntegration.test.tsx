@@ -173,8 +173,8 @@ describe('characterTooltip', () => {
         target.setAttribute('data-id', 'c-alice');
         document.body.appendChild(target);
 
-        const handler = createCharacterTooltipHandler({ getCharacter: () => alice });
-        handler({ target } as unknown as MouseEvent);
+        const { handleMouseOver } = createCharacterTooltipHandler({ getCharacter: () => alice });
+        handleMouseOver({ target } as unknown as MouseEvent);
         expect((target as any)._tippy).toBeDefined();
 
         const suppressed = document.createElement('span');
@@ -182,11 +182,34 @@ describe('characterTooltip', () => {
         suppressed.setAttribute('data-id', 'c-alice');
         document.body.appendChild(suppressed);
 
-        const suppressingHandler = createCharacterTooltipHandler({
+        const suppressing = createCharacterTooltipHandler({
             getCharacter: () => alice,
             shouldSuppress: () => true,
         });
-        suppressingHandler({ target: suppressed } as unknown as MouseEvent);
+        suppressing.handleMouseOver({ target: suppressed } as unknown as MouseEvent);
         expect((suppressed as any)._tippy).toBeUndefined();
+    });
+
+    it('destroy() detaches every tooltip the controller created', () => {
+        const first = document.createElement('span');
+        first.className = 'mention';
+        first.setAttribute('data-id', 'c-alice');
+        const second = document.createElement('span');
+        second.className = 'mention';
+        second.setAttribute('data-id', 'c-alice');
+        document.body.append(first, second);
+
+        const tooltip = createCharacterTooltipHandler({ getCharacter: () => alice });
+        tooltip.handleMouseOver({ target: first } as unknown as MouseEvent);
+        tooltip.handleMouseOver({ target: second } as unknown as MouseEvent);
+        expect((first as HTMLElement & { _tippy?: unknown })._tippy).toBeDefined();
+        expect((second as HTMLElement & { _tippy?: unknown })._tippy).toBeDefined();
+
+        tooltip.destroy();
+
+        expect((first as HTMLElement & { _tippy?: unknown })._tippy).toBeUndefined();
+        expect((second as HTMLElement & { _tippy?: unknown })._tippy).toBeUndefined();
+        // Destroying again must be a no-op, not a crash.
+        expect(() => tooltip.destroy()).not.toThrow();
     });
 });

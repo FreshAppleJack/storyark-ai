@@ -1,7 +1,8 @@
+import React from 'react';
 import { render, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import TiptapEditor from '../../components/TiptapEditor';
+import TiptapEditor, { TiptapEditorRef } from '../../components/TiptapEditor';
 import type { Character } from '../../types';
 
 // Keep character props stable so rerender exercises chapter/lock synchronization on the same editor.
@@ -74,6 +75,17 @@ describe('TiptapEditor', () => {
     expect(surface).toHaveTextContent('第二章正文');
     expect(surface).not.toHaveTextContent('已有正文');
     expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it('registers the underline extension exactly once (StarterKit already provides it)', () => {
+    const ref = React.createRef<TiptapEditorRef>();
+    const onUpdate = vi.fn();
+    render(<TiptapEditor ref={ref} contentId="chapter-1" content={chapter('已有正文')} characters={characters} onUpdate={onUpdate} />);
+
+    const editor = ref.current!.editor;
+    const underlineExtensions = editor.extensionManager.extensions.filter((ext: { name: string }) => ext.name === 'underline');
+    expect(underlineExtensions).toHaveLength(1);
+    expect(editor.schema.marks.underline).toBeDefined();
   });
 
   it('blocks typing while read-only and accepts input again after unlocking', async () => {
