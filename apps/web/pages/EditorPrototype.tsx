@@ -15,6 +15,7 @@ import { getEditorPlainText, getForeshadowingExcerptMap } from '../domain/chapte
 import { buildChapterExportHtml, buildWordExportDocument } from '../features/editor/utils/exportHtml';
 import { useChapterDraft } from '../features/editor/hooks/useChapterDraft';
 import { useChapterAutosave } from '../features/editor/hooks/useChapterAutosave';
+import { useAiContinue } from '../features/editor/hooks/useAiContinue';
 
 function Editor(): React.ReactElement {
     const { bookId } = useParams<{ bookId: string }>();
@@ -47,12 +48,39 @@ function Editor(): React.ReactElement {
     const [activeForeshadowingId, setActiveForeshadowingId] = useState<string | null>(null);
     const [isForeshadowingPanelOpen, setIsForeshadowingPanelOpen] = useState(false);
 
-    const [isAiLoading, setIsAiLoading] = useState(false);
-
     // Export State
     const [isExporting, setIsExporting] = useState(false);
 
     const editorRef = useRef<TiptapEditorRef>(null);
+
+    // AI continuation with chapter-switch protection: results arriving after
+    // a switch are dropped, and a stale request never clears a newer one.
+    const aiContinue = useAiContinue({
+        chapterId: activeChapterId,
+        isReadOnly: chapterDraft.isReadOnly,
+        hasContent: !!chapterDraft.content,
+        contextChars: aiContinueSettings.contextChars,
+        outputChars: aiContinueSettings.outputChars,
+        getContextText: () => {
+            if (editorRef.current && editorRef.current.editor) {
+                return editorRef.current.editor.getText();
+            }
+            return getEditorPlainText(chapterDraft.content);
+        },
+        requestContinue: async (payload) => {
+            const response = await apiClient.post('/ai/continue', payload);
+            return (response as any).result;
+        },
+        insertResult: (formattedHtml) => {
+            const editor = editorRef.current?.editor;
+            // The hook pins the chapter identity; this only guards a lock
+            // toggled while the request was in flight.
+            if (editor && editor.isEditable !== false) {
+                editorRef.current?.insertContent(formattedHtml);
+            }
+        },
+        onError: () => toast.error('AI continue failed. Please try again.'),
+    });
 
     // Save scheduler: debounce, serial saves, flush and retry all go through
     // this single entry — no page-level timers or save status state.
@@ -288,44 +316,6 @@ function Editor(): React.ReactElement {
         editorRef.current?.focusForeshadowing(id);
     };
 
-    const handleAIContinue = async () => {
-        if (!chapterDraft.content || isAiLoading) return;
-        setIsAiLoading(true);
-        try {
-            let contextToSend = "";
-            if (editorRef.current && editorRef.current.editor) {
-                contextToSend = editorRef.current.editor.getText().slice(-aiContinueSettings.contextChars);
-            } else {
-                contextToSend = getEditorPlainText(chapterDraft.content).slice(-aiContinueSettings.contextChars);
-            }
-
-            const response = await apiClient.post('/ai/continue', {
-                content: contextToSend,
-                outputLengthChars: aiContinueSettings.outputChars,
-            });
-            const aiText = (response as any).result;
-
-            let formattedAiText = '';
-            if (aiText && aiText.trim()) {
-                // The original code used <br/> for concatenation, causing the entire AI content
-                // to be placed within a single paragraph (Block Node).
-                // This results in alignment operations being applied to the entire large text block.
-                // Fix: split by newline characters and wrap each line in an individual <p> tag.
-                const lines = aiText.split(/\r?\n/).filter((line: string) => line.trim() !== '');
-                formattedAiText = lines.map((line: string) => `<p>\u3000\u3000${line.trim()}</p>`).join('');
-            }
-
-            if (editorRef.current && formattedAiText) {
-                editorRef.current.insertContent(formattedAiText);
-            }
-
-        } catch (err) {
-            console.error("AI Request Failed:", err);
-        } finally {
-            setIsAiLoading(false);
-        }
-    };
-
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         chapterDraft.setTitle(e.target.value);
     };
@@ -492,14 +482,14 @@ function Editor(): React.ReactElement {
                     chapterTitle={chapterDraft.title}
                     hasActiveChapter={!!activeChapter}
                     saveStatus={autosave.saveStatus}
-                    isAiLoading={isAiLoading}
+                    isAiLoading={aiContinue.isAiLoading}
                     isReadOnly={chapterDraft.isReadOnly}
                     isContextPanelOpen={isForeshadowingPanelOpen}
                     contextPanelItemCount={contextPanelItemCount}
                     isExporting={isExporting}
                     onNavigateForeshadowingBoard={() => void navigateAfterSave(`/books/${bookId}/foreshadowing`)}
                     onNavigateWorldBuilding={() => void navigateAfterSave(`/books/${bookId}/settings`)}
-                    onAIContinue={handleAIContinue}
+                    onAIContinue={aiContinue.continueWriting}
                     onToggleContextPanel={() => setIsForeshadowingPanelOpen(prev => !prev)}
                     onRetrySave={autosave.retry}
                     onNavigateSettings={() => void navigateAfterSave('/settings', { state: { returnTo: `/editor/${bookId}` } })}
