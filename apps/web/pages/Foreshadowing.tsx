@@ -1,86 +1,23 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { toast } from 'react-hot-toast';
-import { ArrowLeft, BookOpen, CheckCircle2, ChevronRight, FileText, Loader2, MessageSquareText, Search, X } from 'lucide-react';
-import { useApp } from '../InteractionContent/AppContext';
+import { ArrowLeft, MessageSquareText, Search, X } from 'lucide-react';
+import { useBooks } from '../InteractionContent/BooksContext';
+import { collectForeshadowingCards, filterForeshadowingCards, type ForeshadowingCardData } from '../features/foreshadowing/foreshadowingSelectors';
+import { ForeshadowingCard } from '../features/foreshadowing/components/ForeshadowingCard';
+import { useForeshadowingRecovery } from '../features/foreshadowing/hooks/useForeshadowingRecovery';
 import { Button } from '../components/ui/Button';
-import { ForeshadowingNote } from '../types';
-import { getFuzzyScore } from '../utils/search';
-import { getForeshadowingExcerptMap } from '../domain/chapterContent';
 
-const EXCERPT_MAX_LENGTH = 220;
-
-interface ForeshadowingCard {
-    id: string;
-    note: ForeshadowingNote;
-    excerpt: string;
-    chapterId: string;
-    chapterTitle: string;
-    volumeId: string;
-    volumeTitle: string;
-    score?: number;
-}
-
-function Foreshadowing(): React.ReactElement {
-    const { bookId } = useParams<{ bookId: string }>();
+function ForeshadowingContent({ bookId }: { bookId: string }): React.ReactElement {
     const navigate = useNavigate();
-    const { getBook, updateChapterContent } = useApp();
+    const { getBook } = useBooks();
     const book = getBook(bookId || '');
     const [searchQuery, setSearchQuery] = useState('');
-    const [recoveringId, setRecoveringId] = useState<string | null>(null);
-    // Cards whose last save failed keep an explicit retry action, because the
-    // optimistic update already flipped their local recovered state.
-    const [failedRecovery, setFailedRecovery] = useState<{ cardId: string; isRecovered: boolean } | null>(null);
+    const recovery = useForeshadowingRecovery(book);
+    const allCards = useMemo(() => collectForeshadowingCards(book), [book]);
+    const unrecoveredCount = allCards.filter(card => !card.note.isRecovered).length;
+    const filteredCards = useMemo(() => filterForeshadowingCards(allCards, searchQuery), [allCards, searchQuery]);
 
-    const allCards = useMemo<ForeshadowingCard[]>(() => {
-        if (!book) return [];
-        return book.volumes.flatMap(volume => (
-            volume.chapters.flatMap(chapter => {
-                const excerptMap = getForeshadowingExcerptMap(chapter.content || '', EXCERPT_MAX_LENGTH);
-                return (chapter.foreshadowings || []).map(note => ({
-                    id: note.id,
-                    note,
-                    excerpt: excerptMap.get(note.id) || note.excerpt || 'No linked excerpt found.',
-                    chapterId: chapter.id,
-                    chapterTitle: chapter.title,
-                    volumeId: volume.id,
-                    volumeTitle: volume.title,
-                }));
-            })
-        )).sort((a, b) => b.note.updatedAt - a.note.updatedAt);
-    }, [book]);
-
-    const unrecoveredCount = useMemo(
-        () => allCards.filter(card => !card.note.isRecovered).length,
-        [allCards]
-    );
-
-    const filteredCards = useMemo(() => {
-        const query = searchQuery.trim();
-        if (!query) return allCards;
-
-        return allCards
-            .map(card => {
-                const fields = [
-                    { value: card.excerpt, weight: 0 },
-                    { value: card.note.note, weight: 0 },
-                    { value: card.chapterTitle, weight: 10 },
-                    { value: card.volumeTitle, weight: 14 },
-                ];
-                const bestScore = fields.reduce<number | null>((best, field) => {
-                    const score = getFuzzyScore(field.value, query);
-                    if (score === null) return best;
-                    const weightedScore = score + field.weight;
-                    return best === null ? weightedScore : Math.min(best, weightedScore);
-                }, null);
-
-                return bestScore === null ? null : { ...card, score: bestScore };
-            })
-            .filter((card): card is ForeshadowingCard & { score: number } => Boolean(card))
-            .sort((a, b) => a.score - b.score);
-    }, [allCards, searchQuery]);
-
-    const openChapter = (card: ForeshadowingCard) => {
+    const openChapter = (card: ForeshadowingCardData) => {
         if (bookId) {
             localStorage.setItem(`lastActiveChapter_${bookId}`, card.chapterId);
             localStorage.setItem(`pendingForeshadowingFocus_${bookId}`, JSON.stringify({
@@ -88,53 +25,6 @@ function Foreshadowing(): React.ReactElement {
                 foreshadowingId: card.id,
             }));
             navigate(`/editor/${bookId}`);
-        }
-    };
-
-    const markRecovered = async (card: ForeshadowingCard) => {
-        if (!book || card.note.isRecovered || recoveringId) return;
-        await setForeshadowingRecovered(card, true);
-    };
-
-    const undoRecovered = async (card: ForeshadowingCard) => {
-        if (!book || !card.note.isRecovered || recoveringId) return;
-        await setForeshadowingRecovered(card, false);
-    };
-
-    const setForeshadowingRecovered = async (card: ForeshadowingCard, isRecovered: boolean) => {
-        if (!book || recoveringId) return;
-        const volume = book.volumes.find(item => item.id === card.volumeId);
-        const chapter = volume?.chapters.find(item => item.id === card.chapterId);
-        if (!chapter) return;
-
-        setRecoveringId(card.id);
-        const now = Date.now();
-        const nextForeshadowings = (chapter.foreshadowings || []).map(note => (
-            note.id === card.id
-                ? { ...note, isRecovered, updatedAt: now }
-                : note
-        ));
-
-        try {
-            const ok = await updateChapterContent(
-                book.id,
-                card.volumeId,
-                card.chapterId,
-                chapter.title,
-                chapter.content || '',
-                chapter.wordCount,
-                nextForeshadowings
-            );
-            if (ok) {
-                setFailedRecovery(prev => (prev?.cardId === card.id ? null : prev));
-            } else {
-                setFailedRecovery({ cardId: card.id, isRecovered });
-                toast.error(isRecovered
-                    ? 'Failed to mark as recovered. Your change was not saved.'
-                    : 'Failed to undo recovery. Your change was not saved.');
-            }
-        } finally {
-            setRecoveringId(null);
         }
     };
 
@@ -224,92 +114,7 @@ function Foreshadowing(): React.ReactElement {
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                         {filteredCards.map(card => (
-                            <article
-                                key={`${card.chapterId}-${card.id}`}
-                                className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md transition overflow-hidden"
-                            >
-                                <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-start justify-between gap-4">
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                                            <BookOpen size={13} />
-                                            <span className="truncate">{card.volumeTitle}</span>
-                                            <ChevronRight size={12} />
-                                            <span className="truncate">{card.chapterTitle}</span>
-                                        </div>
-                                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                                            <h3 className="text-sm font-bold text-slate-900 dark:text-white">Foreshadowing Note</h3>
-                                            {card.note.isRecovered && (
-                                                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                                                    <CheckCircle2 size={12} />
-                                                    Recovered
-                                                </span>
-                                            )}
-                                        </div>
-                                    </div>
-                                    <span className="flex-shrink-0 text-[11px] text-slate-400">{new Date(card.note.updatedAt).toLocaleDateString()}</span>
-                                </div>
-
-                                <div className="p-5 space-y-4">
-                                    <div>
-                                        <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                            <FileText size={14} />
-                                            Planted Text
-                                        </div>
-                                        <p className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 px-3 py-3 text-sm leading-6 text-slate-700 dark:text-slate-200">
-                                            "{card.excerpt}"
-                                        </p>
-                                    </div>
-                                    <div>
-                                        <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                                            <MessageSquareText size={14} />
-                                            Note
-                                        </div>
-                                        <p className="min-h-[72px] rounded-lg border border-slate-100 dark:border-slate-800 px-3 py-3 text-sm leading-6 text-slate-700 dark:text-slate-200 whitespace-pre-wrap">
-                                            {card.note.note || 'No note written yet.'}
-                                        </p>
-                                    </div>
-                                    {failedRecovery?.cardId === card.id && (
-                                        <div className="flex items-center justify-end gap-2 text-xs text-rose-600 dark:text-rose-300">
-                                            <span>Save failed.</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => setForeshadowingRecovered(card, failedRecovery.isRecovered)}
-                                                disabled={recoveringId === card.id}
-                                                className="font-semibold underline underline-offset-2 transition hover:text-rose-700 dark:hover:text-rose-200"
-                                            >
-                                                Retry
-                                            </button>
-                                        </div>
-                                    )}
-                                    <div className="flex flex-wrap justify-end gap-2">
-                                        {!card.note.isRecovered && (
-                                            <Button
-                                                variant="secondary"
-                                                size="sm"
-                                                onClick={() => markRecovered(card)}
-                                                disabled={recoveringId === card.id}
-                                                icon={recoveringId === card.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
-                                            >
-                                                {recoveringId === card.id ? 'Marking...' : 'Mark Recovered'}
-                                            </Button>
-                                        )}
-                                        {card.note.isRecovered && (
-                                            <Button
-                                                variant="secondary"
-                                                size="sm"
-                                                onClick={() => undoRecovered(card)}
-                                                disabled={recoveringId === card.id}
-                                                icon={recoveringId === card.id ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
-                                            >
-                                                {recoveringId === card.id ? 'Undoing...' : 'Undo Recovered'}
-                                            </Button>
-                                        )}
-                                        <Button variant="secondary" size="sm" onClick={() => openChapter(card)}>
-                                            Open Chapter
-                                        </Button>
-                                    </div>
-                                </div>
-                            </article>
+                            <ForeshadowingCard key={`${card.chapterId}-${card.id}`} card={card} openChapter={openChapter} {...recovery} />
                         ))}
                     </div>
                 )}
@@ -318,4 +123,7 @@ function Foreshadowing(): React.ReactElement {
     );
 }
 
-export default Foreshadowing;
+export default function Foreshadowing() {
+    const { bookId = '' } = useParams();
+    return <ForeshadowingContent key={bookId} bookId={bookId} />;
+}

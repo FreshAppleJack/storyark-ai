@@ -1,63 +1,27 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useApp } from '../InteractionContent/AppContext';
+import { useSession } from '../InteractionContent/SessionContext';
+import { useBooks } from '../InteractionContent/BooksContext';
+import { useBookshelfActions } from '../features/books/hooks/useBookshelfActions';
+import { BookCard } from '../features/books/components/BookCard';
+import { BookActionsMenu } from '../features/books/components/BookActionsMenu';
 import { Button } from '../components/ui/Button';
-import { Plus, Book as BookIcon, Clock, LogOut, MoreVertical, Pencil, Trash2, CheckCircle2, AlertTriangle, PenTool, Settings, Search, X, MessageSquareText } from 'lucide-react';
+import { Plus, LogOut, Settings, Search, X } from 'lucide-react';
 import { Book } from '../types';
 import { getFuzzyScore } from '../utils/search';
-
-interface ContextMenuState {
-    x: number;
-    y: number;
-    bookId: string;
-}
 
 interface BookSearchResult {
     book: Book;
     score: number;
 }
 
-const getUnrecoveredForeshadowingCount = (book: Book) => (
-    book.volumes.reduce((bookTotal, volume) => (
-        bookTotal + volume.chapters.reduce((volumeTotal, chapter) => (
-            volumeTotal + (chapter.foreshadowings || []).filter(note => !note.isRecovered).length
-        ), 0)
-    ), 0)
-);
-
 const Dashboard: React.FC = () => {
-    const { user, books, createBook, updateBook, deleteBook, logout } = useApp();
+    const { user, logout } = useSession();
+    const { books } = useBooks();
     const navigate = useNavigate();
 
-    // State: Context Menu & Delete Modal Logic
-    const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-    const [showDeleteModal, setShowDeleteModal] = useState(false);
-    const [bookToDelete, setBookToDelete] = useState<string | null>(null);
     const [bookSearchQuery, setBookSearchQuery] = useState('');
-
-    // State: Rename Logic
-    const [renamingId, setRenamingId] = useState<string | null>(null);
-    const [renamingValue, setRenamingValue] = useState<string>('');
-    const renameInputRef = useRef<HTMLInputElement>(null);
-
-    useEffect(() => {
-        const handleClick = () => {
-            setContextMenu(null);
-            // if click outside rename input, submit rename if any
-            if (renamingId) submitRename();
-        };
-        window.addEventListener('click', handleClick);
-        return () => window.removeEventListener('click', handleClick);
-    }, [renamingId, renamingValue]); // add renamingId, renamingValue to dependency array
-
-    // Auto focus Input and select all
-    useEffect(() => {
-        if (renamingId && renameInputRef.current) {
-            renameInputRef.current.focus();
-            renameInputRef.current.select();
-        }
-    }, [renamingId]);
-
+    const actions = useBookshelfActions();
     const bookSearchResults = useMemo<BookSearchResult[]>(() => {
         const query = bookSearchQuery.trim();
         if (!query) {
@@ -91,101 +55,8 @@ const Dashboard: React.FC = () => {
     const filteredBooks = bookSearchResults.map(result => result.book);
     const isSearchingBooks = bookSearchQuery.trim().length > 0;
 
-    // --- Create Book (Core Modification) ---
-    // Click to create -> Get ID -> Enter Rename Mode
-    const handleCreate = async () => {
-        setBookSearchQuery('');
-        // Create a book with default title
-        const defaultTitle = "Untitled Story";
-        const newBookId = await createBook(defaultTitle);
-
-        if (newBookId) {
-            setRenamingId(newBookId);
-            setRenamingValue(defaultTitle);
-        }
-    };
-
-    const handleLogout = () => {
-        logout();
-        navigate('/login');
-    };
-
-    const handleContextMenu = (e: React.MouseEvent, bookId: string) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setContextMenu({
-            x: e.clientX,
-            y: e.clientY,
-            bookId
-        });
-    };
-
-    // --- Rename Logic ---
-    const startRename = () => {
-        if (!contextMenu) return;
-        const book = books.find(b => b.id === contextMenu.bookId);
-        if (book) {
-            setRenamingId(book.id);
-            setRenamingValue(book.title);
-        }
-        setContextMenu(null);
-    };
-
-    const submitRename = async () => {
-        if (!renamingId) return;
-
-        // If name is empty, restore original name or keep default title
-        const finalTitle = renamingValue.trim() || "Untitled Story";
-
-        // Only call update API when name actually changes
-        const book = books.find(b => b.id === renamingId);
-        if (book && book.title !== finalTitle) {
-            await updateBook(renamingId, { title: finalTitle });
-        }
-
-        setRenamingId(null);
-        setRenamingValue('');
-    };
-
-    const cancelRename = () => {
-        setRenamingId(null);
-        setRenamingValue('');
-    };
-
-    const handleRenameKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            submitRename();
-        } else if (e.key === 'Escape') {
-            cancelRename();
-        }
-    };
-
-    // --- Toggle Status Logic ---
-    const handleToggleStatus = async () => {
-        if (!contextMenu) return;
-        const book = books.find(b => b.id === contextMenu.bookId);
-        if (!book) return;
-
-        const newStatus = book.status === 'completed' ? 'serializing' : 'completed';
-        await updateBook(book.id, { status: newStatus });
-        setContextMenu(null);
-    };
-
-    const handleDeleteClick = () => {
-        if (contextMenu) {
-            setBookToDelete(contextMenu.bookId);
-            setShowDeleteModal(true);
-            setContextMenu(null);
-        }
-    };
-
-    const confirmDelete = async () => {
-        if (bookToDelete) {
-            await deleteBook(bookToDelete);
-        }
-        setShowDeleteModal(false);
-        setBookToDelete(null);
-    };
+    const handleCreate = async () => { setBookSearchQuery(''); await actions.handleCreate(); };
+    const handleLogout = () => { logout(); navigate('/login'); };
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 relative transition-colors duration-300">
@@ -197,11 +68,11 @@ const Dashboard: React.FC = () => {
                 <div className="flex items-center gap-4">
                     <span className="text-sm text-slate-600 dark:text-slate-300">Welcome, <strong>{user?.username}</strong></span>
                     <Link to="/settings">
-                        <Button variant="ghost" size="sm" icon={<Settings size={14}/>}>
+                        <Button variant="ghost" size="sm" icon={<Settings size={14} />}>
                             Settings
                         </Button>
                     </Link>
-                    <Button variant="secondary" size="sm" onClick={handleLogout} icon={<LogOut size={14}/>}>
+                    <Button variant="secondary" size="sm" onClick={handleLogout} icon={<LogOut size={14} />}>
                         Logout
                     </Button>
                 </div>
@@ -241,91 +112,14 @@ const Dashboard: React.FC = () => {
                             )}
                         </div>
                         {/* Call handleCreate, no need for isCreating state now */}
-                        <Button onClick={handleCreate} icon={<Plus size={16}/>}>
+                        <Button onClick={handleCreate} icon={<Plus size={16} />}>
                             New Book
                         </Button>
                     </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredBooks.map((book) => {
-                        const isRenaming = renamingId === book.id;
-                        const unrecoveredForeshadowingCount = getUnrecoveredForeshadowingCount(book);
-
-                        //most Container: If renaming, click should not navigate to
-                        const Container = isRenaming ? 'div' : Link as any;
-                        const containerProps = isRenaming ? {} : { to: `/editor/${book.id}` };
-
-                        return (
-                            <Container
-                                key={book.id}
-                                {...containerProps}
-                                onContextMenu={(e: React.MouseEvent) => handleContextMenu(e, book.id)}
-                                className="group bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden hover:shadow-xl hover:border-brand-300 dark:hover:border-brand-700 transition-all duration-300 flex flex-col h-64 relative cursor-pointer"
-                                onClick={(e: React.MouseEvent<HTMLElement>) => {
-                                    if (isRenaming) e.stopPropagation(); // Prevent triggering other logic when renaming
-                                }}
-                            >
-                                <div className={`h-24 ${book.coverColor || 'bg-slate-800'} relative p-4 transition-colors duration-300`}>
-                                    <div className={`absolute top-3 right-3 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider shadow-sm flex items-center gap-1
-                                        ${book.status === 'completed'
-                                        ? 'bg-emerald-500/90 text-white backdrop-blur-sm'
-                                        : 'bg-amber-400/90 text-slate-900 backdrop-blur-sm'
-                                    }`}>
-                                        {book.status === 'completed' ? (
-                                            <><CheckCircle2 size={10} /> Completed</>
-                                        ) : (
-                                            <><PenTool size={10} /> Serializing</>
-                                        )}
-                                    </div>
-
-                                    <div className="absolute -bottom-6 left-4 w-12 h-16 bg-white dark:bg-slate-800 shadow-md rounded border border-slate-100 dark:border-slate-700 flex items-center justify-center">
-                                        <BookIcon className="text-slate-400" size={20} />
-                                    </div>
-                                </div>
-
-                                <div className="pt-8 p-4 flex-1 flex flex-col">
-                                    {isRenaming ? (
-                                        <input
-                                            ref={renameInputRef}
-                                            type="text"
-                                            value={renamingValue}
-                                            onChange={(e) => setRenamingValue(e.target.value)}
-                                            onKeyDown={handleRenameKeyDown}
-                                            onBlur={submitRename}
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="font-bold text-lg text-slate-900 dark:text-white mb-1 border-b-2 border-brand-500 outline-none bg-transparent w-full pb-1"
-                                        />
-                                    ) : (
-                                        <h3 className="font-bold text-lg text-slate-900 dark:text-white mb-1 line-clamp-1 group-hover:text-brand-600 dark:group-hover:text-brand-300 transition-colors">
-                                            {book.title}
-                                        </h3>
-                                    )}
-
-                                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">by {book.author}</p>
-                                    <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-400 dark:text-slate-500 border-t border-slate-50 dark:border-slate-800 pt-4">
-                                        <span className="flex items-center gap-1">
-                                            <BookIcon size={12}/> {book.volumes.reduce((acc, v) => acc + v.chapters.length, 0)} Chapters
-                                        </span>
-                                        <span className={`flex items-center gap-1 ${unrecoveredForeshadowingCount > 0 ? 'text-amber-600 dark:text-amber-300' : ''}`}>
-                                            <MessageSquareText size={12}/> {unrecoveredForeshadowingCount} Foreshadowing Unrecovered
-                                        </span>
-                                        <span className="flex items-center gap-1">
-                                            <Clock size={12}/>
-                                            {new Date(book.lastModified).toLocaleString(undefined, {
-                                                year: 'numeric',
-                                                month: 'numeric',
-                                                day: 'numeric',
-                                                hour: '2-digit',
-                                                minute: '2-digit',
-                                                hour12: false
-                                            })}
-                                        </span>
-                                    </div>
-                                </div>
-                            </Container>
-                        );
-                    })}
+                    {filteredBooks.map(book => <BookCard key={book.id} book={book} {...actions} />)}
 
                     {/* Create Book Button in Empty State */}
                     {books.length === 0 && (
@@ -352,80 +146,7 @@ const Dashboard: React.FC = () => {
                 </div>
             </main>
 
-            {contextMenu && (
-                <div
-                    className="fixed z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xl rounded-lg py-1 w-48 animate-in fade-in zoom-in duration-100"
-                    style={{ top: contextMenu.y, left: contextMenu.x }}
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    <button
-                        onClick={startRename}
-                        className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-3 transition-colors"
-                    >
-                        <Pencil size={14} className="text-slate-400"/>
-                        Rename Book
-                    </button>
-                    <button
-                        onClick={handleToggleStatus}
-                        className="w-full text-left px-4 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-3 transition-colors"
-                    >
-                        {books.find(b => b.id === contextMenu.bookId)?.status !== 'completed' ? (
-                            <>
-                                <CheckCircle2 size={14} className="text-emerald-500"/>
-                                Mark as Completed
-                            </>
-                        ) : (
-                            <>
-                                <PenTool size={14} className="text-amber-500"/>
-                                Mark as Serializing
-                            </>
-                        )}
-                    </button>
-                    <div className="h-px bg-slate-100 dark:bg-slate-800 my-1"></div>
-                    <button
-                        onClick={handleDeleteClick}
-                        className="w-full text-left px-4 py-2.5 text-sm text-rose-600 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-3 transition-colors"
-                    >
-                        <Trash2 size={14} />
-                        Delete Book
-                    </button>
-                </div>
-            )}
-
-            {showDeleteModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-xl max-w-sm w-full mx-4 border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200">
-                        <div className="flex items-center gap-3 mb-4 text-rose-600">
-                            <div className="p-2 bg-rose-100 rounded-full">
-                                <AlertTriangle size={24} />
-                            </div>
-                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Delete Book?</h3>
-                        </div>
-
-                        <p className="text-slate-600 dark:text-slate-300 mb-6 text-sm leading-relaxed">
-                            Are you sure you want to delete this book?
-                            <br/>
-                            <span className="font-semibold text-rose-600">This action cannot be undone</span> and all volumes and chapters will be permanently lost.
-                        </p>
-
-                        <div className="flex justify-end gap-3">
-                            <Button
-                                variant="ghost"
-                                onClick={() => { setShowDeleteModal(false); setBookToDelete(null); }}
-                            >
-                                Cancel
-                            </Button>
-                            <Button
-                                variant="primary"
-                                className="bg-rose-600 hover:bg-rose-700 text-white border-none shadow-md shadow-rose-200"
-                                onClick={confirmDelete}
-                            >
-                                Delete Book
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <BookActionsMenu {...actions} />
         </div>
     );
 };

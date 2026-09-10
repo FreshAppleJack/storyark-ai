@@ -1,4 +1,4 @@
-import type { StoryPlanning } from '../types';
+import type { StoryPlanning, PlotSetting } from '../types';
 import { asRecord, parseJsonSafe } from '../utils/serialization';
 
 const text = (value: unknown, fallback = '') => typeof value === 'string' ? value : fallback;
@@ -10,6 +10,24 @@ const timestamp = (value: unknown, now: number) => {
     const result = Number(value || now);
     return Number.isFinite(result) ? result : now;
 };
+
+export const createEmptyPlanning = (): StoryPlanning => ({
+    storySummary: '', storyBackground: '', chapterSummaries: [], plotSettings: [],
+});
+
+export const createPlotSetting = (id: string, now: number): PlotSetting => ({
+    id, title: 'New Plot Setting', details: '', chapterIds: [], createdAt: now, updatedAt: now,
+});
+
+export function sanitizePlanning(planning: StoryPlanning, validChapterIds: Set<string>): StoryPlanning {
+    return {
+        storySummary: planning.storySummary, storyBackground: planning.storyBackground,
+        chapterSummaries: planning.chapterSummaries.filter(item => validChapterIds.has(item.chapterId) && item.summary.trim())
+            .map(item => ({ ...item, summary: item.summary.trim() })),
+        plotSettings: planning.plotSettings.map(plot => ({ ...plot, title: plot.title.trim() || 'Untitled Plot',
+            chapterIds: plot.chapterIds.filter(id => validChapterIds.has(id)) })),
+    };
+}
 
 /** The caller supplies time so identical inputs always produce identical output. */
 export function normalizeStoryPlanning(value: unknown, now: number): StoryPlanning {

@@ -112,7 +112,7 @@ export interface BrainstormOption {
 
 export interface BrainstormWorkspace {
   selectedChapterIds: string[];
-  contextSnapshot: any;
+  contextSnapshot: Record<string, unknown>;
   generatedOptions: BrainstormOption[];
   selectedOptionId?: string | null;
   finalContent: string;

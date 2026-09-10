@@ -18,8 +18,8 @@ const fixture = vi.hoisted(() => ({
     } as Book,
 }));
 
-vi.mock('../../InteractionContent/AppContext', () => ({
-    useApp: () => ({
+vi.mock('../../InteractionContent/BooksContext', () => ({
+    useBooks: () => ({
         getBook: () => fixture.book,
         updateChapterContent: fixture.save,
     }),

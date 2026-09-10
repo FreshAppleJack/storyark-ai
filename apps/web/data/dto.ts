@@ -31,3 +31,8 @@ export interface GraphData {
         name?: string; role?: CharacterRole; color?: string; avatar?: string; handleConfig?: string | HandleConfig }[];
     edges: RelationDto[];
 }
+
+export interface BrainstormDto {
+    selectedChapterIds?: unknown; contextSnapshot?: unknown; generatedOptions?: unknown;
+    selectedOptionId?: string | null; finalContent?: string; updatedAt?: string;
+}

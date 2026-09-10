@@ -106,3 +106,41 @@ export function getEditorPlainText(content: string): string {
         return content.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
     }
 };
+
+
+export const extractContentSignals = (content: string) => {
+    const ids = new Set<string>();
+    const textParts: string[] = [];
+
+    const visit = (node: TiptapNodeJson) => {
+        if (!node) return;
+        if (node.type === 'mention' && node.attrs?.id) {
+            ids.add(String(node.attrs.id));
+            if (node.attrs.label) textParts.push(String(node.attrs.label));
+            return;
+        }
+        if (node.type === 'text' && node.text) {
+            textParts.push(String(node.text));
+        }
+        if (Array.isArray(node.content)) {
+            node.content.forEach(visit);
+        }
+    };
+
+    try {
+        visit(JSON.parse(content));
+    } catch {
+        if (typeof DOMParser !== 'undefined') {
+            const doc = new DOMParser().parseFromString(content || '', 'text/html');
+            doc.body.querySelectorAll('[data-id]').forEach(element => {
+                const id = element.getAttribute('data-id');
+                if (id) ids.add(id);
+            });
+            textParts.push(doc.body.textContent || '');
+        } else {
+            textParts.push((content || '').replace(/<[^>]+>/g, ' '));
+        }
+    }
+
+    return { ids, text: textParts.join('') };
+};

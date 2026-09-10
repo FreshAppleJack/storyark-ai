@@ -1,0 +1,106 @@
+import React from 'react';
+import { BrainCircuit, CheckCircle2, Loader2, Sparkles, Wand2 } from 'lucide-react';
+import { Button } from '../../../components/ui/Button';
+import type { BrainstormEditor } from '../hooks/useBrainstormWorkspace';
+type Props = Pick<BrainstormEditor, 'isGenerating' | 'isSaving' | 'handleGenerate' | 'selectedChapterIds' | 'missingSummaryChapters' | 'errorMessage' | 'visibleOptions' | 'workspace' | 'chooseOption' | 'showAllOptions' | 'updateFinalContent'>;
+export function BrainstormResults({ isGenerating, isSaving, handleGenerate, selectedChapterIds, missingSummaryChapters, errorMessage, visibleOptions, workspace, chooseOption, showAllOptions, updateFinalContent }: Props) {
+    return (
+        <main className="min-h-0 overflow-y-auto p-6">
+            <div className="mx-auto max-w-4xl space-y-5">
+                <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                            <div className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700 dark:bg-slate-800 dark:text-brand-300">
+                                <Sparkles size={14} />
+                                Three Directions
+                            </div>
+                            <h2 className="mt-3 text-2xl font-bold text-slate-900 dark:text-white">Next Plot Brainstorm</h2>
+                            <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
+                                Generate options from the story outline, background, selected chapter summaries, appearing characters, and relationships.
+                            </p>
+                        </div>
+                        <Button onClick={handleGenerate} disabled={isGenerating || isSaving || selectedChapterIds.length === 0} icon={isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}>
+                            {isGenerating ? 'Generating...' : 'AI Brainstorm'}
+                        </Button>
+                    </div>
+
+                    {missingSummaryChapters.length > 0 && (
+                        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
+                            Some selected chapters do not have plot summaries yet. Add chapter summaries first, otherwise the brainstorm may be less relevant.
+                        </div>
+                    )}
+                    {errorMessage && (
+                        <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-200">
+                            {errorMessage}
+                        </div>
+                    )}
+                    {isGenerating && (
+                        <div className="mt-4 rounded-lg border border-brand-200 bg-brand-50 px-4 py-3 text-sm leading-6 text-brand-800 dark:border-brand-900/70 dark:bg-brand-950/30 dark:text-brand-200">
+                            Generation may take about 1 minute or longer. Please keep this page open while we prepare your options.
+                        </div>
+                    )}
+                </section>
+
+                {visibleOptions.length === 0 ? (
+                    <section className="rounded-xl border border-dashed border-slate-300 bg-white py-16 text-center dark:border-slate-700 dark:bg-slate-900">
+                        <BrainCircuit size={34} className="mx-auto mb-4 text-slate-300 dark:text-slate-600" />
+                        <h3 className="text-lg font-semibold text-slate-900 dark:text-white">No brainstorm yet</h3>
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Select chapters, then generate three possible next directions.</p>
+                    </section>
+                ) : (
+                    <div className="grid grid-cols-1 gap-4">
+                        {visibleOptions.map(option => (
+                            <article key={option.id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                                    <div>
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">{option.title}</h3>
+                                        {workspace.selectedOptionId === option.id && (
+                                            <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                                                <CheckCircle2 size={13} />
+                                                Selected
+                                            </span>
+                                        )}
+                                    </div>
+                                    {!workspace.selectedOptionId ? (
+                                        <Button size="sm" onClick={() => chooseOption(option)}>Choose Direction</Button>
+                                    ) : (
+                                        <Button variant="secondary" size="sm" onClick={showAllOptions}>Show All Options</Button>
+                                    )}
+                                </div>
+                                <div className="mt-4 grid gap-3 md:grid-cols-3">
+                                    <InfoBlock title="Conflict / Hook" value={option.conflict} />
+                                    <InfoBlock title="Motivation" value={option.motivation} />
+                                    <InfoBlock title="Consequences" value={option.consequences} />
+                                </div>
+                                <div className="mt-4 whitespace-pre-line rounded-lg border border-slate-100 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                                    {option.development}
+                                </div>
+                            </article>
+                        ))}
+                    </div>
+                )}
+
+                {workspace.selectedOptionId && (
+                    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Editable Result</h3>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            This is the selected direction. Edit it freely, then save it as the working brainstorm result.
+                        </p>
+                        <textarea
+                            value={workspace.finalContent}
+                            onChange={(event) => updateFinalContent(event.target.value)}
+                            className="mt-4 min-h-80 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-700 outline-none transition focus:border-brand-400 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-brand-500"
+                        />
+                    </section>
+                )}
+            </div>
+        </main>
+    );
+}
+
+const InfoBlock: React.FC<{ title: string; value: string }> = ({ title, value }) => (
+    <div className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-3 dark:border-slate-800 dark:bg-slate-950">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{title}</div>
+        <p className="mt-2 whitespace-pre-line text-sm leading-6 text-slate-700 dark:text-slate-200">{value}</p>
+    </div>
+);

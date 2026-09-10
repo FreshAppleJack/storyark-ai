@@ -4,7 +4,7 @@ import { expect, it, vi } from 'vitest';
 import StoryOutline from '../../pages/StoryOutline';
 
 const mocks = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn() }));
-vi.mock('../../InteractionContent/AppContext', () => ({ useApp: () => ({
+vi.mock('../../InteractionContent/BooksContext', () => ({ useBooks: () => ({
     getBook: () => ({ id: '1', title: 'Book', volumes: [], characters: [] }),
     fetchStoryPlanning: mocks.load, saveStoryPlanning: mocks.save,
 }) }));
