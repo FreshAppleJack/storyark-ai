@@ -1,21 +1,20 @@
 import React from 'react';
 import { createHashRouter, createRoutesFromElements, RouterProvider, Route, Link, Navigate } from 'react-router-dom';
-import StyleLibrary from '../pages/StyleLibrary';
-import Editor from '../pages/EditorPrototype'; // Actually the Real Editor now
-import Dashboard from '../pages/Dashboard';
-import Login from '../pages/Login';
-import Register from '../pages/Register';
-import UserSettings from '../pages/UserSettings';
 import { AppProvider } from '../InteractionContent/AppContext';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { queryClient } from '../InteractionContent/queryClient';
 import ProtectedRoute from '../components/ProtectedRoute';
 import { Palette, ChevronRight, LogIn } from 'lucide-react';
-import CharacterSettings from "../pages/CharacterSettings.tsx";
-import RelationshipMap from "../pages/RelationshipMap.tsx";
-import Foreshadowing from "../pages/Foreshadowing.tsx";
-import StoryOutline from "../pages/StoryOutline.tsx";
-import AiBrainstorm from "../pages/AiBrainstorm.tsx";
+import { RouteError, RouteLoading, RouteShell } from './RouteShell';
+
+// Data-router lazy loading keeps the current route mounted until navigation is
+// ready. The editor's blocker still decides when navigation may begin.
+function protectedPage(load: () => Promise<{ default: React.ComponentType }>) {
+  return async () => {
+    const { default: Page } = await load();
+    return { element: <ProtectedRoute><Page /></ProtectedRoute> };
+  };
+}
 
 // Landing Page for Navigation
 function Home(): React.ReactElement {
@@ -66,54 +65,21 @@ function Home(): React.ReactElement {
 }
 
 const router = createHashRouter(createRoutesFromElements(
-        <>
+        <Route element={<RouteShell />} errorElement={<RouteError />} HydrateFallback={RouteLoading}>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/intro" element={<Home />} />
-          <Route path="/style-library" element={<StyleLibrary />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/settings" element={
-            <ProtectedRoute>
-              <UserSettings />
-            </ProtectedRoute>
-          } />
-          {/* Add :bookId parameter to know which book is being edited */}
-          <Route path="/books/:bookId/settings" element={
-            <ProtectedRoute>
-              <CharacterSettings />
-            </ProtectedRoute>
-          } />
-          <Route path="/books/:bookId/relationships" element={
-            <ProtectedRoute>
-              <RelationshipMap />
-            </ProtectedRoute>
-          } />
-          <Route path="/books/:bookId/foreshadowing" element={
-            <ProtectedRoute>
-              <Foreshadowing />
-            </ProtectedRoute>
-          } />
-          <Route path="/books/:bookId/story-outline" element={
-            <ProtectedRoute>
-              <StoryOutline />
-            </ProtectedRoute>
-          } />
-          <Route path="/books/:bookId/ai-brainstorm" element={
-            <ProtectedRoute>
-              <AiBrainstorm />
-            </ProtectedRoute>
-          } />
-          <Route path="/dashboard" element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          } />
-          <Route path="/editor/:bookId" element={
-            <ProtectedRoute>
-              <Editor />
-            </ProtectedRoute>
-          } />
-        </>
+          <Route path="/style-library" lazy={async () => ({ Component: (await import('../pages/StyleLibrary')).default })} />
+          <Route path="/login" lazy={async () => ({ Component: (await import('../pages/Login')).default })} />
+          <Route path="/register" lazy={async () => ({ Component: (await import('../pages/Register')).default })} />
+          <Route path="/settings" lazy={protectedPage(() => import('../pages/UserSettings'))} />
+          <Route path="/books/:bookId/settings" lazy={protectedPage(() => import('../pages/CharacterSettings'))} />
+          <Route path="/books/:bookId/relationships" lazy={protectedPage(() => import('../pages/RelationshipMap'))} />
+          <Route path="/books/:bookId/foreshadowing" lazy={protectedPage(() => import('../pages/Foreshadowing'))} />
+          <Route path="/books/:bookId/story-outline" lazy={protectedPage(() => import('../pages/StoryOutline'))} />
+          <Route path="/books/:bookId/ai-brainstorm" lazy={protectedPage(() => import('../pages/AiBrainstorm'))} />
+          <Route path="/dashboard" lazy={protectedPage(() => import('../pages/Dashboard'))} />
+          <Route path="/editor/:bookId" lazy={protectedPage(() => import('../pages/EditorPrototype'))} />
+        </Route>
 ));
 
 function App(): React.ReactElement {

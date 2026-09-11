@@ -1,6 +1,8 @@
 import React, { forwardRef, useImperativeHandle } from 'react';
 import { act, cleanup, fireEvent, render, RenderResult, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import type { RouteObject } from 'react-router-dom';
+import { RouteShell, RouteError } from '../../../src/RouteShell';
 import { afterEach, beforeEach, vi } from 'vitest';
 import type { ForeshadowingNote } from '../../../types';
 import EditorPage from '../../../pages/EditorPrototype';
@@ -78,10 +80,16 @@ export function setupEditorPageHarness() {
     });
 }
 
-export function createEditorRouter(initialEntries = ['/editor/b1'], initialIndex = initialEntries.length - 1) {
+export function createEditorRouter(
+    initialEntries = ['/editor/b1'],
+    initialIndex = initialEntries.length - 1,
+    dashboard: RouteObject = { element: <div>Dashboard destination</div> },
+) {
     return createMemoryRouter([
-        { path: '/editor/:bookId', element: <EditorPage /> },
-        { path: '/dashboard', element: <div>Dashboard destination</div> },
+        { element: <RouteShell />, errorElement: <RouteError />, children: [
+            { path: '/editor/:bookId', element: <EditorPage /> },
+            { ...dashboard, path: '/dashboard' },
+        ] },
     ], { initialEntries, initialIndex });
 }
 

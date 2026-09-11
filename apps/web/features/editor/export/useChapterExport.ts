@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { exportChapter, type ChapterExportFormat, type ChapterExportSnapshot } from './exportChapter';
+import type { ChapterExportFormat, ChapterExportSnapshot } from './exportChapter';
 
 interface UseChapterExportOptions {
     getSnapshot: () => ChapterExportSnapshot | null;
@@ -24,6 +24,7 @@ export function useChapterExport({ getSnapshot, onError }: UseChapterExportOptio
             const snapshot = getSnapshot();
             if (!snapshot) return;
             setIsExporting(true);
+            const { exportChapter } = await import('./exportChapter');
             await exportChapter(format, snapshot);
         } catch (error) {
             if (mounted.current) onError(format, error);
