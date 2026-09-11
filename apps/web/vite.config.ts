@@ -11,10 +11,14 @@ export default defineConfig(({ mode }) => {
   if (!/^https?:\/\//i.test(target)) throw new Error('STORYARK_API_PROXY_TARGET must use HTTP(S)')
   return {
     plugins: [react(), tailwindcss()],
+    // Keep Rust build errors visible when the desktop dev server reloads.
+    clearScreen: false,
     server: {
       host: env.STORYARK_WEB_HOST || '0.0.0.0',
       port,
       strictPort: true,
+      // Cargo output must not trigger frontend reloads.
+      watch: { ignored: ['**/src-tauri/**'] },
       // Preserve the browser-facing Host so Spring sees same-origin requests
       // even when a developer changes the local web port.
       proxy: { '/api': { target, changeOrigin: false } },

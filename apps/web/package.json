@@ -8,6 +8,10 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:desktop": "vite --host 127.0.0.1 --port 1420 --strictPort",
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build --no-bundle",
     "typecheck": "tsc -b --pretty false",
     "build": "npm run typecheck && vite build",
     "lint": "eslint .",
@@ -43,6 +47,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.3",
+    "@tauri-apps/cli": "2.11.4",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.7",

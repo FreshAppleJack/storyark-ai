@@ -1,0 +1,9 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "React-only desktop shell; no native IPC permissions are needed yet.",
+  "windows": [
+    "main"
+  ],
+  "permissions": []
+}
