@@ -1,34 +1,28 @@
-import axios from 'axios';
+import axios, { type AxiosRequestConfig } from 'axios';
+import { clientConfig } from './config';
 
-const apiClient = axios.create({
-    baseURL: 'http://localhost:8080/api',
-    timeout: 10000,
-    // Ask Axios to send cookies (for session authentication)
+const transport = axios.create({
+    baseURL: clientConfig.apiBaseUrl,
+    timeout: clientConfig.apiTimeoutMs,
     withCredentials: true,
 });
 
-// request interceptor
-apiClient.interceptors.request.use(
-    (config) => {
-        return config;
+// Return response bodies explicitly so TypeScript and runtime agree. Unspecified
+// responses are unknown; callers must validate or name their DTO contract.
+// Failures (including 401) reject without forcing a page reload that could lose
+// the editor's unsaved draft. The calling UI owns failure/recovery feedback.
+const apiClient = {
+    async get<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> {
+        return (await transport.get<T>(url, config)).data;
     },
-    (error) => {
-        return Promise.reject(error);
-    }
-);
-
-// response interceptor
-apiClient.interceptors.response.use(
-    response => response.data,
-    (error) => {
-        // handling 401 error
-        if (error.response?.status === 401) {
-            // Session expired, redirect to login page
-            if (window.location.pathname !== '/login') {
-                window.location.href = '/login';
-            }
-        }
-        return Promise.reject(error);
-    }
-);
+    async post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+        return (await transport.post<T>(url, data, config)).data;
+    },
+    async put<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
+        return (await transport.put<T>(url, data, config)).data;
+    },
+    async delete<T = unknown>(url: string, config?: AxiosRequestConfig): Promise<T> {
+        return (await transport.delete<T>(url, config)).data;
+    },
+};
 export default apiClient;

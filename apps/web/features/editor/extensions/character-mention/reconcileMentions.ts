@@ -1,4 +1,5 @@
 import type { Editor } from '@tiptap/core';
+import type { Node } from '@tiptap/pm/model';
 import type { Character } from '../../../../types';
 
 /**
@@ -14,9 +15,9 @@ export const forceDowngradeMentions = (targetEditor: Editor, currentCharacters: 
     if (!targetEditor || !currentCharacters || currentCharacters.length === 0) return;
     let modified = false;
     const { tr } = targetEditor.state;
-    const nodesToDowngrade: { pos: number, node: any }[] = [];
+    const nodesToDowngrade: { pos: number, node: Node }[] = [];
 
-    targetEditor.state.doc.descendants((node: any, pos: number) => {
+    targetEditor.state.doc.descendants((node, pos) => {
         if (node.type.name === 'mention') nodesToDowngrade.push({ pos, node });
     });
 

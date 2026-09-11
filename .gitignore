@@ -37,6 +37,5 @@ backups/
 # Security scan reports
 .reports/
 gitleaks-report.*
-apps/web/package-lock.json
 /.codebuddy/rules
 /.codebuddy/memory

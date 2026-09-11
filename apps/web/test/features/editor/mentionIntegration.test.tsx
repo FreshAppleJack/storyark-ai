@@ -1,6 +1,7 @@
 import { createRef } from 'react';
 import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
+import type { ReferenceElement } from 'tippy.js';
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Character } from '../../../types';
@@ -72,6 +73,7 @@ describe('createMentionSuggestion', () => {
             ...alice, id: `c-${i}`, name,
         }));
         const suggestion = createMentionSuggestion(() => cast);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- This isolated suggestion fixture intentionally omits unused Tiptap editor state.
         const items = suggestion.items?.({ query: 'a' } as any) ?? [];
 
         expect(items).toHaveLength(5);
@@ -83,6 +85,7 @@ describe('createMentionSuggestion', () => {
         const suggestion = createMentionSuggestion(() => [alice]);
         const $position = editor.state.doc.resolve(5);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Only the matcher inputs consumed by this adapter are supplied.
         const match = suggestion.findSuggestionMatch?.({ char: '@', $position } as any);
 
         expect(match).toEqual({ range: { from: 1, to: 5 }, query: 'Ali', text: 'Ali' });
@@ -93,6 +96,7 @@ describe('createMentionSuggestion', () => {
         const suggestion = createMentionSuggestion(() => [alice]);
         const $position = editor.state.doc.resolve(6);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Only the matcher inputs consumed by this adapter are supplied.
         const match = suggestion.findSuggestionMatch?.({ char: '@', $position } as any);
 
         expect(match).toEqual({ range: { from: 2, to: 6 }, query: 'Ali', text: 'Ali' });
@@ -175,7 +179,7 @@ describe('characterTooltip', () => {
 
         const { handleMouseOver } = createCharacterTooltipHandler({ getCharacter: () => alice });
         handleMouseOver({ target } as unknown as MouseEvent);
-        expect((target as any)._tippy).toBeDefined();
+        expect((target as ReferenceElement)._tippy).toBeDefined();
 
         const suppressed = document.createElement('span');
         suppressed.className = 'mention';
@@ -187,7 +191,7 @@ describe('characterTooltip', () => {
             shouldSuppress: () => true,
         });
         suppressing.handleMouseOver({ target: suppressed } as unknown as MouseEvent);
-        expect((suppressed as any)._tippy).toBeUndefined();
+        expect((suppressed as ReferenceElement)._tippy).toBeUndefined();
     });
 
     it('destroy() detaches every tooltip the controller created', () => {

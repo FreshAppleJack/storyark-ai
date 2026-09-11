@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useEffectEvent, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useBlocker, NavigateOptions } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { useApp } from '../InteractionContent/AppContext';
-import apiClient from '../services/api';
+import { aiApi } from '../data/aiApi';
+import { asRecord } from '../utils/serialization';
 import TiptapEditor, { TiptapEditorRef } from '../components/TiptapEditor';
 import { Chapter, ForeshadowingNote, PlotSetting, Volume } from '../types';
 import { ChapterNavigator, NavigatorDeleteTarget } from '../features/editor/components/ChapterNavigator';
@@ -34,8 +35,8 @@ function Editor(): React.ReactElement {
     const [activeChapterId, setActiveChapterId] = useState<string>('');
 
     // 2. Find current active volume and chapter
-    let activeVolume = book?.volumes.find(v => v.chapters.some(c => c.id === activeChapterId));
-    let activeChapter = activeVolume?.chapters.find(c => c.id === activeChapterId);
+    const activeVolume = book?.volumes.find(v => v.chapters.some(c => c.id === activeChapterId));
+    const activeChapter = activeVolume?.chapters.find(c => c.id === activeChapterId);
 
     // 3. State Management
     // The chapter draft (values + revision + dirty tracking) lives in a hook;
@@ -71,10 +72,7 @@ function Editor(): React.ReactElement {
             }
             return getEditorPlainText(chapterDraft.content);
         },
-        requestContinue: async (payload) => {
-            const response = await apiClient.post('/ai/continue', payload);
-            return (response as any).result;
-        },
+        requestContinue: aiApi.continueWriting,
         insertResult: (formattedHtml) => {
             const editor = editorRef.current?.editor;
             // The hook pins the chapter identity; this only guards a lock
@@ -156,10 +154,11 @@ function Editor(): React.ReactElement {
 
             if (targetChapterId && !activeChapterId) {
                 // Initial load: the draft is still empty, so no flush is needed.
+                // eslint-disable-next-line react-hooks/set-state-in-effect -- Restore the external localStorage selection once book data arrives.
                 setActiveChapterId(targetChapterId);
             }
         }
-    }, [book, bookId]);
+    }, [book, bookId, activeChapterId]);
 
     // Listen for chapter switch
     useEffect(() => {
@@ -168,11 +167,12 @@ function Editor(): React.ReactElement {
         }
     }, [activeChapterId, bookId]);
 
+    const loadPlanning = useEffectEvent((id: string) => fetchStoryPlanning(id));
     useEffect(() => {
         let isMounted = true;
         const loadPlotSettings = async () => {
             if (!bookId) return;
-            const planning = await fetchStoryPlanning(bookId);
+            const planning = await loadPlanning(bookId);
             if (!isMounted) return;
             if (!planning) {
                 setPlotSettings([]);
@@ -209,8 +209,7 @@ function Editor(): React.ReactElement {
         // wired to the same data source) goes first, then we double-tap.
         Promise.resolve().then(() => {
             if (editorRef.current) {
-                if (typeof window !== 'undefined' && (window as any).__DEBUG_HIGHLIGHTS__) {
-                    // eslint-disable-next-line no-console
+                if (typeof window !== 'undefined' && window.__DEBUG_HIGHLIGHTS__) {
                     console.log('[EditorPrototype] characters changed -> forceRefreshHighlights', {
                         isFirst,
                         characters: currentChars.map(c => ({ id: c.id, name: c.name, aliases: c.aliases || [], color: c.color })),
@@ -228,29 +227,31 @@ function Editor(): React.ReactElement {
         const pendingValue = localStorage.getItem(storageKey);
         if (!pendingValue) return;
 
-        let pendingTarget: { chapterId?: string; foreshadowingId?: string };
+        let pendingTarget: Record<string, unknown>;
         try {
-            pendingTarget = JSON.parse(pendingValue);
-        } catch (error) {
+            pendingTarget = asRecord(JSON.parse(pendingValue));
+        } catch {
             localStorage.removeItem(storageKey);
             return;
         }
 
         if (
             pendingTarget.chapterId !== activeChapterId ||
-            !pendingTarget.foreshadowingId ||
+            typeof pendingTarget.foreshadowingId !== 'string' || !pendingTarget.foreshadowingId ||
             !chapterDraft.foreshadowings.some(item => item.id === pendingTarget.foreshadowingId)
         ) {
             return;
         }
 
-        setActiveForeshadowingId(pendingTarget.foreshadowingId);
+        const foreshadowingId = pendingTarget.foreshadowingId;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- Apply an external cross-page focus request after its chapter has loaded.
+        setActiveForeshadowingId(foreshadowingId);
         setIsForeshadowingPanelOpen(true);
 
         const delays = [160, 420, 800];
         const timers = delays.map(delay => window.setTimeout(() => {
             if (localStorage.getItem(storageKey) !== pendingValue) return;
-            const didFocus = editorRef.current?.focusForeshadowing(pendingTarget.foreshadowingId!);
+            const didFocus = editorRef.current?.focusForeshadowing(foreshadowingId);
             if (didFocus) {
                 localStorage.removeItem(storageKey);
             }

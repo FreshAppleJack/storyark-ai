@@ -1,25 +1,15 @@
 import { MarkerType, type Edge, type Node, type XYPosition } from '@xyflow/react';
 import type { Character, HandleConfig } from '../../types';
 import type { GraphData } from '../../data/dto';
-import { asRecord, parseJsonSafe } from '../../utils/serialization';
+import { normalizeHandleConfig } from '../../domain/relationshipHandles';
+export { normalizeHandleConfig } from '../../domain/relationshipHandles';
 
 export type RelationshipNode = Node<Character & Record<string, unknown>, 'character'>;
-export const DEFAULT_HANDLE_CONFIG: HandleConfig = { top: 'target', right: 'source', bottom: 'source', left: 'target' };
 export const relationshipEdgeStyle = {
     type: 'smoothstep', animated: true, markerEnd: { type: MarkerType.ArrowClosed },
     style: { stroke: '#64748b', strokeWidth: 2 }, labelStyle: { fill: '#475569', fontWeight: 700, fontSize: 12 },
     labelBgStyle: { fill: '#f1f5f9', fillOpacity: 0.9 }, labelBgPadding: [4, 2] as [number, number], labelBgBorderRadius: 4,
 };
-
-export function normalizeHandleConfig(value: unknown): HandleConfig {
-    const data = asRecord(parseJsonSafe(value, {}));
-    const result = { ...DEFAULT_HANDLE_CONFIG };
-    for (const side of Object.keys(result) as (keyof HandleConfig)[]) {
-        const mode = data[side];
-        if (mode === 'source' || mode === 'target' || mode === 'both' || mode === 'none') result[side] = mode;
-    }
-    return result;
-}
 
 export function createCharacterNode(character: Character, id: string, position: XYPosition): RelationshipNode {
     return { id, type: 'character', position, data: { ...character, handleConfig: normalizeHandleConfig(character.handleConfig) } };

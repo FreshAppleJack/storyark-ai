@@ -1,16 +1,17 @@
 import { AutoHighlight, CustomFontFamily, CustomMention, FontSize, forceDowngradeMentions, ForeshadowingMark, IgnoreAutoHighlight, PasteAutoFormat, TabIndent, transformPastedHtml } from '../features/editor/extensions';
-import { dlog } from '../features/editor/debug/editorDebug';
+import { dlog, type MentionDebugEntry } from '../features/editor/debug/editorDebug';
 import { createMentionSuggestion } from '../features/editor/integrations/mentionSuggestion';
 import { createCharacterTooltipHandler } from '../features/editor/integrations/characterTooltip';
-import { escapeRegex, getCharacterDisplayTerms, getCharacterMatchTerms, getValidNamedCharacters } from '../domain/characters';
-import React, {useEffect, useState, useImperativeHandle, forwardRef, useMemo, useRef} from 'react';
+import { getCharacterDisplayTerms } from '../domain/characters';
+import React, {useEffect, useEffectEvent, useState, useImperativeHandle, forwardRef, useMemo, useRef} from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import type { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import TextAlign from '@tiptap/extension-text-align';
 import Placeholder from '@tiptap/extension-placeholder';
 import { TextStyle } from '@tiptap/extension-text-style';
 //import { FontFamily } from '@tiptap/extension-font-family';
-import { TextSelection } from '@tiptap/pm/state';
+import { EditorState, TextSelection } from '@tiptap/pm/state';
 import { Node as PMNode } from '@tiptap/pm/model';
 import 'tippy.js/dist/tippy.css';
 import 'tippy.js/animations/shift-away.css';
@@ -21,9 +22,11 @@ import { EditorContextMenu } from '../features/editor/components/EditorContextMe
 import { Character, EDITOR_SPACING_LIMITS, ForeshadowingNote } from '../types';
 import { calculateMixedWordCount } from '../utils/textUtils'; // Import common utility function
 
+const EMPTY_CHARACTERS: Character[] = [];
+
 export interface TiptapEditorRef {
     insertContent: (content: string) => void;
-    editor: any;
+    editor: Editor | null;
     getHTML: () => string; // Allow parent component to directly get latest updated HTML content
     /** Force refresh all character highlights in the editor (use after character settings change) */
     forceRefreshHighlights: () => void;
@@ -57,7 +60,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                                                                          isEditable = true,
                                                                          placeholder = "Start writing...",
                                                                          className,
-                                                                         characters = [],
+                                                                         characters = EMPTY_CHARACTERS,
                                                                          autoHighlightCharacters = characters,
                                                                          editorMarginPx = EDITOR_SPACING_LIMITS.marginPx.default,
                                                                          editorLineHeight = EDITOR_SPACING_LIMITS.lineHeight.default,
@@ -114,6 +117,10 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
     useEffect(() => { onForeshadowingClickRef.current = onForeshadowingClick; }, [onForeshadowingClick]);
     useEffect(() => { onForeshadowingCreateRef.current = onForeshadowingCreate; }, [onForeshadowingCreate]);
     useEffect(() => { onUpdateRef.current = onUpdate; }, [onUpdate]);
+
+    // Character updates have their own highlight reconciliation. Do not reload
+    // the document merely because a callback's character snapshot changed.
+    const reconcileContentMentions = useEffectEvent((target: Editor) => forceDowngradeMentions(target, characters));
 
     const extensions = useMemo(() => {
         return [
@@ -237,7 +244,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
         },
         // Initial content setup
         content: (() => {
-            try { return JSON.parse(content); } catch (e) { return content; }
+            try { return JSON.parse(content); } catch { return content; }
         })(),
         editable: isEditable,
         onUpdate: ({ editor }) => {
@@ -308,7 +315,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
 
     // --- Content synchronization logic ---
     useEffect(() => {
-        if (!editor) return;
+        if (!editor || editor.isDestroyed) return;
 
         const isContentIdChanged = contentId !== lastContentIdRef.current;
 
@@ -320,7 +327,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 lastEmittedContentRef.current = null;
 
                 let newContentParsed;
-                try { newContentParsed = JSON.parse(content); } catch (e) { newContentParsed = content; }
+                try { newContentParsed = JSON.parse(content); } catch { newContentParsed = content; }
 
                 // Force unlock to write content (even if current is read-only mode)
                 const wasEditable = editor.isEditable;
@@ -330,13 +337,19 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 editor.commands.setContent(newContentParsed);
 
                 // Key patch: immediately shuffling after content injection to ensure old JSON data is corrected
-                forceDowngradeMentions(editor, characters);
+                reconcileContentMentions(editor);
 
                 // Restore lock status
                 if (!wasEditable) editor.setEditable(false);
 
                 // Clear history to reset editor state (prevent undo to previous chapter)
-                (editor.commands as any).clearHistory?.();
+                // Tiptap has no clearHistory command. Reconfigure the history
+                // plugin through a fresh editor state so undo cannot cross chapters.
+                editor.view.updateState(EditorState.create({
+                    doc: editor.state.doc,
+                    selection: editor.state.selection,
+                    plugins: editor.state.plugins,
+                }));
             } finally {
                 // Always ensure silent update mode is disabled after operation
                 isSilentUpdateRef.current = false;
@@ -352,14 +365,14 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
             isSilentUpdateRef.current = true; // Start silent update mode: all subsequent operations will not trigger onUpdate
             try {
                 let newContentParsed;
-                try { newContentParsed = JSON.parse(content); } catch (e) { newContentParsed = content; }
+                try { newContentParsed = JSON.parse(content); } catch { newContentParsed = content; }
 
                 const wasEditable = editor.isEditable;
                 if (!wasEditable) editor.setEditable(true);
                 editor.commands.setContent(newContentParsed);
 
                 // Key patch: immediately shuffling after content injection to ensure old JSON data is corrected
-                forceDowngradeMentions(editor, characters);
+                reconcileContentMentions(editor);
 
                 if (!wasEditable) editor.setEditable(false);
             } finally {
@@ -399,7 +412,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 // 5. If content is inserted, force apply style to the range inserted
                 if (end > start && (fontFamily || fontSize)) {
                     // Build the style object to force apply
-                    const stylesToApply: Record<string, any> = {};
+                    const stylesToApply: Record<string, unknown> = {};
                     if (fontFamily) stylesToApply.fontFamily = fontFamily;
                     if (fontSize) stylesToApply.fontSize = fontSize;
 
@@ -481,9 +494,9 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
             const tr = editor.state.tr;
             let modified = false;
             const targetMark = markType.create({ id });
-            editor.state.doc.descendants((node: any, pos: number) => {
+            editor.state.doc.descendants((node, pos) => {
                 if (!node.isInline) return;
-                node.marks.forEach((mark: any) => {
+                node.marks.forEach(mark => {
                     if (mark.type === markType && mark.attrs.id === id) {
                         tr.removeMark(pos, pos + node.nodeSize, targetMark);
                         modified = true;
@@ -504,8 +517,8 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
             if (!editor || editor.isDestroyed) return false;
             const editorDom = editor.view.dom as HTMLElement;
             // CSS.escape guards against ids that contain special chars.
-            const safeId = (typeof CSS !== 'undefined' && (CSS as any).escape)
-                ? (CSS as any).escape(id)
+            const safeId = (typeof CSS !== 'undefined' && CSS.escape)
+                ? CSS.escape(id)
                 : id.replace(/["\\]/g, '\\$&');
             const target = editorDom.querySelector(
                 `[data-foreshadowing-id="${safeId}"]`
@@ -556,21 +569,17 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
     // instance created through it (destroyed together on cleanup).
     useEffect(() => {
         if (!editor || !characters) return;
-        const editorElement = editor.options.element;
+        const editorElement = editor.view.dom;
         // If a context menu is displayed, the tooltip is suppressed to avoid visual interference
         const tooltip = createCharacterTooltipHandler({
             getCharacter: (charId) => characters.find(c => c.id === charId),
             shouldSuppress: () => !!contextMenu,
         });
 
-        if ("addEventListener" in editorElement) {
-            editorElement.addEventListener('mouseover', tooltip.handleMouseOver);
-        }
+        editorElement.addEventListener('mouseover', tooltip.handleMouseOver);
 
         return () => {
-            if ("removeEventListener" in editorElement) {
-                editorElement.removeEventListener('mouseover', tooltip.handleMouseOver);
-            }
+            editorElement.removeEventListener('mouseover', tooltip.handleMouseOver);
             tooltip.destroy();
         };
     }, [editor, characters, contextMenu, isEditable]);
@@ -608,8 +617,8 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
 
         const inspectMentions = () => {
             if (!editor || editor.isDestroyed) return [];
-            const out: any[] = [];
-            editor.state.doc.descendants((node: any, pos: number) => {
+            const out: MentionDebugEntry[] = [];
+            editor.state.doc.descendants((node, pos) => {
                 if (node.type.name === 'mention') {
                     out.push({
                         pos,
@@ -625,7 +634,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
         const diffMentions = () => {
             const mentions = inspectMentions();
             const charById = new Map(characters.map(c => [c.id, c]));
-            return mentions.map((m: any) => {
+            return mentions.map(m => {
                 const c = charById.get(m.id);
                 if (!c) return { ...m, status: 'CHAR_DELETED' };
                 const drifts: string[] = [];
@@ -643,12 +652,11 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 const tr = editor.state.tr.setMeta('forceRefreshHighlights', true);
                 editor.view.dispatch(tr);
             } catch (e) {
-                // eslint-disable-next-line no-console
                 console.warn('[TiptapHL] forceRefresh failed', e);
             }
         };
 
-        (window as any).__debugTiptap = {
+        window.__debugTiptap = {
             getEditor: () => editor,
             getCharacters: () => characters,
             inspectMentions,
@@ -661,12 +669,10 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
             if (!mod || !e.shiftKey) return;
             if (e.key === 'H' || e.key === 'h') {
                 e.preventDefault();
-                // eslint-disable-next-line no-console
                 console.log('[TiptapHL] manual refresh (Cmd/Ctrl+Shift+H)');
                 forceRefresh();
             } else if (e.key === 'M' || e.key === 'm') {
                 e.preventDefault();
-                // eslint-disable-next-line no-console
                 console.table(diffMentions());
             }
         };
@@ -674,8 +680,8 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
 
         return () => {
             window.removeEventListener('keydown', onKeyDown);
-            if ((window as any).__debugTiptap?.getEditor?.() === editor) {
-                delete (window as any).__debugTiptap;
+            if (window.__debugTiptap?.getEditor() === editor) {
+                delete window.__debugTiptap;
             }
         };
     }, [editor, characters]);
@@ -716,7 +722,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
 
         const getRangeText = (rangeFrom: number, rangeTo: number) => {
             const parts: string[] = [];
-            editor.state.doc.nodesBetween(rangeFrom, rangeTo, (node: any, pos: number) => {
+            editor.state.doc.nodesBetween(rangeFrom, rangeTo, (node, pos) => {
                 if (node.isText && node.text) {
                     const localFrom = Math.max(0, rangeFrom - pos);
                     const localTo = Math.min(node.text.length, rangeTo - pos);
@@ -739,7 +745,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
             return parts.join('');
         };
 
-        editor.state.doc.nodesBetween(from, to, (node: any, pos: number) => {
+        editor.state.doc.nodesBetween(from, to, (node, pos) => {
             if (!node.isTextblock) return;
 
             const blockStart = pos + 1;
@@ -749,7 +755,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
             if (selectedFrom >= selectedTo) return false;
 
             let atLineStart = true;
-            node.descendants((child: any, childPos: number) => {
+            node.descendants((child, childPos) => {
                 const childFrom = blockStart + childPos;
                 const childTo = childFrom + child.nodeSize;
                 if (childTo <= selectedFrom || childFrom >= selectedTo) {

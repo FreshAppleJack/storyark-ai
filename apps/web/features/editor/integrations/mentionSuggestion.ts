@@ -1,9 +1,10 @@
 import { ReactRenderer } from '@tiptap/react';
 import type { MentionOptions } from '@tiptap/extension-mention';
+import type { JSONContent } from '@tiptap/core';
 import tippy, { Instance } from 'tippy.js';
 import type { Character } from '../../../types';
 import { getValidNamedCharacters } from '../../../domain/characters';
-import { MentionList } from './MentionList';
+import { MentionList, type MentionListHandle } from './MentionList';
 
 /**
  * Builds the suggestion configuration for the character mention.
@@ -42,7 +43,7 @@ export const createMentionSuggestion = (getCharacters: () => Character[]): Menti
         return { range: { from: fromPos, to: toPos }, query: query, text: query };
     },
     command: ({ editor, range, props }) => {
-        const currentMarks: any[] = [];
+        const currentMarks: NonNullable<JSONContent['marks']> = [];
         const textStyleAttrs = editor.getAttributes('textStyle');
         if (textStyleAttrs && Object.keys(textStyleAttrs).length > 0) {
             currentMarks.push({ type: 'textStyle', attrs: textStyleAttrs });
@@ -71,7 +72,7 @@ export const createMentionSuggestion = (getCharacters: () => Character[]): Menti
             }
         }
 
-        const contentToInsert: any[] = [];
+        const contentToInsert: JSONContent[] = [];
         if (insertSpaceBefore) {
             contentToInsert.push({ type: 'text', text: ' ', marks: currentMarks });
         }
@@ -98,7 +99,7 @@ export const createMentionSuggestion = (getCharacters: () => Character[]): Menti
         // The popup only exists when a clientRect was available at onStart;
         // every later hook must tolerate its absence (Escape/exit before
         // placement, missing rect mid-session).
-        let component: ReactRenderer | undefined;
+        let component: ReactRenderer<MentionListHandle> | undefined;
         let popup: Instance[] | undefined;
 
         return {
@@ -108,10 +109,11 @@ export const createMentionSuggestion = (getCharacters: () => Character[]): Menti
                     editor: props.editor,
                 });
 
-                if (!props.clientRect) return;
+                const rect = props.clientRect?.();
+                if (!rect) return;
 
                 popup = tippy('body', {
-                    getReferenceClientRect: props.clientRect,
+                    getReferenceClientRect: () => rect,
                     appendTo: () => document.body,
                     content: component.element,
                     showOnCreate: true,
@@ -123,9 +125,10 @@ export const createMentionSuggestion = (getCharacters: () => Character[]): Menti
             },
             onUpdate(props) {
                 component?.updateProps(props);
-                if (!props.clientRect || !popup) return;
+                const rect = props.clientRect?.();
+                if (!rect || !popup) return;
                 popup[0].setProps({
-                    getReferenceClientRect: props.clientRect,
+                    getReferenceClientRect: () => rect,
                 });
             },
             onKeyDown(props) {
@@ -133,7 +136,7 @@ export const createMentionSuggestion = (getCharacters: () => Character[]): Menti
                     popup?.[0]?.hide();
                     return true;
                 }
-                return (component?.ref as any)?.onKeyDown(props);
+                return component?.ref?.onKeyDown(props) ?? false;
             },
             onExit() {
                 popup?.[0]?.destroy();

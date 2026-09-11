@@ -34,7 +34,7 @@ export const PasteAutoFormat = Extension.create({
                                     const newMarks = node.marks.filter(
                                         m => m.type.name !== 'textStyle' && m.type.name !== 'fontFamily'
                                     );
-                                    const textStyleAttrs: Record<string, any> = {};
+                                    const textStyleAttrs: Record<string, unknown> = {};
                                     if (currentFontFamily) textStyleAttrs.fontFamily = currentFontFamily;
                                     if (currentFontSize) textStyleAttrs.fontSize = currentFontSize;
                                     if (Object.keys(textStyleAttrs).length > 0 && schema.marks.textStyle) {

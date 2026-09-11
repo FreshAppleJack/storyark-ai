@@ -1,8 +1,7 @@
 import React from 'react';
 import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
 import { ColorSwatch, TypographySpec } from '../types';
-import { Search, Save, Trash2, PenTool, CheckCircle2, Cloud, History, Moon, Settings, SlidersHorizontal, Sun } from 'lucide-react';
+import { Save, Trash2, PenTool, CheckCircle2, Cloud, History, Moon, Settings, SlidersHorizontal, Sun } from 'lucide-react';
 
 const StyleLibrary: React.FC = () => {
   const colors: ColorSwatch[] = [

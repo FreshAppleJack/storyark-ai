@@ -32,7 +32,7 @@ export const calculateMixedWordCount = (text: string): number => {
     // 使用正则提取单词
     // 匹配规则：字母/数字开头，中间可以包含单引号('或’)或连字符(-)，必须以字母/数字结尾
     // 例子： "It's" -> 1词; "state-of-the-art" -> 1词; "Hello..." -> 忽略...
-    const enMatches = nonCjkText.match(/[a-zA-Z0-9]+(?:['’\-][a-zA-Z0-9]+)*/g) || [];
+    const enMatches = nonCjkText.match(/[a-zA-Z0-9]+(?:['’-][a-zA-Z0-9]+)*/g) || [];
     const enCount = enMatches.length;
 
     return cjkCount + enCount;

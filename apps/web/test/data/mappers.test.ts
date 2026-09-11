@@ -1,8 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { mapBooks, mapRelations, toChapterPayload, toGraphPayload, toPlanningPayload } from '../../data/mappers';
+import { mapBooks, mapChapter, mapRelations, mapUser, toServerId, toChapterPayload, toGraphPayload, toPlanningPayload } from '../../data/mappers';
 import { normalizeStoryPlanning } from '../../domain/storyPlanning';
 
 describe('API data conversion', () => {
+    it('rejects invalid identity and damaged notes instead of inventing writable data', () => {
+        expect(() => mapUser({ id: 1 })).toThrow('authenticated user');
+        expect(() => mapUser({ id: Number.MAX_SAFE_INTEGER + 1, username: 'user' })).toThrow('entity ID');
+        expect(mapUser({ id: 1, username: 'user' }).id).toBe('1');
+        for (const id of ['', 'not-an-id', Infinity, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+            expect(() => toServerId(id)).toThrow('entity ID');
+        }
+        for (const notes of ['{broken', '[null]', [{ id: 'note', note: 'Text' }]]) {
+            expect(() => mapChapter({ id: 1, title: 'Chapter', foreshadowings: notes })).toThrow();
+        }
+        expect(mapChapter({ id: 1, title: 'Chapter', foreshadowings: [{
+            id: 'note', excerpt: 'Seed', note: 'Text', isRecovered: true, createdAt: 5, updatedAt: 6,
+        }] }).foreshadowings[0]).toEqual({
+            id: 'note', excerpt: 'Seed', note: 'Text', isRecovered: true, createdAt: 5, updatedAt: 6,
+        });
+    });
+
+    it('uses a deterministic fallback for invalid book timestamps', () => {
+        expect(mapBooks([{ id: 1, title: 'Book', updatedAt: 'invalid' }], 'Author', 100)[0].lastModified).toBe(100);
+    });
+
     it('normalizes nested IDs and legacy fields without changing the response', () => {
         const response = [{ id: 1, title: 'Book', status: 2, volumes: [{ id: 2, title: 'Volume', chapters: [
             { id: 3, title: 'Chapter', isEditable: false, foreshadowings: 'null' },
@@ -11,7 +32,8 @@ describe('API data conversion', () => {
         const [book] = mapBooks(response, 'Author', 100);
         expect(book).toMatchObject({ id: '1', author: 'Author', lastModified: 100, status: 'completed' });
         expect(book.volumes[0]).toMatchObject({ id: '2', chapters: [{ id: '3', content: '', wordCount: 0, status: 'draft', isEditable: false, foreshadowings: [] }] });
-        expect(book.characters[0]).toMatchObject({ id: '4', bookId: '1', name: 'Alice', aliases: ['A', 'B', 'C'], tags: ['one', 'two', 'three'], handleConfig: null });
+        expect(book.characters[0]).toMatchObject({ id: '4', bookId: '1', name: 'Alice', aliases: ['A', 'B', 'C'], tags: ['one', 'two', 'three'],
+            handleConfig: { top: 'target', right: 'source', bottom: 'source', left: 'target' } });
         expect(response).toEqual(snapshot);
     });
 

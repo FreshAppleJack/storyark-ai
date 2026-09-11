@@ -5,12 +5,12 @@ import { mapBooks, mapId, toBookPayload } from './mappers';
 
 export const booksApi = {
     async list(userId: ApiId, author: string) {
-        return mapBooks(await apiClient.get<unknown, BookDto[]>(`/books?userId=${userId}`), author, Date.now());
+        return mapBooks(await apiClient.get<BookDto[]>(`/books?userId=${userId}`), author, Date.now());
     },
     async create(userId: ApiId, title: string, coverColor: string) {
-        const data = await apiClient.post<unknown, EntityDto>('/books', { userId, title, coverColor, status: 1 });
+        const data = await apiClient.post<EntityDto>('/books', { userId, title, coverColor, status: 1 });
         return mapId(data.id);
     },
-    update: (book: Book) => apiClient.put<unknown, void>(`/books/${book.id}`, toBookPayload(book)),
-    remove: (bookId: string) => apiClient.delete<unknown, void>(`/books/${bookId}`),
+    update: async (book: Book) => apiClient.put<void>(`/books/${book.id}`, toBookPayload(book)),
+    remove: (bookId: string) => apiClient.delete<void>(`/books/${bookId}`),
 };

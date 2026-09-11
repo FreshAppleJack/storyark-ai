@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { X, Check } from 'lucide-react';
 import { Button } from '../ui/Button';
 
@@ -12,22 +12,10 @@ interface RelationshipEditDialogProps {
     onDelete?: () => void;
 }
 
-const RelationshipEditDialog: React.FC<RelationshipEditDialogProps> = ({
-                                                                           isOpen,
-                                                                           initialLabel,
-                                                                           sourceName,
-                                                                           targetName,
-                                                                           onClose,
-                                                                           onSave,
-                                                                           onDelete
-                                                                       }) => {
+function RelationshipEditForm({
+    initialLabel, sourceName, targetName, onClose, onSave, onDelete,
+}: RelationshipEditDialogProps) {
     const [label, setLabel] = useState(initialLabel);
-
-    useEffect(() => {
-        setLabel(initialLabel);
-    }, [initialLabel, isOpen]);
-
-    if (!isOpen) return null;
 
     return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/20 backdrop-blur-sm animate-in fade-in duration-200">
@@ -78,6 +66,9 @@ const RelationshipEditDialog: React.FC<RelationshipEditDialogProps> = ({
             </div>
         </div>
     );
-};
+}
 
-export default RelationshipEditDialog;
+export default function RelationshipEditDialog(props: RelationshipEditDialogProps) {
+    if (!props.isOpen) return null;
+    return <RelationshipEditForm key={props.initialLabel} {...props} />;
+}

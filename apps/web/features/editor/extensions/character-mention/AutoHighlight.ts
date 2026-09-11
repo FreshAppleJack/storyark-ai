@@ -126,7 +126,7 @@ export const AutoHighlight = Extension.create<AutoHighlightOptions>({
                             to: number;
                             char: Character;
                             label: string;
-                            marks: any;
+                            marks: readonly import('@tiptap/pm/model').Mark[];
                         }
                         const matches: Match[] = [];
 
