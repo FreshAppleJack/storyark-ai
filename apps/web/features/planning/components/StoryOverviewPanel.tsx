@@ -23,7 +23,7 @@ export function StoryOverviewPanel({ planning, updatePlanningField }: Props) {
                         value={planning.storySummary}
                         onChange={(event) => updatePlanningField('storySummary', event.target.value)}
                         placeholder="Write the high-level story arc, main conflict, turning points, and ending direction..."
-                        className="min-h-56 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-700 outline-none transition focus:border-brand-400 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-brand-500"
+                        className="min-h-56 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-700 outline-none transition focus:border-brand-400 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-brand-500 dark:focus:bg-slate-950"
                     />
                 </section>
 
@@ -39,7 +39,7 @@ export function StoryOverviewPanel({ planning, updatePlanningField }: Props) {
                         value={planning.storyBackground}
                         onChange={(event) => updatePlanningField('storyBackground', event.target.value)}
                         placeholder="Write the world background, timeline, factions, rules, locations, and hidden context..."
-                        className="min-h-64 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-700 outline-none transition focus:border-brand-400 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-brand-500"
+                        className="min-h-64 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-700 outline-none transition focus:border-brand-400 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-brand-500 dark:focus:bg-slate-950"
                     />
                 </section>
             </div>
