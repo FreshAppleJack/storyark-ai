@@ -173,7 +173,7 @@ pub(super) fn notes(notes: &[Value]) -> Result<()> {
         for key in ["createdAt", "updatedAt"] {
             if !note[key]
                 .as_i64()
-                .is_some_and(|n| (0..=super::MAX_INTEGER).contains(&n))
+                .is_some_and(|n| (0..=super::validation::MAX_INTEGER).contains(&n))
             {
                 return Err(incompatible());
             }

@@ -1,5 +1,30 @@
 # Local storage contract v1
 
+## Rust module layout
+
+The storage implementation is split by responsibility. `storage/mod.rs` retains
+the connection owner and public facade; command names, request serialization,
+SQL migrations and transaction boundaries remain unchanged.
+
+| Module | Responsibility |
+| --- | --- |
+| `database.rs` | Open the database, apply versioned migrations and check integrity |
+| `backup.rs` | Consistent SQLite backup and the backup operation |
+| `requests.rs`, `error.rs` | IPC request types and storage errors |
+| `library.rs` | Read/create books and volumes; create/save chapters |
+| `mutations.rs` | Rename, lock, reorder and delete library records |
+| `characters.rs` | Character validation, reads, writes and archival |
+| `targets.rs` | Resolve book/volume/chapter ancestry for mutations |
+| `validation.rs` | Shared identity, version, lock and input checks |
+| `records.rs` | Query rows, map stored fields and advance parent versions |
+| `content.rs` | Validate supported rich content and foreshadowing notes |
+| `tests/` | Existing regression tests grouped by feature, with shared fixtures in `mod.rs` |
+
+Each business module implements methods on the same `Database`; splitting files
+does not create extra connections or queues. Internal helpers are visible only
+within storage. Future graph and planning operations should get their own modules
+when implemented, rather than expanding the facade or adding unused abstractions.
+
 Work unit 2, 2026-09-12. Deliverables: `data/local/contracts.ts` and
 `src-tauri/migrations/0001_library.sql`. These are a specification and executable
 schema. Work unit 3 now implements connection management, startup migration, and
