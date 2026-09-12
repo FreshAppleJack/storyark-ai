@@ -5,6 +5,7 @@ import {
     type OnNodesChange, type OnEdgesChange
 } from '@xyflow/react';
 import { toast } from 'react-hot-toast';
+import { showSaveSuccessToast } from '../../../components/ui/saveToast';
 import type { Book, HandleConfig } from '../../../types';
 import { useBooks } from '../../../InteractionContent/BooksContext';
 import { getLayoutedElements } from '../../../utils/flowLayout';
@@ -111,6 +112,7 @@ export function useRelationshipGraph(bookId: string, book: Book | undefined, per
                     if (revision.current === snapshotRevision) {
                         setIsDirty(false);
                         setLastSaved(Date.now());
+                        showSaveSuccessToast();
                     }
                     // Local flush drains edits made while the previous commit was pending.
                     if (!adapter) break;

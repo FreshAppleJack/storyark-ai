@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
+import { showSaveSuccessToast } from '../../../components/ui/saveToast';
 import type { Book, PlotSetting, StoryPlanning } from '../../../types';
 import { useBooks } from '../../../InteractionContent/BooksContext';
 import { createEmptyPlanning, createPlotSetting, sanitizePlanning } from '../../../domain/storyPlanning';
@@ -31,10 +32,9 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
     const latest = useRef(planning);
     useLayoutEffect(() => { latest.current = planning; }, [planning]);
     const revision = useRef(0);
-    const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     useEffect(() => {
         mounted.current = true;
-        return () => { mounted.current = false; clearTimeout(savedTimer.current); };
+        return () => { mounted.current = false; };
     }, []);
     useEffect(() => {
         let active = true;
@@ -60,7 +60,6 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
     const selectedPlot = planning.plotSettings.find(plot => plot.id === selectedPlotId) || null;
     const edit = (update: (previous: StoryPlanning) => StoryPlanning) => {
         revision.current++;
-        clearTimeout(savedTimer.current);
         setPlanning(update);
         setSaveState('dirty');
     };
@@ -115,9 +114,10 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
                     if (!ok) throw new Error('Failed to save planning. Your draft is still available.');
                     savedRevision.current = snapshotRevision;
                     if (revision.current === snapshotRevision) {
+                        // The indicator persists like the editor's: it only
+                        // leaves when the next edit marks the page dirty.
                         setSaveState('saved');
-                        clearTimeout(savedTimer.current);
-                        savedTimer.current = setTimeout(() => setSaveState('idle'), 1800);
+                        showSaveSuccessToast();
                     }
                     if (!adapter.current) break;
                 } while (savedRevision.current !== revision.current);

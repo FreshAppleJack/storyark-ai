@@ -84,10 +84,10 @@ describe('page draft and persistence boundaries', () => {
         fireEvent.change(summary, { target: { value: 'Newer draft' } });
         await act(async () => { pending.resolve(true); });
         expect(summary).toHaveValue('Newer draft');
-        expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
-        expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+        expect(screen.getByText('Unsaved Changes')).toBeInTheDocument();
+        expect(screen.queryByText('Saved locally')).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Save Planning' }));
-        await screen.findByText('Saved');
+        await screen.findByText('Saved locally');
         expect(mocks.savePlanning).toHaveBeenLastCalledWith('1', expect.objectContaining({ storySummary: 'Newer draft' }));
     });
 

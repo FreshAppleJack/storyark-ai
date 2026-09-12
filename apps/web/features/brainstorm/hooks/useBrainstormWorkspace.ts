@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Book, BrainstormOption, BrainstormWorkspace, StoryPlanning } from '../../../types';
+import { showSaveSuccessToast } from '../../../components/ui/saveToast';
 import { useBooks } from '../../../InteractionContent/BooksContext';
 import { usePreferences } from '../../../InteractionContent/PreferencesContext';
 import { createEmptyPlanning } from '../../../domain/storyPlanning';
@@ -42,12 +43,11 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
     const revision = useRef(0);
     const savedRevision = useRef(0);
     const pendingSave = useRef<Promise<boolean> | null>(null);
-    const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const latestWorkspace = useRef(workspace);
     useLayoutEffect(() => { latestWorkspace.current = workspace; }, [workspace]);
     useEffect(() => {
         mounted.current = true;
-        return () => { mounted.current = false; clearTimeout(savedTimer.current); };
+        return () => { mounted.current = false; };
     }, []);
     const hasBook = !!book;
     useEffect(() => {
@@ -112,7 +112,6 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
     ), [workspace.contextSnapshot, chapterOptions]);
     const edit = (update: (previous: BrainstormWorkspace) => BrainstormWorkspace) => {
         revision.current++;
-        clearTimeout(savedTimer.current);
         setWorkspace(update);
         setSaveState('dirty');
     };
@@ -178,9 +177,10 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
                     if (!ok) throw new Error('Save failed. Please try again.');
                     savedRevision.current = snapshotRevision;
                     if (revision.current === snapshotRevision) {
+                        // The indicator persists like the editor's: it only
+                        // leaves when the next edit marks the page dirty.
                         setSaveState('saved');
-                        clearTimeout(savedTimer.current);
-                        savedTimer.current = setTimeout(() => { if (mounted.current) setSaveState('idle'); }, 1600);
+                        showSaveSuccessToast();
                     }
                 } while (savedRevision.current !== revision.current);
                 return true;
@@ -213,8 +213,6 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
             if (!mounted.current || revision.current !== snapshotRevision) return;
             setWorkspace(saved);
             setSaveState('saved');
-            clearTimeout(savedTimer.current);
-            savedTimer.current = setTimeout(() => setSaveState('idle'), 1600);
         } catch {
             if (mounted.current) setErrorMessage('Save failed. Please try again.');
         } finally {

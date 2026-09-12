@@ -7,8 +7,9 @@ import { useLocalPlanningPersistence } from '../features/planning/hooks/useLocal
 import type { PlanningPersistence } from '../features/planning/hooks/useStoryPlanning';
 import { PlanningSaveGuard } from '../features/planning/components/PlanningSaveGuard';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, BrainCircuit, CheckCircle2, Loader2, Save } from 'lucide-react';
+import { ArrowLeft, BrainCircuit, Loader2, Save } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { SaveStatusIndicator } from '../components/ui/SaveStatusIndicator';
 import { useBooks } from '../InteractionContent/BooksContext';
 import { useStoryPlanning } from '../features/planning/hooks/useStoryPlanning';
 import { ChapterSummariesPanel } from '../features/planning/components/ChapterSummariesPanel';
@@ -45,12 +46,8 @@ function StoryOutlineContent({ bookId, localBook, persistence }: { bookId: strin
                 </div>
 
                 <div className="flex items-center gap-3">
-                    {saveState === 'dirty' && <span className="text-xs font-medium text-amber-600 dark:text-amber-300">Unsaved changes</span>}
-                    {saveState === 'saved' && (
-                        <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-300">
-                            <CheckCircle2 size={14} />
-                            Saved
-                        </span>
+                    {(saveState !== 'idle' || isSaving) && (
+                        <SaveStatusIndicator state={isSaving ? 'saving' : saveState === 'dirty' ? 'unsaved' : 'saved'} />
                     )}
                     <Button onClick={handleSave} disabled={isSaving || isLoading || loadError} icon={isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}>
                         {isSaving ? 'Saving...' : 'Save Planning'}

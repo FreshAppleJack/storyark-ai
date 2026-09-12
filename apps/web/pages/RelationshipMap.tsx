@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ReactFlowProvider } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { ArrowLeft, Wand2, Save, Loader2, PanelLeftClose, PanelLeftOpen, CheckCircle2, HistoryIcon } from 'lucide-react';
+import { ArrowLeft, Wand2, Save, Loader2, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { SaveStatusIndicator } from '../components/ui/SaveStatusIndicator';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { localBookOptions, localCharactersOptions, projectBook, projectCharacter } from '../data/local/repository';
 import { graphRepository, localGraphOptions, localGraphKey, type LocalGraph } from '../data/local/graphRepository';
@@ -47,11 +48,9 @@ function RelationshipMapContent({ bookId, book, initial }: { bookId: string; boo
                 {/* Status & Actions */}
                 <div className="flex items-center gap-4">
                     <div className="flex items-center gap-2 text-xs font-medium transition-colors duration-300 min-w-[80px] justify-end">
-                        {isSaving ? (
-                            <><HistoryIcon size={14} className="text-brand-500 animate-spin" /><span className="text-brand-600">Saving...</span></>
-                        ) : lastSaved ? (
-                            <><CheckCircle2 size={14} className="text-emerald-500" /><span className="text-slate-400">Saved locally</span></>
-                        ) : graph.isDirty ? <span>Unsaved changes</span> : null}
+                        {(isSaving || lastSaved || graph.isDirty) && (
+                            <SaveStatusIndicator state={isSaving ? 'saving' : lastSaved ? 'saved' : 'unsaved'} />
+                        )}
                     </div>
 
                     <div className="h-4 mx-1 border-l border-slate-300 dark:border-slate-700" />

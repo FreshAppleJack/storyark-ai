@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, CheckCircle2, Loader2, Save, Wand2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Wand2 } from 'lucide-react';
 import { Button } from '../components/ui/Button';
+import { SaveStatusIndicator } from '../components/ui/SaveStatusIndicator';
 import { useBooks } from '../InteractionContent/BooksContext';
 import type { Book } from '../types';
 import { localBookOptions, localCharactersOptions, projectBook, projectCharacter } from '../data/local/repository';
@@ -43,12 +44,8 @@ function AiBrainstormContent({ bookId, localBook, sources }: { bookId: string; l
 
                 <div className="flex flex-wrap items-center justify-end gap-3">
                     <div className="flex min-w-28 justify-end">
-                        {saveState === 'dirty' && <span className="text-xs font-medium text-amber-600 dark:text-amber-300">Unsaved changes</span>}
-                        {saveState === 'saved' && (
-                            <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-300">
-                                <CheckCircle2 size={14} />
-                                Saved
-                            </span>
+                        {(saveState !== 'idle' || isSaving) && (
+                            <SaveStatusIndicator state={isSaving ? 'saving' : saveState === 'dirty' ? 'unsaved' : 'saved'} />
                         )}
                     </div>
                     <div className="flex items-center gap-3">

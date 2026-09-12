@@ -2,14 +2,17 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import type { Character } from '../../../types';
 import { useBooks } from '../../../InteractionContent/BooksContext';
+import { showSaveSuccessToast } from '../../../components/ui/saveToast';
 import { COLORS, emptyCharacterForm, toCharacterForm, toCharacterPatch, type CharacterFormData } from '../characterForm';
+
+export type CharacterSaveState = 'idle' | 'dirty' | 'saving' | 'saved';
 
 export function useCharacterEditor(bookId: string) {
     const { createCharacter, updateCharacter, deleteCharacter } = useBooks();
     const [selectedCharId, setSelectedCharId] = useState<string | null>(null);
     const [formData, updateForm] = useState(emptyCharacterForm);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
+    const [saveState, setSaveState] = useState<CharacterSaveState>('idle');
     const mounted = useRef(false);
     const busy = useRef(false);
     const revision = useRef(0);
@@ -22,10 +25,12 @@ export function useCharacterEditor(bookId: string) {
         revision.current++;
         setSelectedCharId(character.id);
         updateForm(toCharacterForm(character));
+        setSaveState('idle');
         setShowDeleteModal(false);
     }, []);
     const setFormData = (form: CharacterFormData) => {
         revision.current++;
+        setSaveState('dirty');
         updateForm(form);
     };
     const handleCreate = async () => {
@@ -44,16 +49,20 @@ export function useCharacterEditor(bookId: string) {
         if (!patch) { toast.error('Character name cannot be empty.'); return; }
         const snapshotRevision = revision.current;
         busy.current = true;
-        setIsSaving(true);
+        setSaveState('saving');
         try {
             const ok = await updateCharacter(bookId, selectedCharId, patch);
             if (!mounted.current || snapshotRevision !== revision.current) return;
-            if (ok) toast.success('Character saved successfully!');
-            else toast.error('Failed to save character. Your draft is still available.');
-        } finally {
-            busy.current = false;
-            if (mounted.current) setIsSaving(false);
-        }
+            if (ok) {
+                // The indicator persists like the editor's: it only leaves
+                // when the next edit marks the form dirty.
+                setSaveState('saved');
+                showSaveSuccessToast('Character saved successfully!');
+            } else {
+                setSaveState('dirty');
+                toast.error('Failed to save character. Your draft is still available.');
+            }
+        } finally { busy.current = false; }
     };
     const deleteSelected = async () => {
         if (!selectedCharId || busy.current) return false;
@@ -71,6 +80,7 @@ export function useCharacterEditor(bookId: string) {
     };
     return {
         selectedCharId, formData, setFormData, showDeleteModal, setShowDeleteModal,
-        isSaving, selectCharacter, handleCreate, handleSave, deleteSelected
+        saveState, isSaving: saveState === 'saving',
+        selectCharacter, handleCreate, handleSave, deleteSelected
     };
 }

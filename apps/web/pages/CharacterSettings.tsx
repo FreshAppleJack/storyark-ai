@@ -9,6 +9,7 @@ import type { Character } from '../types';
 import { CharacterList } from '../features/characters/components/CharacterList';
 import { CharacterForm } from '../features/characters/components/CharacterForm';
 import { useCharacterEditor } from '../features/characters/hooks/useCharacterEditor';
+import { SaveStatusIndicator } from '../components/ui/SaveStatusIndicator';
 
 function CharacterSettingsContent({ bookId }: { bookId: string }) {
     const navigate = useNavigate();
@@ -58,6 +59,9 @@ function CharacterSettingsContent({ bookId }: { bookId: string }) {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    {selectedCharId && editor.saveState !== 'idle' && (
+                        <SaveStatusIndicator state={editor.saveState === 'dirty' ? 'unsaved' : editor.saveState} />
+                    )}
                     <Button
                         variant="secondary"
                         onClick={() => navigate(`/books/${bookId}/story-outline`)}
