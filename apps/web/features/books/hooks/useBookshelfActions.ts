@@ -4,7 +4,7 @@ import { useBooks } from '../../../InteractionContent/BooksContext';
 
 interface ContextMenuState { x: number; y: number; bookId: string }
 export function useBookshelfActions() {
-    const { books, createBook, updateBook, deleteBook } = useBooks();
+    const { books, createBook, updateBook, deleteBook, storageMode } = useBooks();
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [bookToDelete, setBookToDelete] = useState<string | null>(null);
@@ -64,6 +64,7 @@ export function useBookshelfActions() {
     };
     const handleContextMenu = (event: React.MouseEvent, bookId: string) => {
         event.preventDefault(); event.stopPropagation();
+        if (storageMode === 'local') { toast('Book management is not available in local mode yet.'); return; }
         setContextMenu({ x: event.clientX, y: event.clientY, bookId });
     };
     const startRename = () => {

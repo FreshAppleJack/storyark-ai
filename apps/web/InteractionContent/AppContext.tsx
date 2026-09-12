@@ -7,15 +7,16 @@ import {
 } from '../types';
 import type { Node, Edge } from '@xyflow/react';
 import type { GraphData } from '../data/dto';
-import { SessionProvider, useSession } from './SessionContext';
+import { SessionProvider, LocalSessionProvider, useSession } from './SessionContext';
 import { PreferencesProvider, usePreferences } from './PreferencesContext';
-import { BooksProvider, useBooks } from './BooksContext';
+import { BooksProvider, useBooks, type BooksContextType } from './BooksContext';
+import { LocalBooksProvider } from './LocalBooksProvider';
 
 /** Remote writes return true only after persistence; false keeps optimistic drafts.
  * Book/volume/chapter creates return an ID or null; character creation returns a boolean.
  * Remote reads return null on failure, never fake empty data.
  */
-export interface AppContextType {
+export interface AppContextType extends Pick<BooksContextType, 'storageMode' | 'booksLoading' | 'booksError' | 'refreshBooks' | 'saveLocalSnapshot'> {
     isDarkMode: boolean;
     user: User | null;
     books: Book[];
@@ -38,7 +39,7 @@ export interface AppContextType {
     updateAiContinueSettings: (settings: Partial<AiContinueSettings>) => void;
     setAutoHighlightRoleEnabled: (role: CharacterRole, enabled: boolean) => void;
 
-    createBook: (title: string) => Promise<string | null>;
+    createBook: (title: string, author?: string) => Promise<string | null>;
     getBook: (id: string) => Book | undefined;
 
     // Returns true only when the PUT actually succeeded; the optimistic local
@@ -77,7 +78,10 @@ export interface AppContextType {
  * as a facade so existing consumers keep working unchanged; new code
  * should prefer the focused hooks directly.
  */
-export function AppProvider({ children }: { children: React.ReactNode }): React.ReactElement {
+export function AppProvider({ children, mode = 'legacy' }: { children: React.ReactNode; mode?: 'legacy' | 'local' }): React.ReactElement {
+    if (mode === 'local') return (
+        <LocalSessionProvider><PreferencesProvider><LocalBooksProvider>{children}</LocalBooksProvider></PreferencesProvider></LocalSessionProvider>
+    );
     return (
         <SessionProvider>
             <PreferencesProvider>

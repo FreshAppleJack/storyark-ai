@@ -229,3 +229,59 @@ runtime with real on-disk SQLite, not a visual WebView or in-memory repository.
 Windows CI runs these independently of frontend CI. Windows test executables need
 the Common Controls v6 manifest, following the
 [Tauri example](https://github.com/tauri-apps/tauri/blob/dev/examples/api/src-tauri/build.rs).
+
+## Work unit 4 implementation: sign-in-free bookshelf and local reads
+
+The application now always mounts the local provider stack
+(`LocalSessionProvider` + `PreferencesProvider` + `LocalBooksProvider` via
+`AppProvider mode="local"`). Session state is a compatibility facade with a null
+user: preferences stay in localStorage and never issue HTTP calls. Login,
+register and every authenticated route redirect to the bookshelf; book-scoped
+routes other than the editor render an explicit unavailable page. The legacy
+`BooksProvider` remains in the tree for future migration reference only.
+
+`data/local/repository.ts` wraps every IPC call in a typed adapter. Without the
+desktop runtime it rejects with `DESKTOP_REQUIRED` and the bookshelf shows a
+retryable error — browser preview never pretends to persist. Query keys are
+`['local', 'default-workspace', ...]`. Mutations commit through IPC first and
+then patch the TanStack Query cache; nothing is copied into a second
+long-lived context state. Unimplemented actions (rename, delete, reorder,
+locks, characters, graph, planning) are explicit stubs that toast and return
+failure — they cannot reach HTTP or fake success. The save scheduler keeps its
+existing debounce/flush/retry contract; only its `saveChapter` target switches
+to `saveLocalSnapshot`, which pins the expected database version from the
+cached chapter record and verifies the echoed sessionKey/revision.
+
+### Editor crash found and fixed during this unit
+
+Opening a book, then creating a volume or saving a chapter crashed the whole
+editor route with `The editor view is not available. Cannot access view['dom']`.
+Root cause chain:
+
+1. `projectBook` returned a fresh `characters: []` array on every projection.
+2. After each committed mutation the provider patches the book detail cache, so
+   the editor page received a new book object with a new characters identity.
+3. `useEditor`'s dependency list `[characters, autoHighlightCharacters]`
+   therefore changed, destroying the old instance and creating a new one whose
+   view is not mounted yet.
+4. In the same effect flush the tooltip effect still held the destroyed
+   instance and read `editor.view.dom`, which throws on Tiptap v3's proxy stub.
+
+Fixes: `projectBook` now returns a module-level `NO_CHARACTERS` constant so the
+editor never rebuilds for storage updates (this also preserves caret and undo
+history across saves), and the tooltip effect checks `editor.isDestroyed` like
+every sibling effect. A regression test pins the stable characters reference.
+Legacy mode was unaffected because its optimistic book updates keep the
+characters array referentially stable.
+
+### Verification record (2026-09-12)
+
+Real Windows desktop run via WebView2 CDP against the app-data database:
+bookshelf renders without login; UI book creation commits and appears; opening
+a book, creating a volume and a chapter no longer crashes; typed Chinese text
+shows "Saved locally" after the debounce; `local_read_book` confirms the
+persisted content and advanced database version; a page reload restores the
+chapter text. Frontend: 241 tests, zero-warning lint, production build. Rust:
+10 storage tests and `cargo fmt --check` unchanged and passing. Secret scan
+clean. Not yet covered here: native window close protection (unit 5), stale
+multi-window writes, and UI actions for rename/delete/locks (still stubbed).

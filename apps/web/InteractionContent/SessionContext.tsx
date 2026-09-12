@@ -15,6 +15,15 @@ interface SessionContextType {
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
+const localSession: SessionContextType = {
+    user: null, login: async () => false, register: async () => false,
+    updateNickname: async () => false, logout: () => {},
+};
+/** Compatibility facade only; local startup never mounts authenticated session state. */
+export function LocalSessionProvider({ children }: { children: React.ReactNode }) {
+    return <SessionContext.Provider value={localSession}>{children}</SessionContext.Provider>;
+}
+
 /**
  * Owns the authenticated identity only. Loading initial data is NOT part of
  * login: preferences reload via the preferences provider's user effect and

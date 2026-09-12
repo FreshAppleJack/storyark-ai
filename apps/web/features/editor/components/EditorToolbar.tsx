@@ -67,6 +67,7 @@ interface EditorToolbarProps {
     editor: Editor | null;
     isEditable: boolean;
     onToggleReadOnly?: () => void;
+    canToggleReadOnly?: boolean;
 }
 
 /**
@@ -75,7 +76,7 @@ interface EditorToolbarProps {
  * the font dropdowns (Safari clears the contentEditable selection when a
  * native select pops up, so setMark would otherwise hit a collapsed cursor).
  */
-export function EditorToolbar({ editor, isEditable, onToggleReadOnly }: EditorToolbarProps): React.ReactElement | null {
+export function EditorToolbar({ editor, isEditable, onToggleReadOnly, canToggleReadOnly = true }: EditorToolbarProps): React.ReactElement | null {
     const [, forceUpdate] = useState({});
 
     useEffect(() => {
@@ -159,6 +160,7 @@ export function EditorToolbar({ editor, isEditable, onToggleReadOnly }: EditorTo
             {/* Lock/Unlock Button - Pushed to right */}
             <div className="ml-auto pl-2 flex items-center border-l border-slate-200 dark:border-slate-800 h-6">
                 <ToolbarButton
+                    disabled={!canToggleReadOnly}
                     onClick={() => {
                         if (onToggleReadOnly) {
                             onToggleReadOnly();
@@ -169,7 +171,7 @@ export function EditorToolbar({ editor, isEditable, onToggleReadOnly }: EditorTo
                     }}
                     // Use passed React Prop `isEditable` instead of `editor.isEditable`
                     isActive={!isEditable}
-                    title={isEditable ? "Unlock (Editable)" : "Lock (view only)"}
+                    title={!canToggleReadOnly ? 'Lock changes are not available in local mode yet' : isEditable ? "Unlock (Editable)" : "Lock (view only)"}
                 >
                     {isEditable ? <Unlock size={16} className="text-slate-500 dark:text-slate-400"/> : <Lock size={16} className="text-rose-500"/>}
                 </ToolbarButton>

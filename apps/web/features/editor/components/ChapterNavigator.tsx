@@ -47,6 +47,7 @@ interface SidebarSearchResult {
 }
 
 interface ChapterNavigatorProps {
+    localMode?: boolean;
     book: Book;
     activeChapterId: string;
     onNavigateDashboard: () => void;
@@ -68,6 +69,7 @@ interface ChapterNavigatorProps {
  * page through callbacks; this component owns only its local UI state.
  */
 export function ChapterNavigator({
+    localMode = false,
     book,
     activeChapterId,
     onNavigateDashboard,
@@ -189,6 +191,7 @@ export function ChapterNavigator({
 
     // --- Drag & Drop Handlers ---
     const handleDragStart = (e: React.DragEvent, type: NavigatorItemType, index: number, parentId?: string) => {
+        if (localMode) { e.preventDefault(); return; }
         if (renamingState) {
             e.preventDefault(); return;
         }
@@ -198,6 +201,7 @@ export function ChapterNavigator({
     };
 
     const handleDragEnter = (e: React.DragEvent, type: NavigatorItemType, index: number, parentId?: string) => {
+        if (localMode) return;
         e.preventDefault(); e.stopPropagation();
         if (renamingState) return;
 
@@ -248,7 +252,7 @@ export function ChapterNavigator({
     const handleAddVolume = async () => {
         const volTitle = `Volume ${book.volumes.length + 1}`;
         const newVolumeId = await onAddVolume(volTitle);
-        if (newVolumeId) {
+        if (newVolumeId && !localMode) {
             setRenamingState({ id: newVolumeId, type: 'volume', value: volTitle });
         }
     };
@@ -256,12 +260,13 @@ export function ChapterNavigator({
     const handleAddChapter = async (volId: string) => {
         const chapTitle = "New Chapter";
         const newChapterId = await onAddChapter(volId, chapTitle);
-        if (newChapterId) {
+        if (newChapterId && !localMode) {
             setRenamingState({ id: newChapterId, type: 'chapter', value: chapTitle });
         }
     };
 
     const handleContextMenu = (e: React.MouseEvent, type: NavigatorItemType, id: string, parentId?: string) => {
+        if (localMode) { e.preventDefault(); return; }
         e.preventDefault(); e.stopPropagation();
         setContextMenu({ x: e.clientX, y: e.clientY, type, id, parentId });
     };
@@ -461,7 +466,7 @@ export function ChapterNavigator({
                             )}
 
                             {book.volumes.map((vol, vIndex) => {
-                                const isVolDraggable = !expandedVolumes.has(vol.id) && renamingState?.id !== vol.id;
+                                const isVolDraggable = !localMode && !expandedVolumes.has(vol.id) && renamingState?.id !== vol.id;
                                 const isRenamingVol = renamingState?.id === vol.id && renamingState?.type === 'volume';
 
                                 return (
@@ -520,7 +525,7 @@ export function ChapterNavigator({
                                                             id={`sidebar-chapter-${chapter.id}`}
                                                             key={chapter.id}
                                                             onContextMenu={(e) => handleContextMenu(e, 'chapter', chapter.id, vol.id)}
-                                                            draggable={!isRenamingChap}
+                                                            draggable={!localMode && !isRenamingChap}
                                                             onDragStart={(e) => handleDragStart(e, 'chapter', cIndex, vol.id)}
                                                             onDragEnter={(e) => handleDragEnter(e, 'chapter', cIndex, vol.id)}
                                                             onDragEnd={handleDragEnd}

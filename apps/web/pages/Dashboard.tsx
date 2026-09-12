@@ -17,7 +17,12 @@ interface BookSearchResult {
 
 const Dashboard: React.FC = () => {
     const { user, logout } = useSession();
-    const { books } = useBooks();
+    const { books, storageMode, booksLoading, booksError, refreshBooks, createBook } = useBooks();
+    const isLocal = storageMode === 'local';
+    const [showCreate, setShowCreate] = useState(false);
+    const [newTitle, setNewTitle] = useState('');
+    const [author, setAuthor] = useState('');
+    const [creating, setCreating] = useState(false);
     const navigate = useNavigate();
 
     const [bookSearchQuery, setBookSearchQuery] = useState('');
@@ -55,7 +60,16 @@ const Dashboard: React.FC = () => {
     const filteredBooks = bookSearchResults.map(result => result.book);
     const isSearchingBooks = bookSearchQuery.trim().length > 0;
 
-    const handleCreate = async () => { setBookSearchQuery(''); await actions.handleCreate(); };
+    const handleCreate = async () => { setBookSearchQuery(''); if (isLocal) setShowCreate(true); else await actions.handleCreate(); };
+    const submitCreate = async (event: React.FormEvent) => {
+        event.preventDefault();
+        if (creating || !newTitle.trim()) return;
+        setCreating(true);
+        try {
+            const id = await createBook(newTitle.trim(), author.trim());
+            if (id) { setShowCreate(false); setNewTitle(''); setAuthor(''); }
+        } finally { setCreating(false); }
+    };
     const handleLogout = () => { logout(); navigate('/login'); };
 
     return (
@@ -66,6 +80,7 @@ const Dashboard: React.FC = () => {
                     <span className="font-bold text-xl text-slate-800 dark:text-white tracking-tight">StoryArk</span>
                 </div>
                 <div className="flex items-center gap-4">
+                    {isLocal ? <span className="text-sm text-slate-500">Local workspace · No account required</span> : <>
                     <span className="text-sm text-slate-600 dark:text-slate-300">Welcome, <strong>{user?.username}</strong></span>
                     <Link to="/settings">
                         <Button variant="ghost" size="sm" icon={<Settings size={14} />}>
@@ -75,6 +90,7 @@ const Dashboard: React.FC = () => {
                     <Button variant="secondary" size="sm" onClick={handleLogout} icon={<LogOut size={14} />}>
                         Logout
                     </Button>
+                    </>}
                 </div>
             </nav>
 
@@ -82,7 +98,7 @@ const Dashboard: React.FC = () => {
                 <div className="flex flex-col gap-5 mb-8 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                         <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">My Bookshelf</h1>
-                        <p className="text-slate-500 dark:text-slate-400">Manage your stories and worlds.</p>
+                        <p className="text-slate-500 dark:text-slate-400">{isLocal ? 'Your books are saved on this device.' : 'Manage your stories and worlds.'}</p>
                     </div>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                         <div className="relative w-full sm:w-80">
@@ -91,7 +107,7 @@ const Dashboard: React.FC = () => {
                                 <input
                                     value={bookSearchQuery}
                                     onChange={(event) => setBookSearchQuery(event.target.value)}
-                                    placeholder="Search books"
+                                    placeholder={isLocal ? 'Search titles and authors' : 'Search books'}
                                     className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
                                 />
                                 {isSearchingBooks && (
@@ -112,17 +128,29 @@ const Dashboard: React.FC = () => {
                             )}
                         </div>
                         {/* Call handleCreate, no need for isCreating state now */}
-                        <Button onClick={handleCreate} icon={<Plus size={16} />}>
+                        <Button onClick={handleCreate} disabled={!!booksLoading || !!booksError} icon={<Plus size={16} />}>
                             New Book
                         </Button>
                     </div>
                 </div>
 
+                {isLocal && <p className="mb-4 text-sm text-slate-500">Create books, volumes and chapters, then write locally. Book management, character tools and AI are not available yet.</p>}
+                {booksLoading && <p role="status">Loading local books...</p>}
+                {booksError && <div role="alert" className="mb-6 rounded border border-rose-300 p-4">
+                    <p>{booksError}</p><Button variant="secondary" onClick={() => void refreshBooks?.()}>Retry</Button>
+                </div>}
+                {showCreate && <form onSubmit={submitCreate} className="mb-6 rounded-xl border border-slate-300 bg-white p-6 space-y-4 dark:bg-slate-900">
+                    <h2 className="text-lg font-semibold">Create a local book</h2>
+                    <label className="block">Title<input autoFocus required maxLength={512} value={newTitle} onChange={e => setNewTitle(e.target.value)} className="block w-full rounded border p-2 bg-transparent" /></label>
+                    <label className="block">Author (optional)<input maxLength={256} value={author} onChange={e => setAuthor(e.target.value)} className="block w-full rounded border p-2 bg-transparent" /></label>
+                    <div className="flex gap-3"><Button type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create Book'}</Button>
+                        <Button type="button" variant="secondary" disabled={creating} onClick={() => setShowCreate(false)}>Cancel</Button></div>
+                </form>}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredBooks.map(book => <BookCard key={book.id} book={book} {...actions} />)}
+                    {filteredBooks.map(book => <BookCard key={book.id} book={book} summaryOnly={isLocal} {...actions} />)}
 
                     {/* Create Book Button in Empty State */}
-                    {books.length === 0 && (
+                    {!booksLoading && !booksError && books.length === 0 && (
                         <div className="col-span-full py-20 text-center bg-white dark:bg-slate-900 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
                             <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-400">
                                 <Plus size={32} />

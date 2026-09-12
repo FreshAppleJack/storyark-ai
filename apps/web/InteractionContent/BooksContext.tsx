@@ -16,14 +16,20 @@ import { calculateMixedWordCount } from '../utils/textUtils';
 import { useSession } from './SessionContext';
 import type { Node, Edge } from '@xyflow/react';
 import type { GraphData } from '../data/dto';
+import type { ChapterDraftSnapshot } from '../features/editor/hooks/useChapterDraft';
 
 /** Remote writes return true only after persistence; false keeps optimistic drafts.
  * Book/volume/chapter creates return an ID or null; character creation returns a boolean.
  * Remote reads return null on failure, never fake empty data.
  */
-interface BooksContextType {
+export interface BooksContextType {
+    storageMode?: 'local';
+    booksLoading?: boolean;
+    booksError?: string;
+    refreshBooks?: () => Promise<void>;
+    saveLocalSnapshot?: (snapshot: ChapterDraftSnapshot, sessionKey: string) => Promise<boolean>;
     books: Book[];
-    createBook: (title: string) => Promise<string | null>;
+    createBook: (title: string, author?: string) => Promise<string | null>;
     getBook: (id: string) => Book | undefined;
 
     // Returns true only when the PUT actually succeeded; the optimistic local
@@ -55,7 +61,7 @@ interface BooksContextType {
     saveStoryPlanning: (bookId: string, planning: StoryPlanning) => Promise<boolean>;
 }
 
-const BooksContext = createContext<BooksContextType | undefined>(undefined);
+export const BooksContext = createContext<BooksContextType | undefined>(undefined);
 
 /**
  * Owns the server-side books data: the query cache is the single source of

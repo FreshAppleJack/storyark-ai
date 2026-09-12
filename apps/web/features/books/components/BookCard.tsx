@@ -13,9 +13,9 @@ const getUnrecoveredForeshadowingCount = (book: Book) => (
 
 
 type Props = Pick<BookshelfActions, 'renamingId' | 'renamingValue' | 'setRenamingValue' | 'renameInputRef' |
-    'handleRenameKeyDown' | 'submitRename' | 'handleContextMenu'> & { book: Book };
+    'handleRenameKeyDown' | 'submitRename' | 'handleContextMenu'> & { book: Book; summaryOnly?: boolean };
 export function BookCard({ book, renamingId, renamingValue, setRenamingValue, renameInputRef,
-    handleRenameKeyDown, submitRename, handleContextMenu }: Props) {
+    handleRenameKeyDown, submitRename, handleContextMenu, summaryOnly = false }: Props) {
     const isRenaming = renamingId === book.id;
     const unrecoveredForeshadowingCount = getUnrecoveredForeshadowingCount(book);
     const content = <>
@@ -55,14 +55,14 @@ export function BookCard({ book, renamingId, renamingValue, setRenamingValue, re
                 </h3>
             )}
 
-            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">by {book.author}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">{book.author ? `by ${book.author}` : 'No author specified'}</p>
             <div className="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-400 dark:text-slate-500 border-t border-slate-50 dark:border-slate-800 pt-4">
                 <span className="flex items-center gap-1">
-                    <BookIcon size={12} /> {book.volumes.reduce((acc, v) => acc + v.chapters.length, 0)} Chapters
+                    <BookIcon size={12} /> {summaryOnly ? 'Open book to view chapters' : `${book.volumes.reduce((acc, v) => acc + v.chapters.length, 0)} Chapters`}
                 </span>
-                <span className={`flex items-center gap-1 ${unrecoveredForeshadowingCount > 0 ? 'text-amber-600 dark:text-amber-300' : ''}`}>
+                {!summaryOnly && <span className={`flex items-center gap-1 ${unrecoveredForeshadowingCount > 0 ? 'text-amber-600 dark:text-amber-300' : ''}`}>
                     <MessageSquareText size={12} /> {unrecoveredForeshadowingCount} Foreshadowing Unrecovered
-                </span>
+                </span>}
                 <span className="flex items-center gap-1">
                     <Clock size={12} />
                     {new Date(book.lastModified).toLocaleString(undefined, {

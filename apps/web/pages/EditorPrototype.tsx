@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useEffectEvent, useRef, useMemo } from 'react';
-import { useParams, useNavigate, useBlocker, NavigateOptions } from 'react-router-dom';
+import { useParams, useNavigate, useBlocker, NavigateOptions, Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { localBookOptions, projectBook } from '../data/local/repository';
 import { toast } from 'react-hot-toast';
 import { useApp } from '../InteractionContent/AppContext';
 import { aiApi } from '../data/aiApi';
 import { asRecord } from '../utils/serialization';
 import TiptapEditor, { TiptapEditorRef } from '../components/TiptapEditor';
-import { Chapter, ForeshadowingNote, PlotSetting, Volume } from '../types';
+import { Book, Chapter, ForeshadowingNote, PlotSetting, Volume } from '../types';
 import { ChapterNavigator, NavigatorDeleteTarget } from '../features/editor/components/ChapterNavigator';
 import { EditorHeader } from '../features/editor/components/EditorHeader';
 import { WritingContextPanel } from '../features/editor/components/WritingContextPanel';
@@ -15,17 +17,19 @@ import { useChapterAutosave } from '../features/editor/hooks/useChapterAutosave'
 import { useAiContinue } from '../features/editor/hooks/useAiContinue';
 import { useChapterExport } from '../features/editor/export/useChapterExport';
 
-function Editor(): React.ReactElement {
+function Editor({ localBook }: { localBook?: Book }): React.ReactElement {
     const { bookId } = useParams<{ bookId: string }>();
     const navigate = useNavigate();
     const {
         getBook, updateChapterContent, createVolume, createChapter,
         updateVolume, deleteVolume, deleteChapter,
         reorderVolumes, reorderChapters, toggleChapterLock,
-        editorSpacingSettings, aiContinueSettings, autoHighlightSettings, fetchStoryPlanning
+        editorSpacingSettings, aiContinueSettings, autoHighlightSettings, fetchStoryPlanning,
+        storageMode, saveLocalSnapshot,
     } = useApp();
 
-    const book = getBook(bookId || '');
+    const isLocal = storageMode === 'local';
+    const book = localBook ?? getBook(bookId || '');
     const autoHighlightCharacters = useMemo(() => {
         const disabledRoles = new Set(autoHighlightSettings.disabledRoles);
         return (book?.characters || []).filter(character => !disabledRoles.has(character.role));
@@ -62,7 +66,7 @@ function Editor(): React.ReactElement {
     // a switch are dropped, and a stale request never clears a newer one.
     const aiContinue = useAiContinue({
         chapterId: activeChapterId,
-        isReadOnly: chapterDraft.isReadOnly,
+        isReadOnly: isLocal || chapterDraft.isReadOnly,
         hasContent: !!chapterDraft.content,
         contextChars: aiContinueSettings.contextChars,
         outputChars: aiContinueSettings.outputChars,
@@ -72,7 +76,7 @@ function Editor(): React.ReactElement {
             }
             return getEditorPlainText(chapterDraft.content);
         },
-        requestContinue: aiApi.continueWriting,
+        requestContinue: isLocal ? async () => { throw new Error('AI is not available in local mode yet.'); } : aiApi.continueWriting,
         insertResult: (formattedHtml) => {
             const editor = editorRef.current?.editor;
             // The hook pins the chapter identity; this only guards a lock
@@ -94,6 +98,7 @@ function Editor(): React.ReactElement {
         markSaved: chapterDraft.markSaved,
         saveChapter: (snapshot) => {
             if (!snapshot.bookId || !snapshot.volumeId || !snapshot.chapterId) return Promise.resolve(false);
+            if (isLocal) return saveLocalSnapshot?.(snapshot, chapterDraft.sessionKey) ?? Promise.resolve(false);
             return updateChapterContent(snapshot.bookId, snapshot.volumeId, snapshot.chapterId, snapshot.title, snapshot.content, snapshot.wordCount, snapshot.foreshadowings);
         },
     });
@@ -128,6 +133,7 @@ function Editor(): React.ReactElement {
     // Redirect if book not found
     // Prevent users from editing deleted books
     useEffect(() => {
+        if (isLocal) return;
         const timer = setTimeout(() => {
             if (!book && bookId) {
                 // display error page
@@ -137,7 +143,7 @@ function Editor(): React.ReactElement {
         }, 1500);
 
         return () => clearTimeout(timer);
-    }, [book, bookId, navigate]);
+    }, [book, bookId, navigate, isLocal]);
 
     // Restore last viewed chapter
     useEffect(() => {
@@ -171,7 +177,7 @@ function Editor(): React.ReactElement {
     useEffect(() => {
         let isMounted = true;
         const loadPlotSettings = async () => {
-            if (!bookId) return;
+            if (!bookId || isLocal) return;
             const planning = await loadPlanning(bookId);
             if (!isMounted) return;
             if (!planning) {
@@ -184,7 +190,7 @@ function Editor(): React.ReactElement {
 
         void loadPlotSettings();
         return () => { isMounted = false; };
-    }, [bookId]);
+    }, [bookId, isLocal]);
 
     // Backup safety-net: when the character list reference changes (e.g. user
     // came back from /books/:bookId/settings after editing colors / renaming),
@@ -285,6 +291,7 @@ function Editor(): React.ReactElement {
 
     // Handle toggle read only state
     const handleToggleReadOnly = async () => {
+        if (isLocal) return;
         if (!book || !activeVolume || !activeChapter) return;
         const nextReadOnlyState = !chapterDraft.isReadOnly;
         chapterDraft.setReadOnly(nextReadOnlyState);
@@ -297,6 +304,7 @@ function Editor(): React.ReactElement {
     };
 
     const handleCharacterClick = (charId: string) => {
+        if (isLocal) { toast('Character tools are not available in local mode yet.'); return; }
         void navigateAfterSave(`/books/${bookId}/settings?charId=${charId}`);
     };
 
@@ -408,6 +416,7 @@ function Editor(): React.ReactElement {
     return (
         <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden font-sans relative transition-colors duration-300">
             <ChapterNavigator
+                localMode={isLocal}
                 key={book.id}
                 book={book}
                 activeChapterId={activeChapterId}
@@ -426,6 +435,7 @@ function Editor(): React.ReactElement {
             {/* Main Area */}
             <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-950 shadow-xl z-10">
                 <EditorHeader
+                    localMode={isLocal}
                     volumeTitle={activeVolume?.title}
                     chapterTitle={chapterDraft.title}
                     hasActiveChapter={!!activeChapter}
@@ -479,8 +489,9 @@ function Editor(): React.ReactElement {
                                         onForeshadowingCreate={handleForeshadowingCreate}
                                         onForeshadowingClick={handleForeshadowingClick}
                                         isEditable={!chapterDraft.isReadOnly}
-                                        onToggleReadOnly={handleToggleReadOnly}
-                                        placeholder="Start writing your story here... Type '@' to mention a character."
+                                        canToggleReadOnly={!isLocal}
+                                        onToggleReadOnly={isLocal ? undefined : handleToggleReadOnly}
+                                        placeholder={isLocal ? 'Start writing your story here...' : "Start writing your story here... Type '@' to mention a character."}
                                         editorMarginPx={editorSpacingSettings.editorMarginPx}
                                         editorLineHeight={editorSpacingSettings.editorLineHeight}
                                         className="text-lg text-slate-800 dark:text-slate-200 font-serif min-h-[800px]"
@@ -501,7 +512,7 @@ function Editor(): React.ReactElement {
                         activeForeshadowingId={activeForeshadowingId}
                         plotSettings={linkedPlotSettings}
                         isReadOnly={chapterDraft.isReadOnly}
-                        canOpenOutline={!!activeChapterId}
+                        canOpenOutline={!isLocal && !!activeChapterId}
                         onClose={() => setIsForeshadowingPanelOpen(false)}
                         onFocusForeshadowing={handleFocusForeshadowing}
                         onNoteChange={handleForeshadowingNoteChange}
@@ -514,7 +525,7 @@ function Editor(): React.ReactElement {
                     <div className="flex gap-4">
                         <span>Words: <span className="font-mono text-slate-700 dark:text-slate-200">{chapterDraft.wordCount}</span></span>
                     </div>
-                    <div><span>StoryArk Sprint 5</span></div>
+                    <div><span>{isLocal ? 'Local storage · AI and book management unavailable' : 'StoryArk Sprint 5'}</span></div>
                 </footer>
             </main>
         </div>
@@ -525,5 +536,20 @@ function Editor(): React.ReactElement {
 // has finished protecting the previous book.
 export default function EditorRoute(): React.ReactElement {
     const { bookId } = useParams<{ bookId: string }>();
+    const { storageMode } = useApp();
+    if (storageMode === 'local') return <LocalEditorRoute key={bookId} bookId={bookId ?? ''} />;
     return <Editor key={bookId} />;
+}
+
+function LocalEditorRoute({ bookId }: { bookId: string }) {
+    const query = useQuery(localBookOptions(bookId));
+    const book = useMemo(() => query.data ? projectBook(query.data.book, query.data) : undefined, [query.data]);
+    if (book) return <Editor localBook={book} />;
+    return <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
+        {query.isPending ? <p role="status">Loading local book...</p> : <>
+            <p role="alert">{query.error?.message ?? 'Book not found.'}</p>
+            <button onClick={() => void query.refetch()}>Retry</button>
+        </>}
+        <Link to="/dashboard">Back to Bookshelf</Link>
+    </main>;
 }

@@ -51,6 +51,7 @@ interface TiptapEditorProps {
     onCharacterClick?: (charId: string) => void;
     // Callback function for parent component to toggle read only state
     onToggleReadOnly?: () => void;
+    canToggleReadOnly?: boolean;
 }
 
 const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
@@ -67,7 +68,8 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                                                                          onForeshadowingCreate,
                                                                          onForeshadowingClick,
                                                                          onCharacterClick,
-                                                                         onToggleReadOnly
+                                                                         onToggleReadOnly,
+                                                                         canToggleReadOnly = true
                                                                      }, ref) => {
 
     // Context Menu State
@@ -568,7 +570,9 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
     // Tooltip logic: the effect owns both the DOM listener and every tippy
     // instance created through it (destroyed together on cleanup).
     useEffect(() => {
-        if (!editor || !characters) return;
+        // isDestroyed also covers "instance recreated, view not yet mounted":
+        // editor.view.dom would throw on the proxy stub in that window.
+        if (!editor || editor.isDestroyed || !characters) return;
         const editorElement = editor.view.dom;
         // If a context menu is displayed, the tooltip is suppressed to avoid visual interference
         const tooltip = createCharacterTooltipHandler({
@@ -914,7 +918,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 }
             `}</style>
 
-            <EditorToolbar editor={editor} isEditable={isEditable} onToggleReadOnly={onToggleReadOnly} />
+            <EditorToolbar editor={editor} isEditable={isEditable} onToggleReadOnly={onToggleReadOnly} canToggleReadOnly={canToggleReadOnly} />
             <div className="mt-4 h-px w-full"></div>
             <div className="flex-1 cursor-text" onClick={() => editor.chain().focus().run()}>
                 <EditorContent editor={editor} />
