@@ -6,6 +6,8 @@
     "main"
   ],
   "permissions": [
+    "dialog:allow-save",
+    "fs:allow-write-file",
     "allow-local-list-books", "allow-local-read-book", "allow-local-create-book",
     "allow-local-create-volume", "allow-local-create-chapter", "allow-local-save-chapter",
     "allow-local-rename", "allow-local-update-book", "allow-local-set-read-only", "allow-local-reorder", "allow-local-delete",

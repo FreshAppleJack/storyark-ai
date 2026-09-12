@@ -1,4 +1,5 @@
 import { buildChapterExportHtml, buildWordExportDocument } from '../utils/exportHtml';
+import { exportFilename, saveExport } from './saveExport';
 
 export type ChapterExportFormat = 'docx' | 'pdf';
 
@@ -7,17 +8,21 @@ export interface ChapterExportSnapshot {
     editorHtml: string;
 }
 
-/** Resolves after conversion and download handoff, not after the user saves to disk. */
+/** Resolves after desktop writing/cancellation or browser download handoff. */
 export async function exportChapter(format: ChapterExportFormat, snapshot: ChapterExportSnapshot): Promise<void> {
+    const filename = exportFilename(snapshot.title, format);
+    const blob = await createChapterExport(format, snapshot);
+    await saveExport(blob, filename);
+}
+
+/** Converts a captured chapter without opening a destination dialog. */
+export async function createChapterExport(format: ChapterExportFormat, snapshot: ChapterExportSnapshot): Promise<Blob> {
     // Capture strings before loading dependencies or waiting for conversion.
     const { title, editorHtml } = snapshot;
     const chapterHtml = buildChapterExportHtml(title, editorHtml);
 
     if (format === 'docx') {
-        const [{ asBlob }, { saveAs }] = await Promise.all([
-            import('html-docx-js-typescript'),
-            import('file-saver'),
-        ]);
+        const { asBlob } = await import('html-docx-js-typescript');
         const documentHtml = buildWordExportDocument(title, chapterHtml);
         const result = await asBlob(documentHtml, {
             orientation: 'portrait',
@@ -25,8 +30,7 @@ export async function exportChapter(format: ChapterExportFormat, snapshot: Chapt
         });
         // The library also supports Node buffers; the browser build must return a Blob.
         if (!(result instanceof Blob)) throw new Error('DOCX conversion did not return a Blob');
-        saveAs(result, `${title}.docx`);
-        return;
+        return result;
     }
 
     const { default: html2pdf } = await import('html2pdf.js');
@@ -62,7 +66,7 @@ export async function exportChapter(format: ChapterExportFormat, snapshot: Chapt
     };
 
     try {
-        await worker.set(options).from(element).save();
+        return await worker.set(options).from(element).outputPdf('blob');
     } finally {
         clonedDocument?.defaultView?.frameElement?.remove();
         resources.prop.overlay?.remove();

@@ -1,6 +1,8 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     with_storage_commands(tauri::Builder::default())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             // STORYARK_DATA_DIR redirects the database directory for controlled
             // smoke tests; production runs always use the platform app-data dir.

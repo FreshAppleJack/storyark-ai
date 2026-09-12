@@ -447,3 +447,23 @@ string preserved in `originalContent`; it converts to editable `tiptap-json`
 only through a verified conversion, otherwise it stays read-only. This stage
 never connects to, deletes from, or overwrites the legacy database, and
 users are never required to run the old backend.
+
+## Desktop chapter export (2026-09-13)
+
+Word/PDF conversion remains frontend-only and captures the current chapter
+before asynchronous work. `createChapterExport` produces a Blob;
+`saveExport` uses Tauri's native Save As dialog and awaits `writeFile` on
+ desktop. Cancellation is normal, and write/conversion errors reach the
+existing export error handler. Browser preview retains FileSaver downloads.
+The main window receives only `dialog:allow-save` and `fs:allow-write-file`;
+the dialog grants access to the selected file, without a blanket directory
+scope. Restart/rebuild the Rust shell when adding these plugins; Vite HMR
+alone cannot register native handlers.
+
+Verification: export unit tests cover cancellation, write rejection, Unicode
+filenames, captured snapshots and busy/retry behavior. A temporary CDP script
+ran real Word/PDF conversion in an isolated WebView2 process, in light and
+dark themes; generated DOCX ZIP/PDF signatures were checked and PDF rendering
+was visually inspected. The native Save As dialog was triggered. Its OS-level
+path selection and final interactive save were not automated through CDP;
+mocked destination tests do not substitute for that manual check.

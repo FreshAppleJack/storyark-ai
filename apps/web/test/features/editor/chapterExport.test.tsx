@@ -26,10 +26,10 @@ function pdfWorker(completion: Promise<void>) {
         prop: { overlay },
         set: vi.fn<(options: { filename: string; html2canvas: { onclone: (document: Document) => void } }) => unknown>().mockReturnThis(),
         from: vi.fn<(element: HTMLElement) => unknown>().mockReturnThis(),
-        save: vi.fn(() => {
+        outputPdf: vi.fn(() => {
             document.body.append(overlay, frame);
             worker.set.mock.calls[0][0].html2canvas.onclone(frame.contentDocument!);
-            return completion;
+            return completion.then(() => new Blob(["%PDF-test"]));
         }),
     };
     libs.html2pdf.mockReturnValue(worker);
@@ -67,7 +67,7 @@ describe('Chapter export', () => {
             await result.current.runExport('docx');
         });
         expect(result.current.isExporting).toBe(true);
-        expect(worker.save).toHaveBeenCalledTimes(1);
+        expect(worker.outputPdf).toHaveBeenCalledTimes(1);
         expect(libs.asBlob).not.toHaveBeenCalled();
         snapshot = { title: 'Second', editorHtml: '<p>Second body</p>' };
         rerender();
@@ -102,7 +102,7 @@ describe('Chapter export', () => {
         unrelated.remove();
         const retry = pdfWorker(Promise.resolve());
         await act(async () => { await result.current.runExport('pdf'); });
-        expect(retry.worker.save).toHaveBeenCalledTimes(1);
+        expect(retry.worker.outputPdf).toHaveBeenCalledTimes(1);
         expect(result.current.isExporting).toBe(false);
     });
 
