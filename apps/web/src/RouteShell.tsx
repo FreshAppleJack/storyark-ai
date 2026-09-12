@@ -17,12 +17,12 @@ export function RouteShell() {
 export function RouteError() {
   const error = useRouteError();
   return <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-6">
-    <h1 className="text-xl font-semibold">页面加载失败</h1>
-    <p>页面未能正常显示。请重新加载或返回书架；已保存的数据不会被重置。</p>
+    <h1 className="text-xl font-semibold">Page failed to load</h1>
+    <p>The page could not be displayed. Reload or return to the bookshelf; saved data will not be reset.</p>
     {import.meta.env.DEV && error instanceof Error && <pre className="max-w-3xl whitespace-pre-wrap text-sm" role="alert">{error.message}</pre>}
     <button className="rounded bg-blue-600 px-4 py-2 text-white" onClick={() => window.location.reload()}>
-      重新加载
+      Reload
     </button>
-    <Link to="/dashboard" className="text-blue-600 underline">返回书架</Link>
+    <Link to="/dashboard" className="text-blue-600 underline">Back to Bookshelf</Link>
   </main>;
 }

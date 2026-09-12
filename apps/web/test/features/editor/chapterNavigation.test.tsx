@@ -36,8 +36,8 @@ describe('Editor history navigation', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Edit draft' }));
         await act(async () => { await router.navigate(-1); });
         expect(fixture.save).toHaveBeenCalledTimes(1);
-        expect(screen.getByRole('heading', { name: '页面加载失败' })).toBeInTheDocument();
-        expect(screen.getByRole('button', { name: '重新加载' })).toBeInTheDocument();
+        expect(screen.getByRole('heading', { name: 'Page failed to load' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
     });
 
     it('discards the last deleted chapter and permits leaving before deletion finishes', async () => {
