@@ -38,6 +38,13 @@ interface TiptapEditorProps {
     contentId: string; // Unique identifier (ChapterID)
     content: string;
     onUpdate: (html: string, wordCount: number) => void;
+    /**
+     * Fired once after a chapter switch when the schema normalized the loaded
+     * document (e.g. injected default attrs), so the parent can adopt the
+     * normalized form as the clean baseline instead of treating the
+     * difference as user input.
+     */
+    onContentNormalized?: (content: string, wordCount: number) => void;
     isEditable?: boolean;
     placeholder?: string;
     className?: string;
@@ -51,7 +58,6 @@ interface TiptapEditorProps {
     onCharacterClick?: (charId: string) => void;
     // Callback function for parent component to toggle read only state
     onToggleReadOnly?: () => void;
-    canToggleReadOnly?: boolean;
 }
 
 const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
@@ -69,7 +75,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                                                                          onForeshadowingClick,
                                                                          onCharacterClick,
                                                                          onToggleReadOnly,
-                                                                         canToggleReadOnly = true
+                                                                         onContentNormalized
                                                                      }, ref) => {
 
     // Context Menu State
@@ -98,6 +104,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
     const onForeshadowingClickRef = useRef(onForeshadowingClick);
     const onForeshadowingCreateRef = useRef(onForeshadowingCreate);
     const onUpdateRef = useRef(onUpdate);
+    const onContentNormalizedRef = useRef(onContentNormalized);
     const lastContentIdRef = useRef<string>(contentId);
 
     // Track last emitted content from editor, preventing circular updates
@@ -119,6 +126,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
     useEffect(() => { onForeshadowingClickRef.current = onForeshadowingClick; }, [onForeshadowingClick]);
     useEffect(() => { onForeshadowingCreateRef.current = onForeshadowingCreate; }, [onForeshadowingCreate]);
     useEffect(() => { onUpdateRef.current = onUpdate; }, [onUpdate]);
+    useEffect(() => { onContentNormalizedRef.current = onContentNormalized; }, [onContentNormalized]);
 
     // Character updates have their own highlight reconciliation. Do not reload
     // the document merely because a callback's character snapshot changed.
@@ -355,6 +363,15 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
             } finally {
                 // Always ensure silent update mode is disabled after operation
                 isSilentUpdateRef.current = false;
+            }
+            // The schema may normalize the loaded document (e.g. injecting
+            // default attrs). Adopt that serialization as the emitted baseline:
+            // otherwise the difference surfaces as phantom user input and the
+            // freshly opened chapter is falsely marked dirty.
+            const normalized = JSON.stringify(editor.getJSON());
+            lastEmittedContentRef.current = normalized;
+            if (normalized !== content) {
+                onContentNormalizedRef.current?.(normalized, calculateMixedWordCount(editor.getText()));
             }
             return;
         }
@@ -918,7 +935,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 }
             `}</style>
 
-            <EditorToolbar editor={editor} isEditable={isEditable} onToggleReadOnly={onToggleReadOnly} canToggleReadOnly={canToggleReadOnly} />
+            <EditorToolbar editor={editor} isEditable={isEditable} onToggleReadOnly={onToggleReadOnly} />
             <div className="mt-4 h-px w-full"></div>
             <div className="flex-1 cursor-text" onClick={() => editor.chain().focus().run()}>
                 <EditorContent editor={editor} />

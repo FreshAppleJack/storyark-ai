@@ -65,7 +65,7 @@ function Login(): React.ReactElement {
             <div className="text-center text-xs text-slate-400 dark:text-slate-500 mt-4">
               Demo Credentials: StoryArk / 12345678
             </div>
-            {/* 跳转到注册页的链接 */}
+            {/* Navigate to Register.tsx */}
             <div className="border-t border-slate-100 dark:border-slate-800 pt-4 mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
               Don't have an account?{' '}
               <Link to="/register" className="text-brand-600 dark:text-brand-300 font-medium hover:underline">

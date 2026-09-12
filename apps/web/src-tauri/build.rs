@@ -21,6 +21,10 @@ fn main() {
             "local_create_volume",
             "local_create_chapter",
             "local_save_chapter",
+            "local_rename",
+            "local_set_read_only",
+            "local_reorder",
+            "local_delete",
             "local_backup",
         ])),
     )

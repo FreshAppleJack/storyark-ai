@@ -116,3 +116,149 @@ describe('Local books', () => {
         expect(projectBook(book).characters).toHaveLength(0);
     });
 });
+
+describe('Local book mutations', () => {
+    const secondChapter = { ...chapter, id: 'chapter-2', title: 'Second', position: 1 };
+    const fullDetail: LocalBookDetail = { book, volumes: [volume], chapters: [chapter, secondChapter] };
+
+    it('renames a volume and advances its cached version', async () => {
+        const { result, client } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        client.setQueryData(localKeys.book(book.id), fullDetail);
+        native.invoke.mockImplementation(async (_command, { input }) => ({
+            ok: true, value: { ...volume, title: input.title, databaseVersion: input.expectedDatabaseVersion + 1 },
+        }));
+        let ok!: boolean;
+        await act(async () => { ok = await result.current.updateVolume(book.id, volume.id, 'Renamed'); });
+        expect(ok).toBe(true);
+        expect(native.invoke).toHaveBeenLastCalledWith('local_rename', {
+            input: { kind: 'volume', bookId: book.id, volumeId: volume.id, expectedDatabaseVersion: 1, title: 'Renamed' },
+        });
+        expect(client.getQueryData<LocalBookDetail>(localKeys.book(book.id))?.volumes[0])
+            .toMatchObject({ title: 'Renamed', databaseVersion: 2 });
+    });
+
+    it('persists a chapter title only when the rest of the payload is unchanged', async () => {
+        const { result, client } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        client.setQueryData(localKeys.book(book.id), fullDetail);
+        native.invoke.mockImplementation(async (_command, { input }) => ({
+            ok: true, value: { ...chapter, title: input.title, databaseVersion: input.expectedDatabaseVersion + 1 },
+        }));
+        let renamed!: boolean;
+        await act(async () => {
+            renamed = await result.current.updateChapterContent(book.id, volume.id, chapter.id, 'New title', chapter.body.content, chapter.wordCount, chapter.foreshadowings);
+        });
+        expect(renamed).toBe(true);
+        expect(native.invoke).toHaveBeenLastCalledWith('local_rename', expect.objectContaining({
+            input: expect.objectContaining({ kind: 'chapter', title: 'New title' }),
+        }));
+        const callsAfterRename = native.invoke.mock.calls.length;
+        let rejected!: boolean;
+        await act(async () => {
+            rejected = await result.current.updateChapterContent(book.id, volume.id, chapter.id, 'New title', '{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"changed"}]}]}', 2, []);
+        });
+        expect(rejected).toBe(false);
+        expect(native.invoke.mock.calls.length).toBe(callsAfterRename);
+    });
+
+    it('locks and unlocks a chapter through IPC and mirrors the cached record', async () => {
+        const { result, client } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        client.setQueryData(localKeys.book(book.id), fullDetail);
+        native.invoke.mockImplementation(async (_command, { input }) => ({
+            ok: true, value: { ...chapter, isReadOnly: input.isReadOnly, databaseVersion: input.expectedDatabaseVersion + 1 },
+        }));
+        let locked!: boolean;
+        await act(async () => { locked = await result.current.toggleChapterLock(book.id, volume.id, chapter.id); });
+        expect(locked).toBe(true);
+        expect(native.invoke).toHaveBeenLastCalledWith('local_set_read_only', {
+            input: { kind: 'chapter', bookId: book.id, volumeId: volume.id, chapterId: chapter.id, expectedDatabaseVersion: 1, isReadOnly: true },
+        });
+        expect(client.getQueryData<LocalBookDetail>(localKeys.book(book.id))?.chapters[0])
+            .toMatchObject({ isReadOnly: true, databaseVersion: 2 });
+    });
+
+    it('reorders chapters and stores the returned order', async () => {
+        const { result, client } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        client.setQueryData(localKeys.book(book.id), fullDetail);
+        native.invoke.mockImplementation(async (_command, { input }) => ({
+            ok: true, value: input.items.map((item: { chapterId: string }, index: number) => ({
+                ...(item.chapterId === chapter.id ? chapter : secondChapter), position: index, databaseVersion: 9,
+            })),
+        }));
+        let ok!: boolean;
+        await act(async () => {
+            ok = await result.current.reorderChapters(book.id, volume.id, [
+                { id: secondChapter.id, title: secondChapter.title } as never,
+                { id: chapter.id, title: chapter.title } as never,
+            ]);
+        });
+        expect(ok).toBe(true);
+        expect(native.invoke).toHaveBeenLastCalledWith('local_reorder', {
+            input: {
+                parent: { kind: 'volume', bookId: book.id, volumeId: volume.id, expectedDatabaseVersion: 1 },
+                items: [
+                    { kind: 'chapter', bookId: book.id, volumeId: volume.id, chapterId: secondChapter.id, expectedDatabaseVersion: 1 },
+                    { kind: 'chapter', bookId: book.id, volumeId: volume.id, chapterId: chapter.id, expectedDatabaseVersion: 1 },
+                ],
+            },
+        });
+        expect(client.getQueryData<LocalBookDetail>(localKeys.book(book.id))?.chapters.map(item => item.id))
+            .toEqual([secondChapter.id, chapter.id]);
+    });
+
+    it('deletes a chapter and advances the parent volume', async () => {
+        const { result, client } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        client.setQueryData(localKeys.book(book.id), fullDetail);
+        native.invoke.mockResolvedValue({
+            ok: true, value: { deletedId: chapter.id, parent: { ...volume, databaseVersion: 2 } },
+        });
+        let ok!: boolean;
+        await act(async () => { ok = await result.current.deleteChapter(book.id, volume.id, chapter.id); });
+        expect(ok).toBe(true);
+        expect(native.invoke).toHaveBeenLastCalledWith('local_delete', {
+            input: { kind: 'chapter', bookId: book.id, volumeId: volume.id, chapterId: chapter.id, expectedDatabaseVersion: 1, expectedParentVersion: 1 },
+        });
+        const cached = client.getQueryData<LocalBookDetail>(localKeys.book(book.id));
+        expect(cached?.chapters.map(item => item.id)).toEqual([secondChapter.id]);
+        expect(cached?.volumes[0].databaseVersion).toBe(2);
+    });
+
+    it('waits for a queued save before deleting its volume', async () => {
+        const { result, client } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        client.setQueryData(localKeys.book(book.id), fullDetail);
+        const order: string[] = [];
+        let releaseSave!: (value: unknown) => void;
+        native.invoke.mockImplementation(async (command, { input }) => {
+            if (command === 'local_save_chapter') {
+                order.push('save-start');
+                return new Promise(resolve => { releaseSave = resolve; });
+            }
+            order.push(command);
+            return { ok: true, value: command === 'local_delete'
+                ? { deletedId: input.volumeId, parent: { ...book, databaseVersion: 2 } }
+                : { ...chapter, databaseVersion: 2 } };
+        });
+        let saveDone!: Promise<boolean>;
+        let deleteDone!: Promise<boolean>;
+        act(() => {
+            saveDone = result.current.saveLocalSnapshot!({ ...snapshot, bookId: book.id, volumeId: volume.id, chapterId: chapter.id }, 'session-1');
+        });
+        await act(async () => {
+            deleteDone = result.current.deleteVolume(book.id, volume.id);
+            await Promise.resolve();
+        });
+        // The delete is queued behind the in-flight save; resolve the save and
+        // both must complete with the delete strictly after the save finished.
+        await act(async () => {
+            releaseSave({ ok: true, value: { chapter: { ...chapter, databaseVersion: 2 }, sessionKey: 'session-1', revision: 1 } });
+            expect(await saveDone).toBe(true);
+            expect(await deleteDone).toBe(true);
+        });
+        expect(order).toEqual(['save-start', 'local_delete']);
+    });
+});

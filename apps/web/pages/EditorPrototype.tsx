@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useEffectEvent, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useBlocker, NavigateOptions, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { isTauri } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { localBookOptions, projectBook } from '../data/local/repository';
 import { toast } from 'react-hot-toast';
 import { useApp } from '../InteractionContent/AppContext';
@@ -11,9 +13,11 @@ import { Book, Chapter, ForeshadowingNote, PlotSetting, Volume } from '../types'
 import { ChapterNavigator, NavigatorDeleteTarget } from '../features/editor/components/ChapterNavigator';
 import { EditorHeader } from '../features/editor/components/EditorHeader';
 import { WritingContextPanel } from '../features/editor/components/WritingContextPanel';
+import { Button } from '../components/ui/Button';
 import { getEditorPlainText, getForeshadowingExcerptMap } from '../domain/chapterContent';
 import { useChapterDraft } from '../features/editor/hooks/useChapterDraft';
 import { useChapterAutosave } from '../features/editor/hooks/useChapterAutosave';
+import { useWindowCloseGuard } from '../features/editor/hooks/useWindowCloseGuard';
 import { useAiContinue } from '../features/editor/hooks/useAiContinue';
 import { useChapterExport } from '../features/editor/export/useChapterExport';
 
@@ -115,6 +119,21 @@ function Editor({ localBook }: { localBook?: Book }): React.ReactElement {
         });
         return () => { cancelled = true; };
     }, [blocker, flush]);
+
+    // Native window close: flush first, and on failure ask whether to retry
+    // or exit without the unsaved draft. The in-app blocker cannot see this.
+    const [closePrompt, setClosePrompt] = useState<'saving' | 'failed' | null>(null);
+    useWindowCloseGuard({
+        isDirty: chapterDraft.isDirty,
+        flush,
+        onFlushFailed: () => setClosePrompt('failed'),
+    });
+    const retrySaveAndClose = async () => {
+        setClosePrompt('saving');
+        const ok = await flush();
+        if (ok && isTauri()) await getCurrentWindow().destroy();
+        else setClosePrompt('failed');
+    };
 
     // Reset the panel selection when the active chapter changes (adjust-during-render).
     const [prevChapterId, setPrevChapterId] = useState(activeChapterId);
@@ -289,13 +308,18 @@ function Editor({ localBook }: { localBook?: Book }): React.ReactElement {
         navigate(to, options);
     };
 
-    // Handle toggle read only state
+    // Handle toggle read only state. Persist pending edits first: locking a
+    // chapter with an unsaved draft would strand the draft behind READ_ONLY.
     const handleToggleReadOnly = async () => {
-        if (isLocal) return;
         if (!book || !activeVolume || !activeChapter) return;
+        if (chapterDraft.isDirty) {
+            const ok = await autosave.flush();
+            if (!ok) return;
+        }
         const nextReadOnlyState = !chapterDraft.isReadOnly;
         chapterDraft.setReadOnly(nextReadOnlyState);
-        await toggleChapterLock(book.id, activeVolume.id, activeChapter.id);
+        const persisted = await toggleChapterLock(book.id, activeVolume.id, activeChapter.id);
+        if (!persisted) chapterDraft.setReadOnly(!nextReadOnlyState);
     };
 
     // --- Editor Interaction Handlers ---
@@ -485,12 +509,12 @@ function Editor({ localBook }: { localBook?: Book }): React.ReactElement {
                                         characters={book?.characters}
                                         autoHighlightCharacters={autoHighlightCharacters}
                                         onUpdate={handleEditorUpdate}
+                                        onContentNormalized={chapterDraft.adoptLoaded}
                                         onCharacterClick={handleCharacterClick}
                                         onForeshadowingCreate={handleForeshadowingCreate}
                                         onForeshadowingClick={handleForeshadowingClick}
                                         isEditable={!chapterDraft.isReadOnly}
-                                        canToggleReadOnly={!isLocal}
-                                        onToggleReadOnly={isLocal ? undefined : handleToggleReadOnly}
+                                        onToggleReadOnly={handleToggleReadOnly}
                                         placeholder={isLocal ? 'Start writing your story here...' : "Start writing your story here... Type '@' to mention a character."}
                                         editorMarginPx={editorSpacingSettings.editorMarginPx}
                                         editorLineHeight={editorSpacingSettings.editorLineHeight}
@@ -528,6 +552,31 @@ function Editor({ localBook }: { localBook?: Book }): React.ReactElement {
                     <div><span>{isLocal ? 'Local storage · AI and book management unavailable' : 'StoryArk Sprint 5'}</span></div>
                 </footer>
             </main>
+
+            {closePrompt && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-6" role="dialog" aria-modal="true" aria-labelledby="close-prompt-title">
+                    <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-slate-900 space-y-4">
+                        <h2 id="close-prompt-title" className="text-lg font-semibold text-slate-900 dark:text-white">Unsaved changes could not be saved</h2>
+                        <p className="text-sm text-slate-600 dark:text-slate-300">
+                            The latest changes have not been written to the local database. Retry saving before exit,
+                            or exit now and lose the unsaved draft. Force-quitting the app always keeps only the last
+                            successfully saved transaction.
+                        </p>
+                        <div className="flex flex-wrap gap-3">
+                            <Button onClick={() => void retrySaveAndClose()} disabled={closePrompt === 'saving'}>
+                                {closePrompt === 'saving' ? 'Saving...' : 'Retry & Exit'}
+                            </Button>
+                            <Button variant="secondary" disabled={closePrompt === 'saving'}
+                                onClick={() => { if (isTauri()) void getCurrentWindow().destroy(); }}>
+                                Exit Without Saving
+                            </Button>
+                            <Button variant="ghost" disabled={closePrompt === 'saving'} onClick={() => setClosePrompt(null)}>
+                                Cancel
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

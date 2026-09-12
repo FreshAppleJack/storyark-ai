@@ -96,6 +96,13 @@ export function useChapterDraft({ bookId = '', volumeId = '', chapterId, chapter
         });
     }, []);
 
+    // Adopt the editor-normalized form of freshly loaded content as the clean
+    // baseline (no revision bump, no dirty flag) — it is still the stored
+    // chapter, merely reserialized by the schema.
+    const adoptLoaded = useCallback((content: string, wordCount: number) => {
+        setDraft(current => (current.isDirty ? current : { ...current, content, wordCount }));
+    }, []);
+
     const addForeshadowing = useCallback((note: ForeshadowingNote) => {
         setDraft(current => ({
             ...current,
@@ -152,6 +159,7 @@ export function useChapterDraft({ bookId = '', volumeId = '', chapterId, chapter
         sessionKey: `${identity}:${loaded.session}`,
         setTitle,
         applyEditorUpdate,
+        adoptLoaded,
         addForeshadowing,
         updateForeshadowingNote,
         removeForeshadowing,

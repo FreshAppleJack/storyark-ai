@@ -285,3 +285,55 @@ chapter text. Frontend: 241 tests, zero-warning lint, production build. Rust:
 10 storage tests and `cargo fmt --check` unchanged and passing. Secret scan
 clean. Not yet covered here: native window close protection (unit 5), stale
 multi-window writes, and UI actions for rename/delete/locks (still stubbed).
+
+## Work unit 5 implementation: writing loop, mutations and window close
+
+Registered commands (same envelope, ownership, lock and version semantics as
+the existing writes): `local_rename`, `local_set_read_only`, `local_reorder`,
+`local_delete`. Targets are flat `{ kind, ...ids, expectedDatabaseVersion }`
+(serde-flattened; `ExpectedTarget` in the contract now matches that shape).
+Deleting cascades through SQLite foreign keys and requires the parent version
+so the parent row advances for other sessions; a reorder never bumps the
+parent. Unlocking a record checks ancestor locks but never the record itself.
+Five more Rust tests cover rename/lock/reorder/delete outcomes and the IPC
+registration of the new commands.
+
+The local provider implements volume/chapter rename, chapter lock toggles,
+volume/chapter delete (volume deletion drains each known chapter write queue
+first) and drag reorder, all through the same chapter write queue. A chapter
+title change without an open draft goes through `local_rename`; any content
+divergence in that call is rejected instead of overwriting. Shelf-level book
+management stays an explicit unavailable stub. `useWindowCloseGuard` hooks the
+native `CloseRequested` event on the editor page: a dirty draft prevents the
+close, flushes through the existing scheduler, and only then destroys the
+window; a failed flush shows a retry/discard/cancel dialog. Permissions are
+limited to `core:event:allow-listen` plus window close/destroy.
+
+### Phantom dirty flag found and fixed during this unit
+
+Opening a chapter whose stored JSON predates schema defaults (e.g. the initial
+empty document created by `local_create_chapter`) falsely marked the draft
+dirty: after `setContent`, the editor's schema-normalized serialization
+(`textAlign` attrs) no longer matched the loaded string, so the next
+transaction looked like user input. On a locked chapter this made autosave
+fail with READ_ONLY and then blocked unlocking behind a flush that could
+never succeed. Fix: after a chapter switch the editor reports the normalized
+serialization (`onContentNormalized`) and the draft adopts it as the clean
+baseline via `adoptLoaded` — the baseline always equals what the editor
+actually displays, no revision bump and no dirty flag.
+
+### Verification record (2026-09-12, unit 5)
+
+Real Windows desktop run via WebView2 CDP: rename through the context menu
+commits; creating a chapter enters auto-rename and persists; lock toggle
+persists and correctly blocks deletion of a locked chapter (UI keeps the
+record and reports the failure); unlocking succeeds with no phantom dirty
+flag; deletion removes the chapter and advances the parent volume; dragging a
+chapter onto another persists the new order in both UI and database; closing
+the window with an unsaved edit flushes first — the typed text was found in
+the database after the process exited. Frontend: 253 tests, zero-warning
+lint, production build. Rust: 15 tests, Clippy and `cargo fmt --check` clean.
+Secret scan clean. Remaining boundaries: book-level management (shelf menu)
+still stubbed by design, force-quit still only guarantees the last committed
+transaction, and failure simulation uses unit tests rather than a damaged
+live database.

@@ -1,5 +1,5 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import type { LocalBook, LocalChapter, LocalVolume, SaveChapterRequest, StorageResult } from './contracts';
+import type { ExpectedTarget, LocalBook, LocalChapter, LocalRecord, LocalVolume, SaveChapterRequest, StorageResult } from './contracts';
 import type { Book } from '../../types';
 
 export interface LocalBookDetail { book: LocalBook; volumes: LocalVolume[]; chapters: LocalChapter[] }
@@ -29,6 +29,14 @@ export const localRepository = {
         call<{ chapter: LocalChapter; volume: LocalVolume }>('local_create_chapter', { input: { bookId, volumeId, title, expectedVolumeVersion } }),
     saveChapter: (input: SaveChapterRequest) =>
         call<{ chapter: LocalChapter; sessionKey: string; revision: number }>('local_save_chapter', { input }),
+    rename: <T extends LocalRecord = LocalRecord>(input: ExpectedTarget & { title: string }) =>
+        call<T>('local_rename', { input }),
+    setReadOnly: <T extends LocalRecord = LocalRecord>(input: ExpectedTarget & { isReadOnly: boolean }) =>
+        call<T>('local_set_read_only', { input }),
+    reorder: <T extends LocalRecord = LocalRecord>(input: { parent: ExpectedTarget | null; items: ExpectedTarget[] }) =>
+        call<T[]>('local_reorder', { input }),
+    delete: <T extends LocalRecord = LocalRecord>(input: ExpectedTarget & { expectedParentVersion?: number }) =>
+        call<{ deletedId: string; parent: T | null }>('local_delete', { input }),
 };
 
 // Stable reference: a fresh array per projection would retrigger the

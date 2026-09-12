@@ -38,10 +38,8 @@ export type Target =
     | { kind: 'book'; bookId: UUID }
     | { kind: 'volume'; bookId: UUID; volumeId: UUID }
     | { kind: 'chapter'; bookId: UUID; volumeId: UUID; chapterId: UUID };
-export interface ExpectedTarget {
-    target: Target;
-    expectedDatabaseVersion: DatabaseVersion;
-}
+/** Flat shape: serde flattens the target fields beside the expected version. */
+export type ExpectedTarget = Target & { expectedDatabaseVersion: DatabaseVersion };
 export interface SaveChapterRequest {
     bookId: UUID;
     volumeId: UUID;

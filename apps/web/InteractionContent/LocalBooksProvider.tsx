@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { BooksContext, type BooksContextType } from './BooksContext';
 import { localBookOptions, localKeys, localRepository, projectBook, LocalStorageError, type LocalBookDetail } from '../data/local/repository';
-import type { LocalBook } from '../data/local/contracts';
+import type { LocalBook, LocalChapter, LocalVolume } from '../data/local/contracts';
 import { createChapterWriteQueue } from '../services/chapterWrites';
 
 export function LocalBooksProvider({ children }: { children: React.ReactNode }) {
@@ -79,10 +79,121 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 return true;
             } catch (error) { fail(error); return false; }
         }),
+        // Without an open draft, only a pure title change is persisted; any
+        // content divergence is rejected instead of overwriting the chapter.
+        updateChapterContent: (bookId, volumeId, chapterId, title, content, wordCount, foreshadowings) => writes.run(bookId, chapterId, async () => {
+            try {
+                const current = client.getQueryData<LocalBookDetail>(localKeys.book(bookId));
+                const chapter = current?.chapters.find(item => item.id === chapterId && item.volumeId === volumeId);
+                if (!chapter) throw new Error('Chapter not found. Reopen the book.');
+                const unchanged = chapter.body.content === content
+                    && (wordCount === undefined || chapter.wordCount === wordCount)
+                    && JSON.stringify(chapter.foreshadowings) === JSON.stringify(foreshadowings ?? chapter.foreshadowings);
+                if (!unchanged) throw new LocalStorageError('UNSUPPORTED', 'Only the title can change for a chapter without an open draft.');
+                if (chapter.title === title) return true;
+                const record = await localRepository.rename<LocalChapter>({ kind: 'chapter', bookId, volumeId, chapterId, expectedDatabaseVersion: chapter.databaseVersion, title });
+                client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({
+                    ...old, chapters: old.chapters.map(item => item.id === chapterId ? record : item),
+                }));
+                return true;
+            } catch (error) { fail(error); return false; }
+        }),
+        toggleChapterLock: (bookId, volumeId, chapterId) => writes.run(bookId, chapterId, async () => {
+            try {
+                const current = client.getQueryData<LocalBookDetail>(localKeys.book(bookId));
+                const chapter = current?.chapters.find(item => item.id === chapterId && item.volumeId === volumeId);
+                if (!chapter) throw new Error('Chapter not found. Reopen the book.');
+                const record = await localRepository.setReadOnly<LocalChapter>({ kind: 'chapter', bookId, volumeId, chapterId, expectedDatabaseVersion: chapter.databaseVersion, isReadOnly: !chapter.isReadOnly });
+                client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({
+                    ...old, chapters: old.chapters.map(item => item.id === chapterId ? record : item),
+                }));
+                return true;
+            } catch (error) { fail(error); return false; }
+        }),
+        updateVolume: (bookId, volumeId, title) => writes.run(bookId, volumeId, async () => {
+            try {
+                const current = client.getQueryData<LocalBookDetail>(localKeys.book(bookId));
+                const volume = current?.volumes.find(item => item.id === volumeId);
+                if (!volume) throw new Error('Volume not found. Reopen the book.');
+                if (volume.title === title) return true;
+                const record = await localRepository.rename<LocalVolume>({ kind: 'volume', bookId, volumeId, expectedDatabaseVersion: volume.databaseVersion, title });
+                client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({
+                    ...old, volumes: old.volumes.map(item => item.id === volumeId ? record : item),
+                }));
+                return true;
+            } catch (error) { fail(error); return false; }
+        }),
+        deleteChapter: (bookId, volumeId, chapterId) => writes.run(bookId, chapterId, async () => {
+            try {
+                const current = client.getQueryData<LocalBookDetail>(localKeys.book(bookId));
+                const volume = current?.volumes.find(item => item.id === volumeId);
+                const chapter = current?.chapters.find(item => item.id === chapterId && item.volumeId === volumeId);
+                if (!volume || !chapter) throw new Error('Chapter not found. Reopen the book.');
+                const result = await localRepository.delete<LocalVolume>({ kind: 'chapter', bookId, volumeId, chapterId, expectedDatabaseVersion: chapter.databaseVersion, expectedParentVersion: volume.databaseVersion });
+                client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({
+                    ...old,
+                    volumes: old.volumes.map(item => item.id === volumeId ? (result.parent ?? item) : item),
+                    chapters: old.chapters.filter(item => item.id !== chapterId),
+                }));
+                return true;
+            } catch (error) { fail(error); return false; }
+        }),
+        deleteVolume: (bookId, volumeId) => writes.run(bookId, volumeId, async () => {
+            try {
+                // Drain each known chapter queue first so a committed save is
+                // never deleted while still in flight.
+                const before = client.getQueryData<LocalBookDetail>(localKeys.book(bookId));
+                await Promise.all((before?.chapters ?? [])
+                    .filter(item => item.volumeId === volumeId)
+                    .map(item => writes.drain(bookId, item.id)));
+                const current = client.getQueryData<LocalBookDetail>(localKeys.book(bookId));
+                const volume = current?.volumes.find(item => item.id === volumeId);
+                if (!current || !volume) throw new Error('Volume not found. Reopen the book.');
+                const result = await localRepository.delete<LocalBook>({ kind: 'volume', bookId, volumeId, expectedDatabaseVersion: volume.databaseVersion, expectedParentVersion: current.book.databaseVersion });
+                client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({
+                    ...old,
+                    book: result.parent ?? old.book,
+                    volumes: old.volumes.filter(item => item.id !== volumeId),
+                    chapters: old.chapters.filter(item => item.volumeId !== volumeId),
+                }));
+                if (result.parent) rememberBook(result.parent);
+                return true;
+            } catch (error) { fail(error); return false; }
+        }),
+        reorderVolumes: (bookId, newVolumes) => writes.run(bookId, 'local', async () => {
+            try {
+                const current = client.getQueryData<LocalBookDetail>(localKeys.book(bookId));
+                if (!current) throw new Error('Book not loaded. Reopen the book.');
+                const items = newVolumes.map(volume => {
+                    const stored = current.volumes.find(item => item.id === volume.id);
+                    if (!stored) throw new Error('Volume not found. Reopen the book.');
+                    return { kind: 'volume' as const, bookId, volumeId: volume.id, expectedDatabaseVersion: stored.databaseVersion };
+                });
+                const records = await localRepository.reorder<LocalVolume>({ parent: { kind: 'book', bookId, expectedDatabaseVersion: current.book.databaseVersion }, items });
+                client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({ ...old, volumes: records }));
+                return true;
+            } catch (error) { fail(error); return false; }
+        }),
+        reorderChapters: (bookId, volumeId, newChapters) => writes.run(bookId, volumeId, async () => {
+            try {
+                const current = client.getQueryData<LocalBookDetail>(localKeys.book(bookId));
+                const volume = current?.volumes.find(item => item.id === volumeId);
+                if (!current || !volume) throw new Error('Volume not found. Reopen the book.');
+                const items = newChapters.map(chapter => {
+                    const stored = current.chapters.find(item => item.id === chapter.id && item.volumeId === volumeId);
+                    if (!stored) throw new Error('Chapter not found. Reopen the book.');
+                    return { kind: 'chapter' as const, bookId, volumeId, chapterId: chapter.id, expectedDatabaseVersion: stored.databaseVersion };
+                });
+                const records = await localRepository.reorder<LocalChapter>({ parent: { kind: 'volume', bookId, volumeId, expectedDatabaseVersion: volume.databaseVersion }, items });
+                client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({
+                    ...old,
+                    chapters: [...old.chapters.filter(item => item.volumeId !== volumeId), ...records],
+                }));
+                return true;
+            } catch (error) { fail(error); return false; }
+        }),
         // Unimplemented actions cannot reach HTTP, optimistic cache writes, or fake success.
-        updateChapterContent: unavailable, toggleChapterLock: unavailable,
-        updateVolume: unavailable, deleteVolume: unavailable, deleteChapter: unavailable,
-        reorderVolumes: unavailable, reorderChapters: unavailable, reorderCharacters: unavailable,
+        reorderCharacters: unavailable,
         updateBook: unavailable, deleteBook: unavailable,
         createCharacter: unavailable, updateCharacter: unavailable, deleteCharacter: unavailable,
         getRelations: unavailableRead, fetchGraphData: unavailableRead, saveGraphData: unavailable,

@@ -8,6 +8,10 @@
   "permissions": [
     "allow-local-list-books", "allow-local-read-book", "allow-local-create-book",
     "allow-local-create-volume", "allow-local-create-chapter", "allow-local-save-chapter",
-    "allow-local-backup"
+    "allow-local-rename", "allow-local-set-read-only", "allow-local-reorder", "allow-local-delete",
+    "allow-local-backup",
+    "core:event:allow-listen",
+    "core:window:allow-close",
+    "core:window:allow-destroy"
   ]
 }

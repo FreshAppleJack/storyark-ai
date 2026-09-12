@@ -191,7 +191,6 @@ export function ChapterNavigator({
 
     // --- Drag & Drop Handlers ---
     const handleDragStart = (e: React.DragEvent, type: NavigatorItemType, index: number, parentId?: string) => {
-        if (localMode) { e.preventDefault(); return; }
         if (renamingState) {
             e.preventDefault(); return;
         }
@@ -201,7 +200,6 @@ export function ChapterNavigator({
     };
 
     const handleDragEnter = (e: React.DragEvent, type: NavigatorItemType, index: number, parentId?: string) => {
-        if (localMode) return;
         e.preventDefault(); e.stopPropagation();
         if (renamingState) return;
 
@@ -252,7 +250,7 @@ export function ChapterNavigator({
     const handleAddVolume = async () => {
         const volTitle = `Volume ${book.volumes.length + 1}`;
         const newVolumeId = await onAddVolume(volTitle);
-        if (newVolumeId && !localMode) {
+        if (newVolumeId) {
             setRenamingState({ id: newVolumeId, type: 'volume', value: volTitle });
         }
     };
@@ -260,13 +258,12 @@ export function ChapterNavigator({
     const handleAddChapter = async (volId: string) => {
         const chapTitle = "New Chapter";
         const newChapterId = await onAddChapter(volId, chapTitle);
-        if (newChapterId && !localMode) {
+        if (newChapterId) {
             setRenamingState({ id: newChapterId, type: 'chapter', value: chapTitle });
         }
     };
 
     const handleContextMenu = (e: React.MouseEvent, type: NavigatorItemType, id: string, parentId?: string) => {
-        if (localMode) { e.preventDefault(); return; }
         e.preventDefault(); e.stopPropagation();
         setContextMenu({ x: e.clientX, y: e.clientY, type, id, parentId });
     };
@@ -466,7 +463,7 @@ export function ChapterNavigator({
                             )}
 
                             {book.volumes.map((vol, vIndex) => {
-                                const isVolDraggable = !localMode && !expandedVolumes.has(vol.id) && renamingState?.id !== vol.id;
+                                const isVolDraggable = !expandedVolumes.has(vol.id) && renamingState?.id !== vol.id;
                                 const isRenamingVol = renamingState?.id === vol.id && renamingState?.type === 'volume';
 
                                 return (
@@ -525,7 +522,7 @@ export function ChapterNavigator({
                                                             id={`sidebar-chapter-${chapter.id}`}
                                                             key={chapter.id}
                                                             onContextMenu={(e) => handleContextMenu(e, 'chapter', chapter.id, vol.id)}
-                                                            draggable={!localMode && !isRenamingChap}
+                                                            draggable={!isRenamingChap}
                                                             onDragStart={(e) => handleDragStart(e, 'chapter', cIndex, vol.id)}
                                                             onDragEnter={(e) => handleDragEnter(e, 'chapter', cIndex, vol.id)}
                                                             onDragEnd={handleDragEnd}
@@ -589,7 +586,7 @@ export function ChapterNavigator({
                     style={{ top: contextMenu.y, left: contextMenu.x }}
                     onClick={(e) => e.stopPropagation()}
                 >
-                    {contextMenu.type === 'chapter' && (
+                    {contextMenu.type === 'chapter' && !localMode && (
                         <button onClick={handleOpenPlotSetting} className="w-full text-left px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 flex items-center gap-2">
                             <ScrollText size={12} /> Plot Setting
                         </button>
