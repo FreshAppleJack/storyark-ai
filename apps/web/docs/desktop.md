@@ -3,6 +3,9 @@
 StoryArk uses Tauri 2 to display the existing React application. The frontend
 directories and hash router are shared with the web development build.
 
+During localization, follow the fixed [frontend preservation baseline](frontend-baseline.md).
+Backend changes must not introduce unsolicited layout or interaction redesigns.
+
 ```text
 apps/web/
   src/, pages/, features/     Existing React UI
