@@ -337,3 +337,78 @@ Secret scan clean. Remaining boundaries: book-level management (shelf menu)
 still stubbed by design, force-quit still only guarantees the last committed
 transaction, and failure simulation uses unit tests rather than a damaged
 live database.
+
+## Work unit 6 implementation: recovery verification and handoff
+
+`STORYARK_DATA_DIR` redirects the database directory for controlled smoke
+tests (production always uses the platform app-data directory). Using a fresh
+temporary directory, a real Windows run covered: shelf book creation with no
+backend; Chinese text with bold and center formatting saved; chapter switch
+with flush protection; context-menu rename and drag reorder persisted;
+native window close; and a restart that restored the book, the chapter
+order, and the formatted content exactly ("Saved locally", no phantom dirty
+flag).
+
+Controlled failure drills against the temporary database (the user's real
+app-data directory was never touched): a poison trigger made chapter updates
+fail — the editor showed "Save failed", kept the full draft, offered Retry,
+failed again while the trigger existed, and persisted the same draft after
+the trigger was removed. A second session then advanced the chapter version
+externally: the open editor's save was rejected with a version conflict, the
+draft stayed in the editor, and the database kept the newer external write.
+
+A `local_backup` snapshot was restored into a separate directory and opened
+read-only: `user_version = 1`, integrity `ok`, and the book, volume order,
+chapter order and formatted content all matched. Version 1 is the only
+schema version, so no upgrade migration exists yet — this is recorded
+honestly, and any future upgrade must add a failing-migration rollback test
+alongside the existing initialization checks.
+
+## Remaining legacy-backend dependencies (checked 2026-09-12)
+
+Core writing (books, volumes, chapters, chapter locks, foreshadowing marks
+inside chapter content) is fully local. Everything below still depends on the
+legacy HTTP backend and is either explicitly disabled or clearly marked
+unavailable in the local UI — the app is NOT fully local yet:
+
+| Area | Local status | Legacy dependency |
+| --- | --- | --- |
+| Characters | Disabled (unavailable page/stub) | `CharacterController`; also feeds graph handles and positions |
+| Relationship graph | Disabled | `GraphController` nodes/edges; `nodeKey` instance IDs vs `characterId` |
+| Foreshadowing board (cross-chapter) | Disabled (in-editor marks persist with the chapter) | Aggregates across the whole book via `booksApi` |
+| Story planning / plot settings | Disabled | `StoryPlanningController` |
+| Preferences remote sync | Local localStorage only; no HTTP without a user | `UserSettingsController` |
+| AI brainstorm | Explicitly disabled | `AiBrainstormController` |
+| AI continue | Explicitly disabled | `AiController` |
+| DOCX/PDF export | Works locally (pure frontend, input is the local chapter) | none |
+| Style library | Works locally (localStorage) | none |
+| Auth pages (login/register/settings) | Redirected / unavailable page | `AuthController` |
+
+## Legacy migration entry point and UUID mapping (types and structure)
+
+The legacy server (`apps/server`, retained for reference) stores books with
+MySQL `Long` auto-increment IDs scoped by `userId`. Chapters carry a raw
+`content` string (HTML or early JSON), `orderIndex`, a `foreshadowings` JSON
+string and an `isEditable` flag. The local model replaces these with UUID
+text IDs, no user concept, `position`, `isReadOnly`, a typed `body`
+(`format`/`version`/`content` plus untouched `originalContent`/
+`originalFormat`), and optimistic `databaseVersion`s.
+
+A future one-shot migration (explicit user action, never automatic) reads a
+legacy book through the old API or a read-only database copy, converts it
+into the whole-book JSON interchange format, and imports it through the
+planned JSON pipeline (validate → allocate new UUIDs → rebuild references).
+The import must keep a per-run mapping table from every legacy `Long` ID to
+its new UUID so that all references stay consistent:
+
+- `chapter.volumeId`, `character.bookId`, graph edge endpoints;
+- mention `data-id` values inside chapter content (legacy character IDs);
+- foreshadowing note IDs referenced by foreshadowing marks;
+- graph node `data.id` (character ID) vs `nodeKey` (node instance ID) —
+  these are two different ID spaces and must not be merged.
+
+Legacy content is imported as `legacy-html`/`legacy-json` with the original
+string preserved in `originalContent`; it converts to editable `tiptap-json`
+only through a verified conversion, otherwise it stays read-only. This stage
+never connects to, deletes from, or overwrites the legacy database, and
+users are never required to run the old backend.

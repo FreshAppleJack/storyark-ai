@@ -2,7 +2,12 @@
 pub fn run() {
     with_storage_commands(tauri::Builder::default())
         .setup(|app| {
-            let directory = app.path().app_data_dir()?;
+            // STORYARK_DATA_DIR redirects the database directory for controlled
+            // smoke tests; production runs always use the platform app-data dir.
+            let directory = match std::env::var_os("STORYARK_DATA_DIR") {
+                Some(custom) if !custom.is_empty() => std::path::PathBuf::from(custom),
+                _ => app.path().app_data_dir()?,
+            };
             // Initialize on a worker before showing a usable application.
             let storage = std::thread::spawn(move || storage::Storage::open(&directory))
                 .join()

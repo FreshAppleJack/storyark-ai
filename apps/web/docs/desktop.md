@@ -86,6 +86,26 @@ fallbacks when unavailable; full offline asset packaging is a later task.
 The app identifier is `io.github.freshapplejack.storyark`. Treat it as stable
 before introducing persisted data, since it affects platform app identity.
 
+## Local data location
+
+The SQLite database lives in the platform app-data directory, never in the
+repository, the install directory, or a cloud-synced folder:
+
+```text
+Windows: %APPDATA%\io.github.freshapplejack.storyark\storyark.sqlite3
+         %APPDATA%\io.github.freshapplejack.storyark\backups\storyark-<time>-<uuid>.sqlite3
+```
+
+Consistency backups are created through the SQLite online backup API
+(`local_backup`); never copy the live main file as a backup. Deleting the
+app-data directory resets the local library entirely — there is no account
+recovery because there is no account.
+
+Setting the `STORYARK_DATA_DIR` environment variable before
+`npm.cmd run desktop:dev` redirects the database directory. Use it only for
+controlled smoke tests against disposable data; production runs must rely on
+the platform app-data directory.
+
 ## Verification
 
 Use the existing frontend tests, lint, and build. Run `cargo fmt --check`
