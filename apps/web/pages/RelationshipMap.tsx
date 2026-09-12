@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ReactFlowProvider } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -89,29 +89,26 @@ function LocalGraphRoute({ bookId }: { bookId: string }) {
     const detail = useQuery(localBookOptions(bookId));
     const characters = useQuery(localCharactersOptions(bookId));
     const graph = useQuery(localGraphOptions(bookId));
-    const [initializing, setInitializing] = useState(false);
-    const [initializationError, setInitializationError] = useState<string | null>(null);
+    const [initError, setInitError] = useState<string | null>(null);
     const book = useMemo(() => detail.data && characters.data
         ? projectBook(detail.data.book, detail.data, characters.data.map(projectCharacter)) : undefined,
         [detail.data, characters.data]);
     const error = detail.error ?? characters.error ?? graph.error;
-    const initialize = async () => {
-        setInitializing(true);
-        setInitializationError(null);
-        try { client.setQueryData(localGraphKey(bookId), await graphRepository.initialize(bookId)); }
-        catch (error) { setInitializationError(error instanceof Error ? error.message : 'Graph initialization failed.'); }
-        finally { setInitializing(false); }
-    };
-    if (error || !book || graph.isPending || graph.isFetching) return <main className="p-8 space-y-4">
-        <p role={error ? 'alert' : 'status'}>{error?.message ?? 'Loading local relationship map...'}</p>
-        {error && <Button onClick={() => { void detail.refetch(); void characters.refetch(); void graph.refetch(); }}>Retry</Button>}
-        <Link to={`/editor/${bookId}`}>Back to editor</Link>
-    </main>;
-    if (!graph.data) return <main className="p-8 space-y-4">
-        <h1>Relationship Map: {book.title}</h1>
-        <p>Create an empty map, then drag characters from the palette. Saved empty maps stay empty.</p>
-        {initializationError && <p role="alert">{initializationError}</p>}
-        <Button disabled={initializing} onClick={() => { void initialize(); }}>Create relationship map</Button>
+    // A book without a saved map opens straight into an empty canvas, matching
+    // the legacy page. Initialization stays an explicit idempotent command:
+    // reads never seed or reset graphs, and failures surface instead of
+    // pretending to be an empty map.
+    useEffect(() => {
+        if (error || initError || graph.isPending || graph.isFetching || graph.data !== null) return;
+        let active = true;
+        graphRepository.initialize(bookId)
+            .then(initialized => { if (active) client.setQueryData(localGraphKey(bookId), initialized); })
+            .catch((cause: unknown) => { if (active) setInitError(cause instanceof Error ? cause.message : 'Graph initialization failed.'); });
+        return () => { active = false; };
+    }, [bookId, client, error, initError, graph.isPending, graph.isFetching, graph.data]);
+    if (error || initError || !book || graph.isPending || graph.isFetching || !graph.data) return <main className="p-8 space-y-4">
+        <p role={error || initError ? 'alert' : 'status'}>{error?.message ?? initError ?? 'Loading local relationship map...'}</p>
+        {(error || initError) && <Button onClick={() => { setInitError(null); void detail.refetch(); void characters.refetch(); void graph.refetch(); }}>Retry</Button>}
         <Link to={`/editor/${bookId}`}>Back to editor</Link>
     </main>;
     return <RelationshipMapContent bookId={bookId} book={book} initial={graph.data} />;

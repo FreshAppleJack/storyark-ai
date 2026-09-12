@@ -200,8 +200,10 @@ loaded and are never written back from the graph, which keeps one owner per
 config. The viewport stays session UI state.
 
 The canvas page is back on its route, loads book detail, characters and the
-graph through local queries, and shows an explicit "Create relationship map"
-step for uninitialized books — saved empty maps stay empty forever. Drag
+graph through local queries, and opens an uninitialized book straight into an
+empty canvas (matching the legacy page): the page issues the idempotent
+initialize command itself — reads still never seed graphs, failures still
+surface as errors, and saved empty maps stay empty forever. Drag
 edits debounce through a revision/acknowledgement scheduler that drains
 drags made while a commit is pending (an older ack never clears newer
 drags); route changes and the native window close wait for that flush via
