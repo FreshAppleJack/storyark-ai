@@ -18,6 +18,7 @@
     "allow-local-update-note", "allow-local-read-planning", "allow-local-save-planning",
     "core:event:allow-unlisten",
     "core:window:allow-close",
-    "core:window:allow-destroy"
+    "core:window:allow-destroy",
+    "core:webview:allow-internal-toggle-devtools"
   ]
 }

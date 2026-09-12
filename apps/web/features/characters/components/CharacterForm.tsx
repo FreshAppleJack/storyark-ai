@@ -3,7 +3,7 @@ import { AlertTriangle, Save, Tag, Trash2, User as UserIcon } from 'lucide-react
 import { Button } from '../../../components/ui/Button';
 import { Input } from '../../../components/ui/Input';
 import type { Character } from '../../../types';
-import { COLORS, getCharacterDisplayName, type CharacterFormData } from '../characterForm';
+import { COLORS, getCharacterDisplayName, truncateCharacterName, type CharacterFormData } from '../characterForm';
 interface Props {
     selectedCharId: string | null; formData: CharacterFormData;
     setFormData: (form: CharacterFormData) => void; isSaving: boolean;
@@ -22,7 +22,9 @@ export function CharacterForm({ selectedCharId, formData, setFormData, isSaving,
                                 {getCharacterDisplayName(formData.name).charAt(0).toUpperCase()}
                             </div>
                             <div>
-                                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">{getCharacterDisplayName(formData.name)}</h2>
+                                <h2 className="text-2xl font-bold text-slate-900 dark:text-white" title={getCharacterDisplayName(formData.name)}>
+                                    {truncateCharacterName(getCharacterDisplayName(formData.name))}
+                                </h2>
                                 <span className="text-xs font-medium px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 uppercase tracking-wide">{formData.role}</span>
                             </div>
                         </div>

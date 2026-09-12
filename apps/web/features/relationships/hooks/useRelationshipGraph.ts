@@ -235,7 +235,11 @@ export function useRelationshipGraph(bookId: string, book: Book | undefined, per
             const id = crypto.randomUUID();
             markEdited();
             setNodes(previous => [...previous, createCharacterNode(character, id, position)]);
-        } catch { /* Ignore unrelated or malformed drag data. */ }
+        } catch (error) {
+            // Unrelated or malformed drag data is ignored, but never silently:
+            // a no-op drop with no visible cause is undebuggable otherwise.
+            console.warn('Drop on the relationship map was ignored:', error);
+        }
     };
     const onLayout = (direction = 'TB') => {
         if (!isGraphLoaded) return;

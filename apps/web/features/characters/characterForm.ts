@@ -16,6 +16,23 @@ export const getCharacterDisplayName = (name?: string) => {
     return trimmedName || 'Unnamed';
 };
 
+/**
+ * Clamp a display name to a fixed width: ASCII letters count 1, every other
+ * character counts 2 (so 12 means "twelve English letters' width"). Overflow
+ * is marked with a trailing ellipsis; the full name stays available via the
+ * element title at the call site.
+ */
+export const truncateCharacterName = (name: string, maxWidth = 12) => {
+    let width = 0;
+    let end = 0;
+    for (const char of name) {
+        width += char.charCodeAt(0) < 128 ? 1 : 2;
+        if (width > maxWidth) break;
+        end += char.length;
+    }
+    return end < name.length ? `${name.slice(0, end)}...` : name;
+};
+
 const toAliasInputs = (aliases?: string[]) => {
     const values = Array.isArray(aliases) ? aliases.slice(0, 3) : [];
     return [...values, '', '', ''].slice(0, 3);
