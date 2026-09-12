@@ -30,6 +30,9 @@ fn main() {
             "local_update_character",
             "local_archive_character",
             "local_backup",
+            "local_read_graph",
+            "local_initialize_graph",
+            "local_save_graph",
         ])),
     )
     .expect("Failed to build the application permission manifest")

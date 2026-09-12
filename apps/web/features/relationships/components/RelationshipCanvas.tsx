@@ -71,7 +71,7 @@ export function RelationshipCanvas({ reactFlowWrapper, nodes, edges, onNodesChan
                             <p className="font-bold text-slate-700 dark:text-slate-200">Tips:</p>
                             <ul className="list-disc list-inside space-y-1 mt-1">
                                 <li>Right-Click Node to edit ports.</li>
-                                <li>Changing a port removes its connections.</li>
+                                <li>Port changes ask before removing connections.</li>
                                 <li>Click Line to edit label.</li>
                             </ul>
                         </div>

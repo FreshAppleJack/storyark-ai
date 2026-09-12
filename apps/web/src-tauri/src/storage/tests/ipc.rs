@@ -1,6 +1,6 @@
 use super::*;
 
-fn ipc(
+pub(super) fn ipc(
     window: &tauri::WebviewWindow<tauri::test::MockRuntime>,
     command: &str,
     body: Value,

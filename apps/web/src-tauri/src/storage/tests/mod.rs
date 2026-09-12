@@ -6,6 +6,7 @@ use uuid::Uuid;
 
 mod backup;
 mod characters;
+mod graph;
 mod ipc;
 mod library;
 mod migrations;

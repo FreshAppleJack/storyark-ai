@@ -5,6 +5,9 @@ mod characters;
 mod content;
 mod database;
 mod error;
+mod graph;
+mod graph_types;
+mod graph_validation;
 mod library;
 mod mutations;
 mod records;
@@ -15,6 +18,7 @@ mod tests;
 mod validation;
 
 pub use error::{Result, StorageError};
+pub use graph_types::SaveGraph;
 pub use requests::*;
 
 use rusqlite::Connection;

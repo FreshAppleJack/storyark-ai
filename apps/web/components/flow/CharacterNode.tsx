@@ -110,6 +110,7 @@ const CharacterNode = ({ data, selected }: NodeProps<CharacterFlowNode>) => {
             <div className="flex flex-col min-w-0 flex-1">
                 <div className="text-base font-bold text-slate-800 truncate leading-tight">
                     {data.name || 'Unnamed'}
+                    {data.isArchived && <span className="ml-2 text-xs text-slate-500">Archived</span>}
                 </div>
                 <div className="flex items-center gap-1 mt-1">
                     <span className={`

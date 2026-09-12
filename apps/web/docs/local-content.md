@@ -1,10 +1,10 @@
 # Local work content contract (weeks 11–12)
 
-> Status: contract defined and schema migrated (unit 1); characters are fully
-> local (unit 2). Remaining handlers land in their follow-up units (graph,
-> foreshadowing/planning, preferences/brainstorm). This document is the
-> field-level source of truth; `local-storage.md` covers the weeks 9–10
-> foundation.
+> Status: contract defined and schema migrated (unit 1); characters (unit 2)
+> and the relationship graph (unit 3) are fully local. Remaining handlers
+> land in their follow-up units (foreshadowing/planning,
+> preferences/brainstorm). This document is the field-level source of truth;
+> `local-storage.md` covers the weeks 9–10 foundation.
 
 Scope: characters, the relationship graph, cross-chapter foreshadowing,
 story planning, application preferences and the brainstorm workspace become
@@ -182,3 +182,50 @@ cross-book isolation fixtures), zero-warning lint, production build. Rust:
 `cargo fmt --check` clean. Secret scan clean. Not yet covered: character
 reorder persistence (stubbed by design) and unarchive UI (the command
 already accepts `isArchived: false`).
+
+## Unit 3 implementation: relationship graph local
+
+Commands `local_read_graph`, `local_initialize_graph` and `local_save_graph`
+implement the contract exactly: a missing graph row is `null` (distinct from
+a load error and from an initialized empty map), initialization is explicit
+and idempotent, and saving replaces nodes, edges and the graph version
+compare-and-swap inside one immediate transaction. Validation rejects
+cross-book characters, dangling endpoints, duplicate keys, non-finite or
+out-of-range coordinates, invalid handles and edges whose port mode the
+owning node's effective config (node override, else the character default)
+does not allow. Node keys are instance IDs independent of character IDs, so
+multiple nodes per character coexist. Saving writes the node's complete
+handle configuration — character defaults are copied when a node is added or
+loaded and are never written back from the graph, which keeps one owner per
+config. The viewport stays session UI state.
+
+The canvas page is back on its route, loads book detail, characters and the
+graph through local queries, and shows an explicit "Create relationship map"
+step for uninitialized books — saved empty maps stay empty forever. Drag
+edits debounce through a revision/acknowledgement scheduler that drains
+drags made while a commit is pending (an older ack never clears newer
+drags); route changes and the native window close wait for that flush via
+`useGraphSaveGuards` (blocker + close guard + beforeunload). Node deletion
+removes the instance and its edges, never the character; archived characters
+keep their nodes with an "Archived" badge and leave the palette; port
+changes that would drop edges ask for confirmation first. Changing a
+character's default handles is validated against inheriting nodes so
+connections cannot silently break (and bumps the graph version).
+
+### Verification record (2026-09-12, unit 3)
+
+Real Windows desktop run via WebView2 CDP, no backend: character created
+through the settings UI; a mention inserted through the editor's real
+command pipeline and saved; the map initialized explicitly; the same
+character dropped twice as two instances with distinct positions; a
+right-source to top-target edge labeled "另一个自己" connected through real
+handle mouse events and saved. A normal window close reopened with both node
+positions, the edge and its label intact; a second reopen after another save
+confirmed the same. The chapter with its mention stayed intact throughout.
+Frontend: 264 tests (projection round-trips, pending-commit drains,
+conflict layout retention, port-change confirmation, missing-character edit
+block), zero-warning lint, production build. Rust: 25 tests (round-trip
+with archival and saved-empty graphs, validation rejections, transactional
+rollback with an injected trigger, stale-version and lock rejections,
+inherited-port protection, IPC registration), Clippy and `cargo fmt --check`
+clean. Secret scan clean.

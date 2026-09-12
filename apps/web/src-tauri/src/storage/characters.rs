@@ -66,6 +66,14 @@ impl Database {
         if changed != 1 {
             return Err(StorageError::new("VERSION_CONFLICT", "Record changed"));
         }
+        if character["handleConfig"] != input.character.handle_config.clone().unwrap_or(Value::Null)
+        {
+            super::graph::character_defaults_changed(
+                &tx,
+                &input.character.book_id,
+                &input.character_id,
+            )?;
+        }
         let result = record(&tx, "characters", &input.character_id)?;
         tx.commit()?;
         Ok(result)

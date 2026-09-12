@@ -13,7 +13,7 @@ export const localKeys = {
 export class LocalStorageError extends Error {
     constructor(public readonly code: string, message: string) { super(message); }
 }
-async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+export async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
     if (!isTauri()) throw new LocalStorageError('DESKTOP_REQUIRED', 'Open the StoryArk desktop app to access your local books. Browser preview cannot save books.');
     let result: StorageResult<T>;
     try { result = await invoke<StorageResult<T>>(command, args); }

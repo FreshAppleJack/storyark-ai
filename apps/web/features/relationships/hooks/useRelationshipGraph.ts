@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
     useNodesState, useEdgesState, useUpdateNodeInternals, addEdge,
     type Connection, type Edge, type ReactFlowInstance, type NodeMouseHandler, type EdgeMouseHandler,
@@ -14,11 +14,16 @@ import {
     toRelationshipGraph, type RelationshipNode
 } from '../graphModel';
 
+export interface GraphPersistence {
+    load: () => Promise<{ nodes: RelationshipNode[]; edges: Edge[] }>;
+    save: (nodes: RelationshipNode[], edges: Edge[], revision: number) => Promise<boolean>;
+}
+
 /** One graph draft for the canvas and its persistence. Mount under ReactFlowProvider. */
-export function useRelationshipGraph(bookId: string, book: Book | undefined) {
+export function useRelationshipGraph(bookId: string, book: Book | undefined, persistence?: GraphPersistence) {
     const { fetchGraphData, saveGraphData } = useBooks();
-    const source = useRef({ fetchGraphData, book });
-    useEffect(() => { source.current = { fetchGraphData, book }; }, [fetchGraphData, book]);
+    const source = useRef({ fetchGraphData, book, persistence });
+    useEffect(() => { source.current = { fetchGraphData, book, persistence }; }, [fetchGraphData, book, persistence]);
     const [nodes, setNodes, applyNodeChanges] = useNodesState<RelationshipNode>([]);
     const [edges, setEdges, applyEdgeChanges] = useEdgesState<Edge>([]);
     const [isGraphLoaded, setIsGraphLoaded] = useState(false);
@@ -35,7 +40,12 @@ export function useRelationshipGraph(bookId: string, book: Book | undefined) {
     const [reactFlowInstance, setReactFlowInstance] = useState<ReactFlowInstance<RelationshipNode, Edge> | null>(null);
     const updateNodeInternals = useUpdateNodeInternals();
     const revision = useRef(0);
-    const pendingSave = useRef(false);
+    const pendingSave = useRef<Promise<boolean> | null>(null);
+    const savedRevision = useRef(0);
+    const [isDirty, setIsDirty] = useState(false);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const latest = useRef({ nodes, edges });
+    useLayoutEffect(() => { latest.current = { nodes, edges }; }, [nodes, edges]);
     const mounted = useRef(false);
     const handleTimers = useRef(new Set<ReturnType<typeof setTimeout>>());
     const layoutFrame = useRef<number | undefined>(undefined);
@@ -55,9 +65,10 @@ export function useRelationshipGraph(bookId: string, book: Book | undefined) {
         const load = async () => {
             setLoadError(false);
             try {
-                const data = await source.current.fetchGraphData(bookId);
+                const graph = source.current.persistence
+                    ? await source.current.persistence.load()
+                    : toRelationshipGraph(await source.current.fetchGraphData(bookId), source.current.book?.characters || []);
                 if (!active) return;
-                const graph = toRelationshipGraph(data, source.current.book?.characters || []);
                 setNodes(graph.nodes);
                 setEdges(graph.edges);
                 setIsGraphLoaded(true);
@@ -69,30 +80,59 @@ export function useRelationshipGraph(bookId: string, book: Book | undefined) {
         return () => { active = false; };
     }, [bookId, hasBook, loadAttempt, setNodes, setEdges]);
 
-    const markEdited = useCallback(() => { revision.current++; setLastSaved(null); }, []);
+    const markEdited = useCallback(() => { revision.current++; setIsDirty(true); setLastSaved(null); }, []);
     const onNodesChange: OnNodesChange<RelationshipNode> = useCallback(changes => {
         if (changes.some(change => change.type !== 'select' && change.type !== 'dimensions')) markEdited();
+        const removed = new Set(changes.filter(change => change.type === 'remove').map(change => change.id));
+        if (removed.size) setEdges(previous => previous.filter(edge => !removed.has(edge.source) && !removed.has(edge.target)));
         applyNodeChanges(changes);
-    }, [applyNodeChanges, markEdited]);
+    }, [applyNodeChanges, markEdited, setEdges]);
     const onEdgesChange: OnEdgesChange = useCallback(changes => {
         if (changes.some(change => change.type !== 'select')) markEdited();
         applyEdgeChanges(changes);
     }, [applyEdgeChanges, markEdited]);
-    const handleSave = async () => {
-        if (!isGraphLoaded || pendingSave.current) return;
-        pendingSave.current = true;
-        setIsSaving(true);
-        const snapshotRevision = revision.current;
-        try {
-            const ok = await saveGraphData(bookId, nodes, edges);
-            if (!mounted.current) return;
-            if (!ok) toast.error('Failed to save the relationship map.');
-            else if (revision.current === snapshotRevision) setLastSaved(Date.now());
-        } finally {
-            pendingSave.current = false;
-            if (mounted.current) setIsSaving(false);
-        }
-    };
+    const flush = useCallback((force = false): Promise<boolean> => {
+        if (pendingSave.current) return pendingSave.current;
+        if (!isGraphLoaded) return Promise.resolve(false);
+        const operation = async () => {
+            setIsSaving(true);
+            setSaveError(null);
+            try {
+                do {
+                    const snapshotRevision = revision.current;
+                    const snapshot = latest.current;
+                    const adapter = source.current.persistence;
+                    const ok = adapter
+                        ? await adapter.save(snapshot.nodes, snapshot.edges, snapshotRevision)
+                        : await saveGraphData(bookId, snapshot.nodes, snapshot.edges);
+                    if (!mounted.current) return false;
+                    if (!ok) throw new Error('Failed to save the relationship map. Your draft is retained.');
+                    savedRevision.current = snapshotRevision;
+                    if (revision.current === snapshotRevision) {
+                        setIsDirty(false);
+                        setLastSaved(Date.now());
+                    }
+                    // Local flush drains edits made while the previous commit was pending.
+                    if (!adapter) break;
+                } while (savedRevision.current !== revision.current);
+                return true;
+            } catch (error) {
+                if (mounted.current) {
+                    const message = error instanceof Error ? error.message : 'Graph save failed.';
+                    setSaveError(message);
+                    toast.error(message);
+                }
+                return false;
+            } finally {
+                pendingSave.current = null;
+                if (mounted.current) setIsSaving(false);
+            }
+        };
+        if (!force && savedRevision.current === revision.current) return Promise.resolve(true);
+        pendingSave.current = operation();
+        return pendingSave.current;
+    }, [bookId, isGraphLoaded, saveGraphData]);
+    const handleSave = async () => { await flush(true); };
     const onNodeContextMenu: NodeMouseHandler<RelationshipNode> = useCallback((event, node) => {
         event.preventDefault();
         if (!reactFlowWrapper.current) return;
@@ -105,6 +145,9 @@ export function useRelationshipGraph(bookId: string, book: Book | undefined) {
     const onPaneClick = useCallback(() => setMenu(null), []);
     const updateNodeConfig = (config: HandleConfig) => {
         if (!menu) return;
+        const retained = filterEdgesForHandles(edges, menu.id, config);
+        const removed = edges.length - retained.length;
+        if (removed && !window.confirm(`This port change removes ${removed} connection(s). Continue?`)) return;
         markEdited();
         const id = menu.id;
         setMenu({ ...menu, config });
@@ -150,6 +193,7 @@ export function useRelationshipGraph(bookId: string, book: Book | undefined) {
         if (pendingConnection) {
             setEdges((eds) => addEdge({
                 ...pendingConnection,
+                id: crypto.randomUUID(),
                 label: label,
                 ...relationshipEdgeStyle,
             }, eds));
@@ -186,9 +230,9 @@ export function useRelationshipGraph(bookId: string, book: Book | undefined) {
         try {
             const data = asRecord(JSON.parse(event.dataTransfer.getData('application/reactflow')));
             const character = book.characters.find(item => item.id === String(data.id));
-            if (!character) return;
+            if (!character || character.isArchived) return;
             const position = reactFlowInstance.screenToFlowPosition({ x: event.clientX, y: event.clientY });
-            const id = `${character.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            const id = crypto.randomUUID();
             markEdited();
             setNodes(previous => [...previous, createCharacterNode(character, id, position)]);
         } catch { /* Ignore unrelated or malformed drag data. */ }
@@ -204,7 +248,7 @@ export function useRelationshipGraph(bookId: string, book: Book | undefined) {
         layoutFrame.current = requestAnimationFrame(() => reactFlowInstance?.fitView({ padding: 0.2 }));
     };
     return {
-        nodes, edges, onNodesChange, onEdgesChange, reactFlowWrapper, setReactFlowInstance,
+        isDirty, saveError, flush, nodes, edges, onNodesChange, onEdgesChange, reactFlowWrapper, setReactFlowInstance,
         isGraphLoaded, loadError, retry: () => setLoadAttempt(attempt => attempt + 1), isSaving, lastSaved, handleSave,
         menu, setMenu, onNodeContextMenu, onPaneClick, updateNodeConfig, dialogOpen, setDialogOpen, dialogData,
         editingEdgeId, onConnect, onEdgeClick, handleDialogSave, handleDialogDelete, onDragOver, onDrop, onLayout
