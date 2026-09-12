@@ -32,6 +32,14 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* The canvas background comes from <html>, not <body>: whenever a loading
+   page leaves the body shorter than the viewport, the uncovered area shows
+   the html background. Keep it on-theme or dark mode flashes white. */
+:root.dark {
+  color: #f1f5f9;
+  background: #0f172a;
+}
+
 html,
 body,
 #root {

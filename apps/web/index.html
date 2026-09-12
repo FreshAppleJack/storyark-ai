@@ -7,6 +7,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Merriweather:ital,wght@0,300;0,400;0,700;1,400&display=swap" rel="stylesheet" />
     <title>StoryArk</title>
+    <script>
+      // Launch cache: apply the persisted theme before first paint so the
+      // startup never flashes the light canvas. SQLite remains the authority
+      // and reconciles right after React mounts.
+      try {
+        if (localStorage.getItem('storyark_dark_mode') === 'true') {
+          document.documentElement.classList.add('dark');
+        }
+      } catch (error) { /* Ignore storage failures; React applies the theme. */ }
+    </script>
   </head>
   <body>
     <div id="root"></div>
