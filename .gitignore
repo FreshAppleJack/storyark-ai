@@ -39,3 +39,4 @@ backups/
 gitleaks-report.*
 /.codebuddy/rules
 /.codebuddy/memory
+/.codebuddy
