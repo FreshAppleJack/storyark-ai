@@ -107,6 +107,7 @@ export function PlotSettingsPanel({ planning, selectedPlotId, setSelectedPlotId,
                             </div>
                             <div>
                                 <label className="mb-2 block text-xs font-semibold text-slate-500 dark:text-slate-400">Linked Chapters</label>
+                                {!!selectedPlot.missingChapterIds?.length && <p className="mb-2 text-xs text-amber-600">Some linked chapters were deleted. This plot setting has been retained.</p>}
                                 <div className="mb-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100 dark:border-slate-800 dark:bg-slate-900 dark:focus-within:border-brand-500 dark:focus-within:ring-brand-900/40">
                                     <Search size={14} className="flex-shrink-0 text-slate-400" />
                                     <input

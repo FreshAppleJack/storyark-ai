@@ -13,6 +13,7 @@
     "allow-local-archive-character", "allow-local-backup",
     "allow-local-read-graph", "allow-local-initialize-graph", "allow-local-save-graph",
     "core:event:allow-listen",
+    "allow-local-update-note", "allow-local-read-planning", "allow-local-save-planning",
     "core:event:allow-unlisten",
     "core:window:allow-close",
     "core:window:allow-destroy"

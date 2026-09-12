@@ -1,8 +1,8 @@
 # Local work content contract (weeks 11–12)
 
 > Status: contract defined and schema migrated (unit 1); characters (unit 2)
-> and the relationship graph (unit 3) are fully local. Remaining handlers
-> land in their follow-up units (foreshadowing/planning,
+> the relationship graph (unit 3), and foreshadowing/planning (unit 4) are fully local. Remaining handlers
+> land in their follow-up units (
 > preferences/brainstorm). This document is the field-level source of truth;
 > `local-storage.md` covers the weeks 9–10 foundation.
 
@@ -94,8 +94,8 @@ CONTENT_INCOMPATIBLE, STORAGE_FAILURE).
 | local_initialize_graph | `{ input: { bookId } }` → `{ graph, nodes: [], edges: [] }` | Explicit first-time creation, persisted; seeding from characters is a separate explicit call, not an automatic side effect of opening the page. |
 | local_save_graph | `{ input: { bookId, expectedGraphVersion, nodes, edges } }` → `{ graph, nodes, edges }` | Whole-snapshot write in one transaction: endpoint ownership, dangling edges, coordinate/handle validation; stale version rejected. |
 | local_read_planning / local_save_planning | `{ bookId }` / `{ input: { bookId, expectedDatabaseVersion, ...aggregate } }` | Per-book aggregate; chapterIds validated in-transaction. |
-| local_list_foreshadowings | `{ bookId }` → aggregated notes with chapter location | Read projection over chapters; ordered by volume/chapter position. |
-| local_update_foreshadowing_note | `{ input: { bookId, volumeId, chapterId, noteId, expectedChapterVersion, note?, isRecovered? } }` → chapter | Reads the chapter in-transaction, changes only the target note, preserves body, other notes and unknown fields, returns the new chapter version. |
+| local_read_book | `{ bookId }` → full chapter snapshots | Board aggregates notes from this consistent SQLite read; ordered by volume/chapter position. |
+| local_update_note | `{ input: { bookId, chapterId, noteId, expectedDatabaseVersion, note?, isRecovered? } }` → committed chapter | Patch only the target note in a transaction; preserve body and unknown fields. |
 | local_read_preferences / local_save_preferences | none / `{ input: { expectedDatabaseVersion, ...fields } }` | Single-row application preferences, optimistic version. |
 | local_read_brainstorm / local_save_brainstorm | `{ bookId }` / `{ input: { bookId, expectedDatabaseVersion, ...workspace } }` | Workspace aggregate; selected chapter IDs validated in-transaction. |
 
@@ -231,3 +231,54 @@ with archival and saved-empty graphs, validation rejections, transactional
 rollback with an injected trigger, stale-version and lock rejections,
 inherited-port protection, IPC registration), Clippy and `cargo fmt --check`
 clean. Secret scan clean.
+
+## Unit 4 implementation: foreshadowing and planning
+
+The board uses `local_read_book`, not a second notes store. Its identity is
+`(bookId, chapterId, noteId)`; a missing body mark is shown as unlocated but
+never removes the note. Source links use chapter and mark IDs, not indexes.
+`local_update_note` checks chapter ownership, ancestor locks and the expected
+chapter version inside an immediate transaction. Only the target note and
+chapter version/time change; body, other notes and unknown note keys survive.
+An editor departure flushes pending writes, and returning mounts the editor
+only after a fresh chapter query. Board drafts serialize their own writes;
+conflicts retain edits and never adopt a newer version to force a retry.
+
+`local_read_planning` returns an empty aggregate with databaseVersion 0 only
+when the row genuinely does not exist. Errors remain errors. The first save
+expects 0; subsequent saves expect the persisted version. `local_save_planning`
+takes the complete aggregate plus `sessionKey` and `revision`, and returns
+`{planning, sessionKey, revision}` after commit. Array order and unknown entry
+fields survive. Live chapter references must belong to this book. No new SQL
+migration is needed: these fields use the existing schema version 2 tables.
+
+Story background holds author-defined setting; plot settings hold future
+intent; chapter summaries describe existing chapters. Editing a summary records
+its sourceChapterVersion. A later chapter version mismatch (including a note
+edit) produces a conservative stale-source hint, never an automatic rewrite.
+Missing source versions are also treated as unverified. No model is called.
+Planning drafts drain newer edits after pending saves; route departure and
+normal native close wait for successful commits. Load failures, storage errors
+and version conflicts cannot replace drafts with empty defaults.
+
+Chapter/volume deletion uses the existing confirmation, with explicit summary
+and reference consequences. The same transaction removes chapter summaries
+and live plot links, retaining plot text and adding `missingChapterIds` for
+inline missing-link feedback. Existing brainstorm live selections are cleaned;
+opaque historical snapshots survive with `deletedChapterIds` annotations.
+Changed planning/workspace versions advance atomically with deletion. A failed
+step rolls back all of these changes. Full JSON interchange remains deferred.
+
+### Verification record (2026-09-12, unit 4)
+
+Frontend: 269 tests pass, typecheck/build and lint pass. Rust: 29 tests pass,
+Clippy with warnings denied passes. Tests cover opaque note preservation,
+composite identities, stale versions, foreign chapter references, persistence
+across reopening, injected transaction failures and atomic deletion cleanup.
+A temporary `.mjs` CDP script exercised an isolated real Tauri/SQLite instance:
+board note edit/recovery preserved rich body and other chapter notes; orphan
+notes stayed visible; the editor reread committed notes. Planning form values,
+chapter summary source version and plot links persisted. An injected SQLite
+failure retained the visible draft and blocked route departure; retry worked.
+Closing the native window with an unsaved planning field flushed it, and a new
+process recovered all fields. No production user database was used.

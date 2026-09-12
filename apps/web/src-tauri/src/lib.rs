@@ -36,6 +36,9 @@ fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri
         commands::local_update_character,
         commands::local_archive_character,
         commands::local_backup,
+        planning_commands::local_update_note,
+        planning_commands::local_read_planning,
+        planning_commands::local_save_planning,
         graph_commands::local_read_graph,
         graph_commands::local_initialize_graph,
         graph_commands::local_save_graph,
@@ -43,5 +46,6 @@ fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri
 }
 mod commands;
 mod graph_commands;
+mod planning_commands;
 mod storage;
 use tauri::Manager;

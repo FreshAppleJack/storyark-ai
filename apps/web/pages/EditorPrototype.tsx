@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { localBookOptions, localCharactersOptions, projectBook, projectCharacter } from '../data/local/repository';
+import { localPlanningOptions, type LocalPlanning } from '../data/local/planningRepository';
 import { toast } from 'react-hot-toast';
 import { useApp } from '../InteractionContent/AppContext';
 import { aiApi } from '../data/aiApi';
@@ -21,7 +22,7 @@ import { useWindowCloseGuard } from '../features/editor/hooks/useWindowCloseGuar
 import { useAiContinue } from '../features/editor/hooks/useAiContinue';
 import { useChapterExport } from '../features/editor/export/useChapterExport';
 
-function Editor({ localBook }: { localBook?: Book }): React.ReactElement {
+function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?: LocalPlanning }): React.ReactElement {
     const { bookId } = useParams<{ bookId: string }>();
     const navigate = useNavigate();
     const {
@@ -51,7 +52,8 @@ function Editor({ localBook }: { localBook?: Book }): React.ReactElement {
     // The chapter draft (values + revision + dirty tracking) lives in a hook;
     // this page only keeps UI state and the save lifecycle.
     const chapterDraft = useChapterDraft({ bookId, volumeId: activeVolume?.id, chapterId: activeChapterId, chapter: activeChapter });
-    const [plotSettings, setPlotSettings] = useState<PlotSetting[]>([]);
+    const [legacyPlotSettings, setPlotSettings] = useState<PlotSetting[]>([]);
+    const plotSettings = localPlanning?.plotSettings ?? legacyPlotSettings;
     const [activeForeshadowingId, setActiveForeshadowingId] = useState<string | null>(null);
     const [isForeshadowingPanelOpen, setIsForeshadowingPanelOpen] = useState(false);
 
@@ -536,7 +538,7 @@ function Editor({ localBook }: { localBook?: Book }): React.ReactElement {
                         activeForeshadowingId={activeForeshadowingId}
                         plotSettings={linkedPlotSettings}
                         isReadOnly={chapterDraft.isReadOnly}
-                        canOpenOutline={!isLocal && !!activeChapterId}
+                        canOpenOutline={!!activeChapterId}
                         onClose={() => setIsForeshadowingPanelOpen(false)}
                         onFocusForeshadowing={handleFocusForeshadowing}
                         onNoteChange={handleForeshadowingNoteChange}
@@ -591,13 +593,17 @@ export default function EditorRoute(): React.ReactElement {
 }
 
 function LocalEditorRoute({ bookId }: { bookId: string }) {
-    const query = useQuery(localBookOptions(bookId));
+    const query = useQuery({ ...localBookOptions(bookId), refetchOnMount: 'always' });
+    const planning = useQuery(localPlanningOptions(bookId));
     const charactersQuery = useQuery(localCharactersOptions(bookId));
     const book = useMemo(() => query.data
         ? projectBook(query.data.book, query.data, charactersQuery.data?.map(projectCharacter))
         : undefined, [query.data, charactersQuery.data]);
-    if (book) return <Editor localBook={book} />;
-    const pending = query.isPending || charactersQuery.isPending;
+    if (book && !query.isFetching && !query.error) return <>
+        {planning.error && <p role="alert" className="text-xs text-rose-600">Planning could not be loaded. Writing remains available.</p>}
+        <Editor localBook={book} localPlanning={planning.data} />
+    </>;
+    const pending = query.isPending || query.isFetching || charactersQuery.isPending;
     const error = query.error ?? charactersQuery.error;
     return <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
         {pending ? <p role="status">Loading local book...</p> : <>

@@ -95,8 +95,6 @@ export function EditorHeader({
                     variant="secondary"
                     size="sm"
                     onClick={onNavigateForeshadowingBoard}
-                    disabled={localMode}
-                    title={localMode ? 'Not available in local mode yet' : undefined}
                     className="text-brand-600 dark:text-brand-300 border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-950/40 hover:bg-brand-100 dark:hover:bg-brand-900/50"
                 >
                     <ListTree size={16} className="mr-2" />

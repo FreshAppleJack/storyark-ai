@@ -11,6 +11,7 @@ mod ipc;
 mod library;
 mod migrations;
 mod mutations;
+mod planning;
 mod worker;
 
 struct TempDirectory(PathBuf);

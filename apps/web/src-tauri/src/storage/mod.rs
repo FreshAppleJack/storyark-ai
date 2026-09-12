@@ -5,11 +5,15 @@ mod characters;
 mod content;
 mod database;
 mod error;
+mod foreshadowing;
 mod graph;
 mod graph_types;
 mod graph_validation;
 mod library;
 mod mutations;
+mod planning;
+mod planning_cleanup;
+mod planning_validation;
 mod records;
 mod requests;
 mod targets;
@@ -18,7 +22,9 @@ mod tests;
 mod validation;
 
 pub use error::{Result, StorageError};
+pub use foreshadowing::UpdateNote;
 pub use graph_types::SaveGraph;
+pub use planning::SavePlanning;
 pub use requests::*;
 
 use rusqlite::Connection;

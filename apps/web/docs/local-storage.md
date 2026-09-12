@@ -400,8 +400,8 @@ unavailable in the local UI — the app is NOT fully local yet:
 | --- | --- | --- |
 | Characters | Disabled (unavailable page/stub) | `CharacterController`; also feeds graph handles and positions |
 | Relationship graph | Disabled | `GraphController` nodes/edges; `nodeKey` instance IDs vs `characterId` |
-| Foreshadowing board (cross-chapter) | Disabled (in-editor marks persist with the chapter) | Aggregates across the whole book via `booksApi` |
-| Story planning / plot settings | Disabled | `StoryPlanningController` |
+| Foreshadowing board (cross-chapter) | Local SQLite aggregation and versioned note patches (weeks 11–12 unit 4) | No legacy calls |
+| Story planning / plot settings | Local SQLite aggregate, guarded drafts and source versions (weeks 11–12 unit 4) | No legacy calls |
 | Preferences remote sync | Local localStorage only; no HTTP without a user | `UserSettingsController` |
 | AI brainstorm | Explicitly disabled | `AiBrainstormController` |
 | AI continue | Explicitly disabled | `AiController` |

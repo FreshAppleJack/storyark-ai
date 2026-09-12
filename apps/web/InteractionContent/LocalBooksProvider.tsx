@@ -5,6 +5,7 @@ import { BooksContext, type BooksContextType } from './BooksContext';
 import { localBookOptions, localKeys, localRepository, projectBook, projectCharacter, LocalStorageError, type LocalBookDetail } from '../data/local/repository';
 import type { LocalBook, LocalChapter, LocalCharacter, LocalVolume } from '../data/local/contracts';
 import { createChapterWriteQueue } from '../services/chapterWrites';
+import { planningKey } from '../data/local/planningRepository';
 
 export function LocalBooksProvider({ children }: { children: React.ReactNode }) {
     const client = useQueryClient();
@@ -137,6 +138,7 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                     volumes: old.volumes.map(item => item.id === volumeId ? (result.parent ?? item) : item),
                     chapters: old.chapters.filter(item => item.id !== chapterId),
                 }));
+                void client.invalidateQueries({ queryKey: planningKey(bookId) });
                 return true;
             } catch (error) { fail(error); return false; }
         }),
@@ -159,6 +161,7 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                     chapters: old.chapters.filter(item => item.volumeId !== volumeId),
                 }));
                 if (result.parent) rememberBook(result.parent);
+                void client.invalidateQueries({ queryKey: planningKey(bookId) });
                 return true;
             } catch (error) { fail(error); return false; }
         }),

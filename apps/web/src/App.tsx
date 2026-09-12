@@ -20,6 +20,8 @@ const router = createHashRouter(createRoutesFromElements(
         <Route path="/style-library" lazy={async () => ({ Component: (await import('../pages/StyleLibrary')).default })} />
         <Route path="/settings" element={<UnavailablePage />} />
         <Route path="/books/:bookId/settings" lazy={async () => ({ Component: (await import('../pages/CharacterSettings')).default })} />
+        <Route path="/books/:bookId/foreshadowing" lazy={async () => ({ Component: (await import('../pages/Foreshadowing')).default })} />
+        <Route path="/books/:bookId/story-outline" lazy={async () => ({ Component: (await import('../pages/StoryOutline')).default })} />
         <Route path="/books/:bookId/relationships" lazy={async () => ({ Component: (await import('../pages/RelationshipMap')).default })} />
         <Route path="/books/:bookId/*" element={<UnavailablePage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

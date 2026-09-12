@@ -1,10 +1,14 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { BookOpen, CheckCircle2, ChevronRight, FileText, Loader2, MessageSquareText, X } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import type { ForeshadowingCardData } from '../foreshadowingSelectors';
 import type { ForeshadowingRecovery } from '../hooks/useForeshadowingRecovery';
-type Props = ForeshadowingRecovery & { card: ForeshadowingCardData; openChapter: (card: ForeshadowingCardData) => void };
-export function ForeshadowingCard({ card, openChapter, recoveringId, failedRecovery, markRecovered, undoRecovered, setForeshadowingRecovered }: Props) {
+import { foreshadowingCardKey } from '../foreshadowingSelectors';
+type Props = ForeshadowingRecovery & { card: ForeshadowingCardData; openChapter: (card: ForeshadowingCardData) => void;
+    noteDraft?: string; editNote?: (card: ForeshadowingCardData, note: string) => void; saveNote?: () => Promise<boolean> };
+export function ForeshadowingCard({ card, openChapter, recoveringId, failedRecovery, markRecovered, undoRecovered, setForeshadowingRecovered, noteDraft, editNote, saveNote }: Props) {
+    const [editing, setEditing] = useState(false);
+    const cardKey = foreshadowingCardKey(card);
     return (
         <article
             key={`${card.chapterId}-${card.id}`}
@@ -36,6 +40,7 @@ export function ForeshadowingCard({ card, openChapter, recoveringId, failedRecov
                     <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
                         <FileText size={14} />
                         Planted Text
+                        {card.isLocated === false && <span className="text-amber-600">Source not located</span>}
                     </div>
                     <p className="rounded-lg bg-slate-50 dark:bg-slate-950 border border-slate-100 dark:border-slate-800 px-3 py-3 text-sm leading-6 text-slate-700 dark:text-slate-200">
                         "{card.excerpt}"
@@ -45,18 +50,23 @@ export function ForeshadowingCard({ card, openChapter, recoveringId, failedRecov
                     <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
                         <MessageSquareText size={14} />
                         Note
+                        {editNote && !editing && <button type="button" onClick={() => setEditing(true)} className="ml-auto underline">Edit note</button>}
                     </div>
-                    <p className="min-h-[72px] rounded-lg border border-slate-100 dark:border-slate-800 px-3 py-3 text-sm leading-6 text-slate-700 dark:text-slate-200 whitespace-pre-wrap">
+                    {editing && editNote ? <>
+                        <textarea aria-label="Foreshadowing note" value={noteDraft ?? card.note.note} onChange={event => editNote(card, event.target.value)}
+                            className="min-h-[72px] w-full rounded-lg border border-slate-200 dark:border-slate-800 bg-transparent px-3 py-3 text-sm" />
+                        <button type="button" className="text-xs underline" onClick={() => { void saveNote?.().then(ok => { if (ok) setEditing(false); }); }}>Save note</button>
+                    </> : <p className="min-h-[72px] rounded-lg border border-slate-100 dark:border-slate-800 px-3 py-3 text-sm leading-6 text-slate-700 dark:text-slate-200 whitespace-pre-wrap">
                         {card.note.note || 'No note written yet.'}
-                    </p>
+                    </p>}
                 </div>
-                {failedRecovery?.cardId === card.id && (
+                {failedRecovery?.cardId === cardKey && (
                     <div className="flex items-center justify-end gap-2 text-xs text-rose-600 dark:text-rose-300">
                         <span>Save failed.</span>
                         <button
                             type="button"
                             onClick={() => setForeshadowingRecovered(card, failedRecovery.isRecovered)}
-                            disabled={recoveringId === card.id}
+                            disabled={recoveringId === cardKey}
                             className="font-semibold underline underline-offset-2 transition hover:text-rose-700 dark:hover:text-rose-200"
                         >
                             Retry
@@ -69,10 +79,10 @@ export function ForeshadowingCard({ card, openChapter, recoveringId, failedRecov
                             variant="secondary"
                             size="sm"
                             onClick={() => markRecovered(card)}
-                            disabled={recoveringId === card.id}
-                            icon={recoveringId === card.id ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                            disabled={recoveringId === cardKey}
+                            icon={recoveringId === cardKey ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
                         >
-                            {recoveringId === card.id ? 'Marking...' : 'Mark Recovered'}
+                            {recoveringId === cardKey ? 'Marking...' : 'Mark Recovered'}
                         </Button>
                     )}
                     {card.note.isRecovered && (
@@ -80,10 +90,10 @@ export function ForeshadowingCard({ card, openChapter, recoveringId, failedRecov
                             variant="secondary"
                             size="sm"
                             onClick={() => undoRecovered(card)}
-                            disabled={recoveringId === card.id}
-                            icon={recoveringId === card.id ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
+                            disabled={recoveringId === cardKey}
+                            icon={recoveringId === cardKey ? <Loader2 size={14} className="animate-spin" /> : <X size={14} />}
                         >
-                            {recoveringId === card.id ? 'Undoing...' : 'Undo Recovered'}
+                            {recoveringId === cardKey ? 'Undoing...' : 'Undo Recovered'}
                         </Button>
                     )}
                     <Button variant="secondary" size="sm" onClick={() => openChapter(card)}>

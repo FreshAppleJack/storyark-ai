@@ -1,14 +1,21 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import type { Book, PlotSetting, StoryPlanning } from '../../../types';
 import { useBooks } from '../../../InteractionContent/BooksContext';
 import { createEmptyPlanning, createPlotSetting, sanitizePlanning } from '../../../domain/storyPlanning';
 import { getPlanningChapters } from '../planningSelectors';
 
+export interface PlanningPersistence {
+    load: () => Promise<StoryPlanning>;
+    save: (planning: StoryPlanning, revision: number) => Promise<boolean>;
+}
+
 /** Owns a page draft, not a second server cache. Key the page by bookId. */
-export function useStoryPlanning(bookId: string, book: Book | undefined) {
+export function useStoryPlanning(bookId: string, book: Book | undefined, persistence?: PlanningPersistence) {
     const { fetchStoryPlanning, saveStoryPlanning } = useBooks();
     const loadRef = useRef(fetchStoryPlanning);
+    const adapter = useRef(persistence);
+    useEffect(() => { adapter.current = persistence; }, [persistence]);
     useEffect(() => { loadRef.current = fetchStoryPlanning; }, [fetchStoryPlanning]);
     const [planning, setPlanning] = useState(createEmptyPlanning);
     const [selectedPlotId, setSelectedPlotId] = useState<string | null>(null);
@@ -18,7 +25,11 @@ export function useStoryPlanning(bookId: string, book: Book | undefined) {
     const [isSaving, setIsSaving] = useState(false);
     const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saved'>('idle');
     const mounted = useRef(false);
-    const pendingSave = useRef(false);
+    const pendingSave = useRef<Promise<boolean> | null>(null);
+    const savedRevision = useRef(0);
+    const [saveError, setSaveError] = useState<string | null>(null);
+    const latest = useRef(planning);
+    useLayoutEffect(() => { latest.current = planning; }, [planning]);
     const revision = useRef(0);
     const savedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     useEffect(() => {
@@ -31,7 +42,7 @@ export function useStoryPlanning(bookId: string, book: Book | undefined) {
             setIsLoading(true);
             setLoadError(false);
             try {
-                const loaded = await loadRef.current(bookId);
+                const loaded = await (adapter.current ? adapter.current.load() : loadRef.current(bookId));
                 if (!active) return;
                 if (!loaded) { setLoadError(true); return; }
                 setPlanning(loaded);
@@ -56,10 +67,12 @@ export function useStoryPlanning(bookId: string, book: Book | undefined) {
     const updatePlanningField = (field: 'storySummary' | 'storyBackground', value: string) => edit(prev => ({ ...prev, [field]: value }));
     const updateChapterSummary = (chapterId: string, summary: string) => {
         const updatedAt = Date.now();
+        const sourceChapterVersion = book?.volumes.flatMap(volume => volume.chapters).find(chapter => chapter.id === chapterId)?.databaseVersion;
+        const source = sourceChapterVersion ? { sourceChapterVersion } : {};
         edit(prev => ({
             ...prev, chapterSummaries: prev.chapterSummaries.some(item => item.chapterId === chapterId)
-                ? prev.chapterSummaries.map(item => item.chapterId === chapterId ? { ...item, summary, updatedAt } : item)
-                : [...prev.chapterSummaries, { chapterId, summary, updatedAt }]
+                ? prev.chapterSummaries.map(item => item.chapterId === chapterId ? { ...item, ...source, summary, updatedAt } : item)
+                : [...prev.chapterSummaries, { chapterId, ...source, summary, updatedAt }]
         }));
     };
     const updateSelectedPlot = (patch: Partial<PlotSetting>) => {
@@ -84,29 +97,49 @@ export function useStoryPlanning(bookId: string, book: Book | undefined) {
         if (ids.has(chapterId)) ids.delete(chapterId); else ids.add(chapterId);
         updateSelectedPlot({ chapterIds: [...ids] });
     };
-    const handleSave = async () => {
-        if (!book || isLoading || loadError || pendingSave.current) return;
-        pendingSave.current = true;
-        setIsSaving(true);
-        const snapshotRevision = revision.current;
-        const snapshot = sanitizePlanning(planning, new Set(chapterOptions.map(chapter => chapter.id)));
-        try {
-            const ok = await saveStoryPlanning(bookId, snapshot);
-            if (!mounted.current) return;
-            if (!ok) { toast.error('Failed to save planning. Your draft is still available.'); return; }
-            // A completed request only confirms the submitted revision.
-            if (revision.current !== snapshotRevision) return;
-            setPlanning(snapshot);
-            setSaveState('saved');
-            clearTimeout(savedTimer.current);
-            savedTimer.current = setTimeout(() => setSaveState('idle'), 1800);
-        } finally {
-            pendingSave.current = false;
-            if (mounted.current) setIsSaving(false);
-        }
-    };
+    const flush = useCallback((force = false): Promise<boolean> => {
+        if (pendingSave.current) return pendingSave.current;
+        if (!book || isLoading || loadError) return Promise.resolve(false);
+        if (!force && savedRevision.current === revision.current) return Promise.resolve(true);
+        const operation = async () => {
+            setIsSaving(true);
+            setSaveError(null);
+            try {
+                do {
+                    const snapshotRevision = revision.current;
+                    const snapshot = adapter.current ? latest.current
+                        : sanitizePlanning(latest.current, new Set(chapterOptions.map(chapter => chapter.id)));
+                    const ok = adapter.current ? await adapter.current.save(snapshot, snapshotRevision)
+                        : await saveStoryPlanning(bookId, snapshot);
+                    if (!mounted.current) return false;
+                    if (!ok) throw new Error('Failed to save planning. Your draft is still available.');
+                    savedRevision.current = snapshotRevision;
+                    if (revision.current === snapshotRevision) {
+                        setSaveState('saved');
+                        clearTimeout(savedTimer.current);
+                        savedTimer.current = setTimeout(() => setSaveState('idle'), 1800);
+                    }
+                    if (!adapter.current) break;
+                } while (savedRevision.current !== revision.current);
+                return true;
+            } catch (error) {
+                if (mounted.current) {
+                    const message = error instanceof Error ? error.message : 'Planning save failed.';
+                    setSaveError(message);
+                    toast.error(message);
+                }
+                return false;
+            } finally {
+                pendingSave.current = null;
+                if (mounted.current) setIsSaving(false);
+            }
+        };
+        pendingSave.current = operation();
+        return pendingSave.current;
+    }, [book, bookId, isLoading, loadError, chapterOptions, saveStoryPlanning]);
+    const handleSave = async () => { await flush(true); };
     return {
-        planning, selectedPlotId, setSelectedPlotId, selectedPlot, chapterOptions,
+        flush, saveError, isDirty: saveState === 'dirty', planning, selectedPlotId, setSelectedPlotId, selectedPlot, chapterOptions,
         isLoading, loadError, isSaving, saveState, retry: () => setLoadAttempt(attempt => attempt + 1),
         updatePlanningField, updateChapterSummary, updateSelectedPlot, addPlotSetting, deleteSelectedPlot, togglePlotChapter, handleSave
     };

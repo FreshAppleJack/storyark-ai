@@ -91,6 +91,7 @@ export function ChapterSummariesPanel({ chapterOptions, targetChapterId, updateC
                             placeholder="Chapter plot summary..."
                             className="h-28 w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700 outline-none transition focus:border-brand-400 focus:bg-white dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-brand-500 dark:focus:bg-slate-950"
                         />
+                        {chapter.sourceChanged && <p className="mt-1 text-xs text-amber-600">Source chapter changed or was not versioned. Review this summary.</p>}
                     </section>
                 ))}
             </div>

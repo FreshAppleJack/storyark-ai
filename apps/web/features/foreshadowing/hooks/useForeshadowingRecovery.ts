@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import type { Book } from '../../../types';
 import { useBooks } from '../../../InteractionContent/BooksContext';
-import type { ForeshadowingCardData } from '../foreshadowingSelectors';
+import { foreshadowingCardKey, type ForeshadowingCardData } from '../foreshadowingSelectors';
 export function useForeshadowingRecovery(book: Book | undefined) {
     const { updateChapterContent } = useBooks();
     const [recoveringId, setRecoveringId] = useState<string | null>(null);
@@ -28,7 +28,7 @@ export function useForeshadowingRecovery(book: Book | undefined) {
         if (!chapter) return;
 
         busy.current = true;
-        setRecoveringId(card.id);
+        setRecoveringId(foreshadowingCardKey(card));
         const now = Date.now();
         const nextForeshadowings = (chapter.foreshadowings || []).map(note => (
             note.id === card.id
@@ -48,9 +48,9 @@ export function useForeshadowingRecovery(book: Book | undefined) {
             );
             if (!mounted.current) return;
             if (ok) {
-                setFailedRecovery(prev => (prev?.cardId === card.id ? null : prev));
+                setFailedRecovery(prev => (prev?.cardId === foreshadowingCardKey(card) ? null : prev));
             } else {
-                setFailedRecovery({ cardId: card.id, isRecovered });
+                setFailedRecovery({ cardId: foreshadowingCardKey(card), isRecovered });
                 toast.error(isRecovered
                     ? 'Failed to mark as recovered. Your change was not saved.'
                     : 'Failed to undo recovery. Your change was not saved.');

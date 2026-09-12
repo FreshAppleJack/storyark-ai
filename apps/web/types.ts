@@ -59,6 +59,7 @@ export const AI_CONTINUE_LIMITS = {
 } as const;
 
 export interface Chapter {
+  databaseVersion?: number;
   id: string;
   title: string;
   wordCount: number;
@@ -79,12 +80,14 @@ export interface ForeshadowingNote {
 }
 
 export interface ChapterSummary {
+  sourceChapterVersion?: number;
   chapterId: string;
   summary: string;
   updatedAt: number;
 }
 
 export interface PlotSetting {
+  missingChapterIds?: string[];
   id: string;
   title: string;
   details: string;

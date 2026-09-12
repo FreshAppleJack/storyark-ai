@@ -142,6 +142,24 @@ impl Database {
             (Some(_), None) => return Err(invalid()),
             (None, _) => None,
         };
+        if target.table != "books" {
+            let book_id = target.row["bookId"].as_str().ok_or_else(invalid)?;
+            let ids = if target.table == "chapters" {
+                std::collections::HashSet::from([target.id.clone()])
+            } else {
+                rows(
+                    &tx,
+                    "SELECT id FROM chapters WHERE volume_id=?",
+                    &[&target.id],
+                )?
+                .iter()
+                .map(|row| row["id"].as_str().map(str::to_owned).ok_or_else(invalid))
+                .collect::<Result<std::collections::HashSet<_>>>()?
+            };
+            if !ids.is_empty() {
+                super::planning_cleanup::remove_chapters(&tx, book_id, &ids)?;
+            }
+        }
         let changed = tx.execute(
             &format!(
                 "DELETE FROM {} WHERE id=? AND database_version=?",

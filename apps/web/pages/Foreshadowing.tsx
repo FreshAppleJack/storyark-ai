@@ -5,14 +5,22 @@ import { useBooks } from '../InteractionContent/BooksContext';
 import { collectForeshadowingCards, filterForeshadowingCards, type ForeshadowingCardData } from '../features/foreshadowing/foreshadowingSelectors';
 import { ForeshadowingCard } from '../features/foreshadowing/components/ForeshadowingCard';
 import { useForeshadowingRecovery } from '../features/foreshadowing/hooks/useForeshadowingRecovery';
+import { useQuery } from '@tanstack/react-query';
+import { localBookOptions, projectBook, type LocalBookDetail } from '../data/local/repository';
+import type { Book } from '../types';
+import type { ForeshadowingRecovery } from '../features/foreshadowing/hooks/useForeshadowingRecovery';
+import { useLocalNoteDrafts } from '../features/foreshadowing/hooks/useLocalNoteDrafts';
+import { foreshadowingCardKey } from '../features/foreshadowing/foreshadowingSelectors';
+import { PlanningSaveGuard } from '../features/planning/components/PlanningSaveGuard';
 import { Button } from '../components/ui/Button';
 
-function ForeshadowingContent({ bookId }: { bookId: string }): React.ReactElement {
+function ForeshadowingContent({ bookId, localBook, localNotes }: { bookId: string; localBook?: Book; localNotes?: ReturnType<typeof useLocalNoteDrafts> }): React.ReactElement {
     const navigate = useNavigate();
     const { getBook } = useBooks();
-    const book = getBook(bookId || '');
+    const book = localBook ?? getBook(bookId || '');
     const [searchQuery, setSearchQuery] = useState('');
-    const recovery = useForeshadowingRecovery(book);
+    const legacyRecovery = useForeshadowingRecovery(book);
+    const recovery: ForeshadowingRecovery = localNotes?.recovery ?? legacyRecovery;
     const allCards = useMemo(() => collectForeshadowingCards(book), [book]);
     const unrecoveredCount = allCards.filter(card => !card.note.isRecovered).length;
     const filteredCards = useMemo(() => filterForeshadowingCards(allCards, searchQuery), [allCards, searchQuery]);
@@ -36,6 +44,7 @@ function ForeshadowingContent({ bookId }: { bookId: string }): React.ReactElemen
 
     return (
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
+            {localNotes && <PlanningSaveGuard isDirty={localNotes.isDirty} flush={localNotes.flush} />}
             <header className="h-14 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-6 sticky top-0 z-10">
                 <div className="flex items-center gap-4 min-w-0">
                     <button
@@ -55,6 +64,7 @@ function ForeshadowingContent({ bookId }: { bookId: string }): React.ReactElemen
             </header>
 
             <main className="max-w-6xl mx-auto p-8">
+                {localNotes?.error && <p role="alert" className="mb-4 text-sm text-rose-600">{localNotes.error} <button className="underline" onClick={() => { void localNotes.flush(); }}>Retry</button></p>}
                 <section className="mb-8 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                         <div className="inline-flex items-center gap-2 rounded-full bg-brand-50 dark:bg-brand-950/40 px-3 py-1 text-xs font-semibold text-brand-700 dark:text-brand-300 mb-3">
@@ -114,7 +124,8 @@ function ForeshadowingContent({ bookId }: { bookId: string }): React.ReactElemen
                 ) : (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                         {filteredCards.map(card => (
-                            <ForeshadowingCard key={`${card.chapterId}-${card.id}`} card={card} openChapter={openChapter} {...recovery} />
+                            <ForeshadowingCard key={`${card.chapterId}-${card.id}`} card={card} openChapter={openChapter} {...recovery}
+                                noteDraft={localNotes?.drafts[foreshadowingCardKey(card)]?.note} editNote={localNotes?.editNote} saveNote={localNotes?.flush} />
                         ))}
                     </div>
                 )}
@@ -125,5 +136,20 @@ function ForeshadowingContent({ bookId }: { bookId: string }): React.ReactElemen
 
 export default function Foreshadowing() {
     const { bookId = '' } = useParams();
-    return <ForeshadowingContent key={bookId} bookId={bookId} />;
+    const { storageMode } = useBooks();
+    return storageMode === 'local' ? <LocalBoard key={bookId} bookId={bookId} /> : <ForeshadowingContent key={bookId} bookId={bookId} />;
+}
+
+function LoadedLocalBoard({ detail }: { detail: LocalBookDetail }) {
+    const book = useMemo(() => projectBook(detail.book, detail), [detail]);
+    const notes = useLocalNoteDrafts(detail);
+    return <ForeshadowingContent bookId={book.id} localBook={book} localNotes={notes} />;
+}
+function LocalBoard({ bookId }: { bookId: string }) {
+    const query = useQuery({ ...localBookOptions(bookId), refetchOnMount: 'always' });
+    if (query.error || !query.data || query.isFetching) return <main className="p-8">
+        <p role={query.error ? 'alert' : 'status'}>{query.error?.message ?? 'Loading foreshadowing...'}</p>
+        {query.error && <Button onClick={() => { void query.refetch(); }}>Retry</Button>}
+    </main>;
+    return <LoadedLocalBoard detail={query.data} />;
 }

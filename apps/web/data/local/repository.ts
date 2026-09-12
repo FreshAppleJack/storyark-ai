@@ -81,7 +81,7 @@ export function projectBook(book: LocalBook, detail?: LocalBookDetail, character
         volumes: detail?.volumes.map(volume => ({
             id: volume.id, title: volume.title,
             chapters: detail.chapters.filter(ch => ch.volumeId === volume.id).map(ch => ({
-                id: ch.id, title: ch.title, status: ch.status, content: ch.body.content,
+                id: ch.id, title: ch.title, status: ch.status, content: ch.body.content, databaseVersion: ch.databaseVersion,
                 wordCount: ch.wordCount, foreshadowings: ch.foreshadowings,
                 isEditable: !book.isReadOnly && !volume.isReadOnly && !ch.isReadOnly
                     && ch.body.format === 'tiptap-json' && ch.body.version === 1,

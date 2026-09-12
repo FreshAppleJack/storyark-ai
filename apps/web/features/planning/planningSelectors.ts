@@ -7,6 +7,7 @@ export interface ChapterOption {
     volumeId: string;
     volumeTitle: string;
     summary: string;
+    sourceChanged?: boolean;
 }
 
 export function getPlanningChapters(book: Book, planning: StoryPlanning): ChapterOption[] {
@@ -20,6 +21,8 @@ export function getPlanningChapters(book: Book, planning: StoryPlanning): Chapte
             volumeId: volume.id,
             volumeTitle: volume.title,
             summary: summaryMap.get(chapter.id) || '',
+            sourceChanged: !!summaryMap.get(chapter.id) && chapter.databaseVersion !== undefined
+                && planning.chapterSummaries.find(item => item.chapterId === chapter.id)?.sourceChapterVersion !== chapter.databaseVersion,
         }))
     ));
 }

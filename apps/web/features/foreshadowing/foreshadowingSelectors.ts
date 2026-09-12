@@ -11,7 +11,10 @@ export interface ForeshadowingCardData {
     volumeId: string;
     volumeTitle: string;
     score?: number;
+    isLocated?: boolean;
 }
+
+export const foreshadowingCardKey = (card: ForeshadowingCardData) => JSON.stringify([card.chapterId, card.id]);
 
 export function collectForeshadowingCards(book: Book | undefined): ForeshadowingCardData[] {
     if (!book) return [];
@@ -20,6 +23,7 @@ export function collectForeshadowingCards(book: Book | undefined): Foreshadowing
             const excerptMap = getForeshadowingExcerptMap(chapter.content || '', EXCERPT_MAX_LENGTH);
             return (chapter.foreshadowings || []).map(note => ({
                 id: note.id,
+                isLocated: excerptMap.has(note.id),
                 note,
                 excerpt: excerptMap.get(note.id) || note.excerpt || 'No linked excerpt found.',
                 chapterId: chapter.id,
