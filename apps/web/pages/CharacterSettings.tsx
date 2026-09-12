@@ -1,8 +1,10 @@
 import React, { useEffect } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, ScrollText } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { useBooks } from '../InteractionContent/BooksContext';
+import { localBookOptions, localCharactersOptions } from '../data/local/repository';
 import type { Character } from '../types';
 import { CharacterList } from '../features/characters/components/CharacterList';
 import { CharacterForm } from '../features/characters/components/CharacterForm';
@@ -11,7 +13,12 @@ import { useCharacterEditor } from '../features/characters/hooks/useCharacterEdi
 function CharacterSettingsContent({ bookId }: { bookId: string }) {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
-    const { getBook, reorderCharacters } = useBooks();
+    const { getBook, reorderCharacters, storageMode } = useBooks();
+    const isLocal = storageMode === 'local';
+    // Local mode loads the book detail and characters into the query cache
+    // that getBook projects from; legacy mode relies on the books query.
+    const detailQuery = useQuery({ ...localBookOptions(bookId), enabled: isLocal });
+    const charactersQuery = useQuery({ ...localCharactersOptions(bookId), enabled: isLocal });
     const book = getBook(bookId);
     const editor = useCharacterEditor(bookId);
     const { selectedCharId, selectCharacter } = editor;
@@ -26,6 +33,19 @@ function CharacterSettingsContent({ bookId }: { bookId: string }) {
     const confirmDelete = async () => {
         if (await editor.deleteSelected()) navigate(`/books/${bookId}/settings`, { replace: true });
     };
+    if (isLocal) {
+        const pending = detailQuery.isPending || charactersQuery.isPending;
+        const error = detailQuery.error ?? charactersQuery.error;
+        if (pending || error) {
+            return <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
+                {pending ? <p role="status">Loading local book...</p> : <>
+                    <p role="alert">{error?.message}</p>
+                    <Button variant="secondary" onClick={() => { void detailQuery.refetch(); void charactersQuery.refetch(); }}>Retry</Button>
+                </>}
+                <Link to="/dashboard" className="text-brand-600 underline">Back to Bookshelf</Link>
+            </main>;
+        }
+    }
     if (!book) return <div>Book not found</div>;
     return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950 relative transition-colors duration-300">

@@ -141,6 +141,8 @@ export interface Character {
   handleConfig?: HandleConfig;
   positionX?: number;
   positionY?: number;
+  /** Local archive state: archived characters keep their references but stop new matching. */
+  isArchived?: boolean;
 }
 
 export interface Relation {

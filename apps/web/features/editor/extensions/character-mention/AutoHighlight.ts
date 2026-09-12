@@ -9,6 +9,7 @@ import {
     getValidNamedCharacters,
 } from '../../../../domain/characters';
 import { dlog } from '../../debug/editorDebug';
+import { readCharacterData } from './characterData';
 
 export interface AutoHighlightOptions {
     characters: Character[];
@@ -51,8 +52,19 @@ export const AutoHighlight = Extension.create<AutoHighlightOptions>({
                     const forceRefresh = transactions.some(t => t.getMeta('forceRefreshHighlights'));
                     if (!docChanged && !forceRefresh) return null;
 
-                    const chars = getValidNamedCharacters(this.options.characters || []);
-                    const allChars = getValidNamedCharacters(this.options.allCharacters || chars);
+                    // Live data comes from the shared characterData storage so
+                    // character updates never rebuild the editor; options are
+                    // only the initial fallback (e.g. headless test editors).
+                    const shared = readCharacterData(this.editor);
+                    const chars = getValidNamedCharacters(
+                        shared.autoHighlightCharacters.length > 0 || shared.characters.length > 0
+                            ? shared.autoHighlightCharacters
+                            : this.options.characters || []
+                    );
+                    const allSource = shared.characters.length > 0
+                        ? shared.characters
+                        : this.options.allCharacters || this.options.characters || [];
+                    const allChars = getValidNamedCharacters(allSource.length > 0 ? allSource : chars);
                     const charById = new Map(allChars.map(c => [c.id, c]));
 
                     const { tr } = newState;

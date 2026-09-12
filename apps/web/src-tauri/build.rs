@@ -25,6 +25,10 @@ fn main() {
             "local_set_read_only",
             "local_reorder",
             "local_delete",
+            "local_list_characters",
+            "local_create_character",
+            "local_update_character",
+            "local_archive_character",
             "local_backup",
         ])),
     )

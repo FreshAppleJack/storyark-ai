@@ -31,6 +31,10 @@ fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri
         commands::local_set_read_only,
         commands::local_reorder,
         commands::local_delete,
+        commands::local_list_characters,
+        commands::local_create_character,
+        commands::local_update_character,
+        commands::local_archive_character,
         commands::local_backup,
     ])
 }

@@ -1,9 +1,10 @@
 # Local work content contract (weeks 11–12)
 
-> Status: contract defined and schema migrated (unit 1). Command handlers
-> land in the follow-up units (characters, graph, foreshadowing/planning,
-> preferences/brainstorm). This document is the field-level source of truth
-> for those units; `local-storage.md` covers the weeks 9–10 foundation.
+> Status: contract defined and schema migrated (unit 1); characters are fully
+> local (unit 2). Remaining handlers land in their follow-up units (graph,
+> foreshadowing/planning, preferences/brainstorm). This document is the
+> field-level source of truth; `local-storage.md` covers the weeks 9–10
+> foundation.
 
 Scope: characters, the relationship graph, cross-chapter foreshadowing,
 story planning, application preferences and the brainstorm workspace become
@@ -133,3 +134,51 @@ databases initialize at version 2 with no pre-upgrade backup.
 Version spaces stay separate: SQLite `user_version` (schema), record
 `databaseVersion` (optimistic concurrency), chapter `contentVersion`
 (format), and the future interchange `schemaVersion` (exchange).
+
+## Unit 2 implementation: characters local with mention compatibility
+
+Commands `local_list_characters`, `local_create_character` (returns the
+character plus the bumped book, like volume creation), `local_update_character`
+and `local_archive_character` are registered with the usual envelope,
+ownership, lock and optimistic-concurrency rules; field validation covers
+name/role/color/description/aliases/tags/avatar and the four-side handle
+config. Deletion maps to archiving: the record stays cached with
+`isArchived`, and unarchiving is the same command with `false`.
+
+Character data reaches the editor through the shared `characterData`
+extension storage (`characters` = everyone incl. archived for mention
+reconcile and tooltips; `autoHighlightCharacters` = not archived and roles
+not disabled for new matches). Extension options are only the initial
+fallback. The editor's `useEditor` no longer takes characters in its
+dependency list, so creating, renaming or archiving a character never
+rebuilds the Tiptap instance — caret, undo history, selection and drafts are
+untouched, verified in the desktop smoke (typing and undo continue right
+after a character save, and the fresh mention appears in place). Mentions
+reference the stable character ID; renaming never rewrites chapter text, and
+the reconcile pass updates only label/color drift. Archived characters keep
+their mentions and graph references, disappear from `@` suggestions and new
+auto-matches, and show an "Archived" badge in the list.
+
+The character settings page is back on its own route and loads the book
+detail plus characters through the local queries; the editor's world-
+building button and mention clicks navigate there through the existing
+flush-protected navigation. Avatars stay audit-compliant with the contract:
+no upload UI exists, the built-in color swatches are the only visual
+identity, and stored avatar paths/URLs are never auto-fetched. Character
+reordering remains an explicit stub until its command lands (book-level
+management is tracked in unit 6).
+
+### Verification record (2026-09-12, unit 2)
+
+Real Windows desktop run via WebView2 CDP: character created through the
+settings page commits with a Rust UUID and bumped book version; returning to
+the editor auto-highlights the name in place without a rebuild; typing and
+undo continue across the refresh; archiving shows the badge, keeps the
+existing mention, and produces no new matches; a second book never matches
+the first book's character. Frontend: 259 tests (provider CRUD/archive,
+projection mapping, storage-driven highlight, archived mention preservation,
+cross-book isolation fixtures), zero-warning lint, production build. Rust:
+20 tests (character CRUD/archive concurrency, validation, locks), Clippy and
+`cargo fmt --check` clean. Secret scan clean. Not yet covered: character
+reorder persistence (stubbed by design) and unarchive UI (the command
+already accepts `isArchived: false`).

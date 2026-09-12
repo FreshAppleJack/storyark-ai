@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { BooksContext, type BooksContextType } from './BooksContext';
-import { localBookOptions, localKeys, localRepository, projectBook, LocalStorageError, type LocalBookDetail } from '../data/local/repository';
-import type { LocalBook, LocalChapter, LocalVolume } from '../data/local/contracts';
+import { localBookOptions, localKeys, localRepository, projectBook, projectCharacter, LocalStorageError, type LocalBookDetail } from '../data/local/repository';
+import type { LocalBook, LocalChapter, LocalCharacter, LocalVolume } from '../data/local/contracts';
 import { createChapterWriteQueue } from '../services/chapterWrites';
 
 export function LocalBooksProvider({ children }: { children: React.ReactNode }) {
@@ -27,7 +27,9 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
         refreshBooks: async () => { await query.refetch(); },
         getBook: id => {
             const detail = client.getQueryData<LocalBookDetail>(localKeys.book(id));
-            return detail ? projectBook(detail.book, detail) : undefined;
+            if (!detail) return undefined;
+            const characters = client.getQueryData<LocalCharacter[]>(localKeys.characters(id));
+            return projectBook(detail.book, detail, characters?.map(projectCharacter));
         },
         createBook: async (title, author = '') => {
             try {
@@ -192,10 +194,66 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 return true;
             } catch (error) { fail(error); return false; }
         }),
+        createCharacter: (bookId, data) => writes.run(bookId, 'characters', async () => {
+            try {
+                const current = client.getQueryData<LocalBookDetail>(localKeys.book(bookId));
+                if (!current) throw new Error('Book not loaded. Reopen the book.');
+                const result = await localRepository.createCharacter({
+                    bookId,
+                    name: data.name?.trim() ?? '',
+                    role: data.role ?? 'supporting',
+                    aliases: data.aliases ?? [],
+                    description: data.description ?? '',
+                    color: data.color ?? '#3b82f6',
+                    tags: data.tags ?? [],
+                    avatar: data.avatar ?? null,
+                    handleConfig: data.handleConfig ?? null,
+                    expectedBookVersion: current.book.databaseVersion,
+                });
+                client.setQueryData<LocalCharacter[]>(localKeys.characters(bookId), old => [...(old ?? []), result.character]);
+                client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({ ...old, book: result.book }));
+                rememberBook(result.book);
+                return true;
+            } catch (error) { fail(error); return false; }
+        }),
+        updateCharacter: (bookId, charId, data) => writes.run(bookId, 'characters', async () => {
+            try {
+                const characters = client.getQueryData<LocalCharacter[]>(localKeys.characters(bookId));
+                const stored = characters?.find(item => item.id === charId);
+                if (!stored) throw new Error('Character not found. Reopen the book.');
+                const record = await localRepository.updateCharacter({
+                    bookId, characterId: charId, expectedDatabaseVersion: stored.databaseVersion,
+                    name: data.name?.trim() ?? stored.name,
+                    role: data.role ?? stored.role,
+                    aliases: data.aliases ?? stored.aliases,
+                    description: data.description ?? stored.description,
+                    color: data.color ?? stored.color,
+                    tags: data.tags ?? stored.tags,
+                    avatar: data.avatar !== undefined ? (data.avatar ?? null) : stored.avatar,
+                    handleConfig: data.handleConfig !== undefined ? (data.handleConfig ?? null) : stored.handleConfig,
+                });
+                client.setQueryData<LocalCharacter[]>(localKeys.characters(bookId), old =>
+                    old?.map(item => item.id === charId ? record : item) ?? old);
+                return true;
+            } catch (error) { fail(error); return false; }
+        }),
+        // Deletion is archival: mentions, text and graph references stay.
+        deleteCharacter: (bookId, charId) => writes.run(bookId, 'characters', async () => {
+            try {
+                const characters = client.getQueryData<LocalCharacter[]>(localKeys.characters(bookId));
+                const stored = characters?.find(item => item.id === charId);
+                if (!stored) throw new Error('Character not found. Reopen the book.');
+                const record = await localRepository.archiveCharacter({
+                    bookId, characterId: charId, expectedDatabaseVersion: stored.databaseVersion, isArchived: true,
+                });
+                client.setQueryData<LocalCharacter[]>(localKeys.characters(bookId), old =>
+                    old?.map(item => item.id === charId ? record : item) ?? old);
+                return true;
+            } catch (error) { fail(error); return false; }
+        }),
         // Unimplemented actions cannot reach HTTP, optimistic cache writes, or fake success.
         reorderCharacters: unavailable,
         updateBook: unavailable, deleteBook: unavailable,
-        createCharacter: unavailable, updateCharacter: unavailable, deleteCharacter: unavailable,
         getRelations: unavailableRead, fetchGraphData: unavailableRead, saveGraphData: unavailable,
         fetchStoryPlanning: unavailableRead, saveStoryPlanning: unavailable,
     };

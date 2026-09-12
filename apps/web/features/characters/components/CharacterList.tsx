@@ -165,7 +165,10 @@ export function CharacterList({ characters, selectedCharId, handleSelect, handle
                             {getCharacterDisplayName(char.name).charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1 overflow-hidden">
-                            <div className={`font-medium text-sm truncate ${selectedCharId === char.id ? 'text-brand-900 dark:text-brand-100' : 'text-slate-900 dark:text-slate-100'}`}>{getCharacterDisplayName(char.name)}</div>
+                            <div className={`font-medium text-sm truncate flex items-center gap-2 ${selectedCharId === char.id ? 'text-brand-900 dark:text-brand-100' : 'text-slate-900 dark:text-slate-100'}`}>
+                                <span className="truncate">{getCharacterDisplayName(char.name)}</span>
+                                {char.isArchived && <span className="flex-shrink-0 text-[10px] font-semibold uppercase tracking-wide rounded bg-slate-200 px-1.5 py-0.5 text-slate-500 dark:bg-slate-700 dark:text-slate-300">Archived</span>}
+                            </div>
                             <div className="text-xs text-slate-500 dark:text-slate-400 truncate">{char.role}</div>
                         </div>
                     </div>

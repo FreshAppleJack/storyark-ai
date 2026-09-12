@@ -3,7 +3,7 @@ import { useParams, useNavigate, useBlocker, NavigateOptions, Link } from 'react
 import { useQuery } from '@tanstack/react-query';
 import { isTauri } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { localBookOptions, projectBook } from '../data/local/repository';
+import { localBookOptions, localCharactersOptions, projectBook, projectCharacter } from '../data/local/repository';
 import { toast } from 'react-hot-toast';
 import { useApp } from '../InteractionContent/AppContext';
 import { aiApi } from '../data/aiApi';
@@ -34,9 +34,10 @@ function Editor({ localBook }: { localBook?: Book }): React.ReactElement {
 
     const isLocal = storageMode === 'local';
     const book = localBook ?? getBook(bookId || '');
+    // Archived characters keep existing mentions but stop new auto-matching.
     const autoHighlightCharacters = useMemo(() => {
         const disabledRoles = new Set(autoHighlightSettings.disabledRoles);
-        return (book?.characters || []).filter(character => !disabledRoles.has(character.role));
+        return (book?.characters || []).filter(character => !character.isArchived && !disabledRoles.has(character.role));
     }, [book?.characters, autoHighlightSettings.disabledRoles]);
 
     // 1. State Initialization
@@ -328,7 +329,6 @@ function Editor({ localBook }: { localBook?: Book }): React.ReactElement {
     };
 
     const handleCharacterClick = (charId: string) => {
-        if (isLocal) { toast('Character tools are not available in local mode yet.'); return; }
         void navigateAfterSave(`/books/${bookId}/settings?charId=${charId}`);
     };
 
@@ -592,12 +592,17 @@ export default function EditorRoute(): React.ReactElement {
 
 function LocalEditorRoute({ bookId }: { bookId: string }) {
     const query = useQuery(localBookOptions(bookId));
-    const book = useMemo(() => query.data ? projectBook(query.data.book, query.data) : undefined, [query.data]);
+    const charactersQuery = useQuery(localCharactersOptions(bookId));
+    const book = useMemo(() => query.data
+        ? projectBook(query.data.book, query.data, charactersQuery.data?.map(projectCharacter))
+        : undefined, [query.data, charactersQuery.data]);
     if (book) return <Editor localBook={book} />;
+    const pending = query.isPending || charactersQuery.isPending;
+    const error = query.error ?? charactersQuery.error;
     return <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
-        {query.isPending ? <p role="status">Loading local book...</p> : <>
-            <p role="alert">{query.error?.message ?? 'Book not found.'}</p>
-            <button onClick={() => void query.refetch()}>Retry</button>
+        {pending ? <p role="status">Loading local book...</p> : <>
+            <p role="alert">{error?.message ?? 'Book not found.'}</p>
+            <button onClick={() => { void query.refetch(); void charactersQuery.refetch(); }}>Retry</button>
         </>}
         <Link to="/dashboard">Back to Bookshelf</Link>
     </main>;

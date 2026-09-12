@@ -4,13 +4,16 @@ import type { JSONContent } from '@tiptap/core';
 import tippy, { Instance } from 'tippy.js';
 import type { Character } from '../../../types';
 import { getValidNamedCharacters } from '../../../domain/characters';
+import { readCharacterData } from '../extensions/character-mention/characterData';
 import { MentionList, type MentionListHandle } from './MentionList';
 
 /**
  * Builds the suggestion configuration for the character mention.
  *
  * Contract:
- * - items: name-prefix matches of valid characters, capped at 5;
+ * - items: name-prefix matches of valid, non-archived characters, capped at
+ *   5; the shared characterData storage wins over the closure fallback so
+ *   newly created or restored characters appear without an editor rebuild;
  * - findSuggestionMatch: trigger char accepted at line start or after
  *   whitespace (including the full-width space U+3000);
  * - command: inserts the mention while preserving the marks active at the
@@ -19,9 +22,11 @@ import { MentionList, type MentionListHandle } from './MentionList';
  * - render: ReactRenderer + tippy popup lifecycle.
  */
 export const createMentionSuggestion = (getCharacters: () => Character[]): MentionOptions['suggestion'] => ({
-    items: ({ query }) => {
-        return getValidNamedCharacters(getCharacters()).filter(item =>
-            item.name.toLowerCase().startsWith(query.toLowerCase())
+    items: ({ query, editor }) => {
+        const shared = readCharacterData(editor);
+        const source = shared.characters.length > 0 ? shared.characters : getCharacters();
+        return getValidNamedCharacters(source).filter(item =>
+            !item.isArchived && item.name.toLowerCase().startsWith(query.toLowerCase())
         ).slice(0, 5);
     },
     findSuggestionMatch: (config) => {

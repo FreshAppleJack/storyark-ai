@@ -27,7 +27,7 @@ export function CharacterForm({ selectedCharId, formData, setFormData, isSaving,
                             </div>
                         </div>
                         <div className="flex gap-2">
-                            <Button variant="danger" size="sm" onClick={handleDeleteClick} icon={<Trash2 size={16} />}>Delete</Button>
+                            <Button variant="danger" size="sm" onClick={handleDeleteClick} icon={<Trash2 size={16} />}>Archive</Button>
                             <Button disabled={isSaving} onClick={handleSave} icon={<Save size={16} />}>Save Changes</Button>
                         </div>
                     </div>
@@ -126,15 +126,16 @@ export function CharacterForm({ selectedCharId, formData, setFormData, isSaving,
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-xl max-w-sm w-full mx-4 border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200">
                     <div className="flex items-center gap-3 mb-4 text-rose-600">
                         <div className="p-2 bg-rose-100 rounded-full"><AlertTriangle size={24} /></div>
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Delete Character?</h3>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Archive Character?</h3>
                     </div>
                     <p className="text-slate-600 dark:text-slate-300 mb-6 text-sm leading-relaxed">
-                        Are you sure you want to delete the character of <span className="font-bold text-slate-800 dark:text-white">{getCharacterDisplayName(formData.name)}</span>? <br />
-                        This action cannot be undone.
+                        Archive <span className="font-bold text-slate-800 dark:text-white">{getCharacterDisplayName(formData.name)}</span>?<br />
+                        Existing mentions, text and graph references stay linked; the character simply stops
+                        appearing in new suggestions and auto-highlighting.
                     </p>
                     <div className="flex justify-end gap-3">
                         <Button variant="ghost" onClick={() => setShowDeleteModal(false)}>Cancel</Button>
-                        <Button variant="primary" className="bg-rose-600 hover:bg-rose-700 text-white border-none shadow-md shadow-rose-200" onClick={confirmDelete}>Delete</Button>
+                        <Button variant="primary" className="bg-rose-600 hover:bg-rose-700 text-white border-none shadow-md shadow-rose-200" onClick={confirmDelete}>Archive</Button>
                     </div>
                 </div>
             </div>

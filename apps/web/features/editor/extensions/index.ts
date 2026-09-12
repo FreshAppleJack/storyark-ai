@@ -5,6 +5,7 @@ export { PasteAutoFormat } from './formatting/PasteAutoFormat';
 export { transformPastedHtml } from './formatting/pasteHtml';
 export { ForeshadowingMark } from './foreshadowing/ForeshadowingMark';
 export { AutoHighlight } from './character-mention/AutoHighlight';
+export { CharacterData, readCharacterData } from './character-mention/characterData';
 export { CustomMention } from './character-mention/CustomMention';
 export { IgnoreAutoHighlight } from './character-mention/IgnoreAutoHighlight';
 export { forceDowngradeMentions } from './character-mention/reconcileMentions';

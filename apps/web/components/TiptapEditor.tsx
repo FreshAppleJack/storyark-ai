@@ -1,4 +1,4 @@
-import { AutoHighlight, CustomFontFamily, CustomMention, FontSize, forceDowngradeMentions, ForeshadowingMark, IgnoreAutoHighlight, PasteAutoFormat, TabIndent, transformPastedHtml } from '../features/editor/extensions';
+import { AutoHighlight, CharacterData, CustomFontFamily, CustomMention, FontSize, forceDowngradeMentions, ForeshadowingMark, IgnoreAutoHighlight, PasteAutoFormat, TabIndent, transformPastedHtml } from '../features/editor/extensions';
 import { dlog, type MentionDebugEntry } from '../features/editor/debug/editorDebug';
 import { createMentionSuggestion } from '../features/editor/integrations/mentionSuggestion';
 import { createCharacterTooltipHandler } from '../features/editor/integrations/characterTooltip';
@@ -132,6 +132,9 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
     // the document merely because a callback's character snapshot changed.
     const reconcileContentMentions = useEffectEvent((target: Editor) => forceDowngradeMentions(target, characters));
 
+    // Extensions stay referentially stable: character data flows through the
+    // CharacterData storage instead of extension options, so updates never
+    // rebuild the editor (preserving caret, undo history and selections).
     const extensions = useMemo(() => {
         return [
             // StarterKit already registers Underline; a standalone copy was a
@@ -145,6 +148,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
             PasteAutoFormat,
             IgnoreAutoHighlight, // Add new Mark extension
             ForeshadowingMark,
+            CharacterData,
             Placeholder.configure({
                 placeholder: placeholder,
                 emptyEditorClass: 'is-editor-empty',
@@ -160,7 +164,8 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 allCharacters: characters,
             })
         ];
-    }, [characters, autoHighlightCharacters, placeholder]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- options are initial fallbacks only; live data syncs through storage.
+    }, [placeholder]);
 
     const editor = useEditor({
         extensions: extensions,
@@ -270,7 +275,15 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 onUpdateRef.current(jsonString, wordCount);
             }
         },
-    }, [characters, autoHighlightCharacters]); // When characters change causing re-render, useEditor will automatically reinitialize with latest content property
+    }, []); // Stable options: callbacks use refs and character data syncs through storage, so the editor is never rebuilt for data updates.
+
+    // Push the latest character data into shared storage; plugins read it on
+    // the next transaction instead of requiring an editor rebuild.
+    useEffect(() => {
+        if (!editor || editor.isDestroyed) return;
+        editor.storage.characterData.characters = characters;
+        editor.storage.characterData.autoHighlightCharacters = autoHighlightCharacters;
+    }, [editor, characters, autoHighlightCharacters]);
 
     useEffect(() => {
         if (!editor || editor.isDestroyed) return;

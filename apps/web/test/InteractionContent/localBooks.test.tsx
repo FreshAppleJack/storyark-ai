@@ -3,7 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { AppProvider, useApp } from '../../InteractionContent/AppContext';
-import { localKeys, localRepository, projectBook, type LocalBookDetail } from '../../data/local/repository';
+import { localKeys, localRepository, projectBook, projectCharacter, type LocalBookDetail } from '../../data/local/repository';
+import type { LocalCharacter } from '../../data/local/contracts';
 import type { ChapterDraftSnapshot } from '../../features/editor/hooks/useChapterDraft';
 
 const native = vi.hoisted(() => ({ invoke: vi.fn(), isTauri: vi.fn() }));
@@ -260,5 +261,85 @@ describe('Local book mutations', () => {
             expect(await deleteDone).toBe(true);
         });
         expect(order).toEqual(['save-start', 'local_delete']);
+    });
+});
+
+describe('Local characters', () => {
+    const character: LocalCharacter = {
+        id: 'char-1', bookId: book.id, name: '林晚', aliases: ['晚晚'], role: 'protagonist',
+        description: '主角', color: '#3b82f6', tags: ['主线'], avatar: null, handleConfig: null,
+        isArchived: false, position: 0, databaseVersion: 1, createdAt: 1, updatedAt: 1,
+    };
+
+    it('creates a character and mirrors the bumped book version', async () => {
+        const { result, client } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        client.setQueryData(localKeys.book(book.id), detail);
+        native.invoke.mockResolvedValue({ ok: true, value: { character, book: { ...book, databaseVersion: 2 } } });
+        let ok!: boolean;
+        await act(async () => { ok = await result.current.createCharacter(book.id, { name: '林晚', role: 'protagonist', description: '主角', color: '#3b82f6' }); });
+        expect(ok).toBe(true);
+        expect(native.invoke).toHaveBeenLastCalledWith('local_create_character', {
+            input: expect.objectContaining({ bookId: book.id, name: '林晚', expectedBookVersion: 1 }),
+        });
+        expect(client.getQueryData<LocalCharacter[]>(localKeys.characters(book.id))).toEqual([character]);
+        expect(client.getQueryData<LocalBookDetail>(localKeys.book(book.id))?.book.databaseVersion).toBe(2);
+    });
+
+    it('updates a character with merged fields and keeps the form data on failure', async () => {
+        const { result, client } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        client.setQueryData(localKeys.characters(book.id), [character]);
+        native.invoke.mockImplementation(async (_command, { input }) => ({
+            ok: true, value: { ...character, name: input.name, databaseVersion: input.expectedDatabaseVersion + 1 },
+        }));
+        let ok!: boolean;
+        await act(async () => { ok = await result.current.updateCharacter(book.id, character.id, { name: '林晚舟' }); });
+        expect(ok).toBe(true);
+        expect(native.invoke).toHaveBeenLastCalledWith('local_update_character', {
+            input: expect.objectContaining({
+                characterId: character.id, expectedDatabaseVersion: 1, name: '林晚舟',
+                aliases: ['晚晚'], description: '主角', color: '#3b82f6',
+            }),
+        });
+        expect(client.getQueryData<LocalCharacter[]>(localKeys.characters(book.id))?.[0])
+            .toMatchObject({ name: '林晚舟', databaseVersion: 2 });
+        // A version conflict leaves the cached record untouched.
+        native.invoke.mockResolvedValueOnce({ ok: false, error: { code: 'VERSION_CONFLICT', message: 'Changed', currentDatabaseVersion: 9 } });
+        let rejected!: boolean;
+        await act(async () => { rejected = await result.current.updateCharacter(book.id, character.id, { name: 'Stale' }); });
+        expect(rejected).toBe(false);
+        expect(client.getQueryData<LocalCharacter[]>(localKeys.characters(book.id))?.[0].name).toBe('林晚舟');
+    });
+
+    it('archives a character instead of deleting it and keeps the record cached', async () => {
+        const { result, client } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        client.setQueryData(localKeys.characters(book.id), [character]);
+        native.invoke.mockResolvedValue({ ok: true, value: { ...character, isArchived: true, databaseVersion: 2 } });
+        let ok!: boolean;
+        await act(async () => { ok = await result.current.deleteCharacter(book.id, character.id); });
+        expect(ok).toBe(true);
+        expect(native.invoke).toHaveBeenLastCalledWith('local_archive_character', {
+            input: { bookId: book.id, characterId: character.id, expectedDatabaseVersion: 1, isArchived: true },
+        });
+        const cached = client.getQueryData<LocalCharacter[]>(localKeys.characters(book.id));
+        expect(cached).toHaveLength(1);
+        expect(cached?.[0].isArchived).toBe(true);
+    });
+
+    it('projects stored characters for the editor, normalizing handle config', () => {
+        const stored: LocalCharacter = { ...character, handleConfig: { top: 'both' }, isArchived: true };
+        const projected = projectCharacter(stored);
+        expect(projected).toMatchObject({
+            id: 'char-1', name: '林晚', aliases: ['晚晚'], isArchived: true,
+            handleConfig: { top: 'both' },
+        });
+        expect(projected.handleConfig?.left).toBeDefined();
+        expect(projectCharacter(character).handleConfig).toBeUndefined();
+        // The projected book uses the provided characters instead of the empty constant.
+        const bookProjection = projectBook(book, detail, [projected]);
+        expect(bookProjection.characters).toHaveLength(1);
+        expect(projectBook(book, detail).characters).toHaveLength(0);
     });
 });

@@ -1,4 +1,6 @@
 /** Storage boundary v1. Declarations only; no IPC or in-memory fallback. */
+import type { CharacterRole } from '../../types';
+
 export type UUID = string; // Rust validates canonical UUIDs and generates new IDs.
 export type DatabaseVersion = number; // Positive safe integer; not a format version.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -33,6 +35,27 @@ export interface LocalChapter extends LocalRecord {
     body: StoredContent;
     wordCount: number;
     foreshadowings: Array<{ id: string; excerpt: string; note: string; createdAt: number; updatedAt: number; isRecovered?: boolean; [key: string]: JsonValue | undefined }>;
+}
+export type { CharacterRole };
+export type HandleSide = 'top' | 'right' | 'bottom' | 'left';
+export type HandleMode = 'source' | 'target' | 'both' | 'none';
+export type HandleConfigMap = Partial<Record<HandleSide, HandleMode>>;
+export interface LocalCharacter {
+    id: UUID;
+    bookId: UUID;
+    name: string;
+    aliases: string[];
+    role: CharacterRole;
+    description: string;
+    color: string;
+    tags: string[];
+    avatar: string | null;
+    handleConfig: HandleConfigMap | null;
+    isArchived: boolean;
+    position: number;
+    databaseVersion: DatabaseVersion;
+    createdAt: number;
+    updatedAt: number;
 }
 export type Target =
     | { kind: 'book'; bookId: UUID }

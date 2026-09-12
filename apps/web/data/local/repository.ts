@@ -1,12 +1,14 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import type { ExpectedTarget, LocalBook, LocalChapter, LocalRecord, LocalVolume, SaveChapterRequest, StorageResult } from './contracts';
-import type { Book } from '../../types';
+import type { ExpectedTarget, LocalBook, LocalChapter, LocalCharacter, LocalRecord, LocalVolume, SaveChapterRequest, StorageResult } from './contracts';
+import { normalizeHandleConfig } from '../../domain/relationshipHandles';
+import type { Book, Character } from '../../types';
 
 export interface LocalBookDetail { book: LocalBook; volumes: LocalVolume[]; chapters: LocalChapter[] }
 export const localKeys = {
     all: ['local', 'default-workspace'] as const,
     books: ['local', 'default-workspace', 'books'] as const,
     book: (id: string) => ['local', 'default-workspace', 'book', id] as const,
+    characters: (bookId: string) => ['local', 'default-workspace', 'characters', bookId] as const,
 };
 export class LocalStorageError extends Error {
     constructor(public readonly code: string, message: string) { super(message); }
@@ -37,17 +39,45 @@ export const localRepository = {
         call<T[]>('local_reorder', { input }),
     delete: <T extends LocalRecord = LocalRecord>(input: ExpectedTarget & { expectedParentVersion?: number }) =>
         call<{ deletedId: string; parent: T | null }>('local_delete', { input }),
+    listCharacters: (bookId: string) => call<LocalCharacter[]>('local_list_characters', { bookId }),
+    createCharacter: (input: LocalCharacterInput & { bookId: string; expectedBookVersion: number }) =>
+        call<{ character: LocalCharacter; book: LocalBook }>('local_create_character', { input }),
+    updateCharacter: (input: LocalCharacterInput & { bookId: string; characterId: string; expectedDatabaseVersion: number }) =>
+        call<LocalCharacter>('local_update_character', { input }),
+    archiveCharacter: (input: { bookId: string; characterId: string; expectedDatabaseVersion: number; isArchived: boolean }) =>
+        call<LocalCharacter>('local_archive_character', { input }),
 };
+
+export interface LocalCharacterInput {
+    name: string;
+    role: LocalCharacter['role'];
+    aliases: string[];
+    description: string;
+    color: string;
+    tags: string[];
+    avatar: string | null;
+    handleConfig: LocalCharacter['handleConfig'];
+}
 
 // Stable reference: a fresh array per projection would retrigger the
 // editor's characters effect chain and rebuild the Tiptap instance.
 const NO_CHARACTERS: Book['characters'] = [];
 
-export function projectBook(book: LocalBook, detail?: LocalBookDetail): Book {
+export function projectCharacter(record: LocalCharacter): Character {
+    return {
+        id: record.id, bookId: record.bookId, name: record.name, aliases: record.aliases,
+        role: record.role, description: record.description, color: record.color,
+        tags: record.tags, avatar: record.avatar ?? undefined,
+        handleConfig: record.handleConfig ? normalizeHandleConfig(record.handleConfig) : undefined,
+        isArchived: record.isArchived,
+    };
+}
+
+export function projectBook(book: LocalBook, detail?: LocalBookDetail, characters?: Character[]): Book {
     return {
         id: book.id, title: book.title, author: book.author, status: book.status,
         lastModified: Math.max(book.updatedAt, ...(detail?.chapters.map(ch => ch.updatedAt) ?? [])),
-        characters: NO_CHARACTERS,
+        characters: characters ?? NO_CHARACTERS,
         volumes: detail?.volumes.map(volume => ({
             id: volume.id, title: volume.title,
             chapters: detail.chapters.filter(ch => ch.volumeId === volume.id).map(ch => ({
@@ -64,5 +94,13 @@ export function projectBook(book: LocalBook, detail?: LocalBookDetail): Book {
 // Never silently refresh the version underneath an unsaved editor draft.
 export const localBookOptions = (bookId: string) => ({
     queryKey: localKeys.book(bookId), queryFn: () => localRepository.readBook(bookId),
+    staleTime: Infinity, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
+});
+
+// Character queries are independent so character edits never rewrite the
+// chapter cache underneath an open draft; the query data reference stays
+// stable until a mutation commits.
+export const localCharactersOptions = (bookId: string) => ({
+    queryKey: localKeys.characters(bookId), queryFn: () => localRepository.listCharacters(bookId),
     staleTime: Infinity, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
 });

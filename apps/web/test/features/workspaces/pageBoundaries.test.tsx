@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactFlowProvider } from '@xyflow/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Book, BrainstormWorkspace, Character } from '../../../types';
@@ -39,7 +40,8 @@ const makeBook = (): Book => ({
         status: 'draft', isEditable: true, foreshadowings: [] }] }],
 });
 function renderPage(page: React.ReactNode, route: string) {
-    return render(<MemoryRouter initialEntries={[route]}><Routes><Route path="/books/:bookId/*" element={page} /></Routes></MemoryRouter>);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[route]}><Routes><Route path="/books/:bookId/*" element={page} /></Routes></MemoryRouter></QueryClientProvider>);
 }
 function GraphWrapper({ children }: { children: React.ReactNode }) { return <ReactFlowProvider>{children}</ReactFlowProvider>; }
 beforeEach(() => {

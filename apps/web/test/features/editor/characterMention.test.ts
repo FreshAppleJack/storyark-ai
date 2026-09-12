@@ -2,7 +2,7 @@ import { Editor } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Character } from '../../../types';
-import { AutoHighlight, CustomMention, IgnoreAutoHighlight } from '../../../features/editor/extensions';
+import { AutoHighlight, CharacterData, CustomMention, IgnoreAutoHighlight } from '../../../features/editor/extensions';
 
 const alice: Character = {
     id: 'c-alice', bookId: 'b-1', name: 'Alice', aliases: ['Al'],
@@ -134,6 +134,65 @@ describe('AutoHighlight', () => {
         forceRefresh(instance);
 
         expect(instance.getHTML()).not.toContain('data-id');
+    });
+});
+
+describe('shared characterData storage', () => {
+    const archivedAlice: Character = { ...alice, isArchived: true };
+
+    function createStorageEditor(content: string | object, options: {
+        initial?: Character[]; sharedCharacters?: Character[]; sharedAutoHighlight?: Character[];
+    }) {
+        editor = new Editor({
+            extensions: [
+                StarterKit,
+                CustomMention,
+                IgnoreAutoHighlight,
+                CharacterData,
+                AutoHighlight.configure({ characters: options.initial ?? [], allCharacters: options.initial ?? [] }),
+            ],
+            content,
+        });
+        editor.storage.characterData.characters = options.sharedCharacters ?? [];
+        editor.storage.characterData.autoHighlightCharacters = options.sharedAutoHighlight ?? [];
+        return editor;
+    }
+
+    it('matches against storage data without rebuilding extension options', () => {
+        const instance = createStorageEditor('<p>Anna Bella</p>', {
+            initial: [alice], sharedCharacters: [anna], sharedAutoHighlight: [anna],
+        });
+        forceRefresh(instance);
+
+        expect(instance.getJSON()).toMatchObject({
+            content: [{
+                content: [{ type: 'mention', attrs: { id: 'c-anna', label: 'Anna Bella' } }],
+            }],
+        });
+    });
+
+    it('keeps archived characters out of new matches but preserves their mentions', () => {
+        const instance = createStorageEditor({
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [
+                { type: 'text', text: 'Alice said hi. ' },
+                { type: 'mention', attrs: { id: 'c-alice', label: 'Alice', color: '#e11d48' } },
+            ] }],
+        }, {
+            sharedCharacters: [archivedAlice], sharedAutoHighlight: [],
+        });
+        forceRefresh(instance);
+
+        // PASS 2 skips the archived name in plain text; PASS 1 keeps the
+        // existing mention (reconcile still sees the archived character).
+        expect(instance.getJSON()).toMatchObject({
+            content: [{
+                content: [
+                    { type: 'text', text: 'Alice said hi. ' },
+                    { type: 'mention', attrs: { id: 'c-alice', label: 'Alice' } },
+                ],
+            }],
+        });
     });
 });
 

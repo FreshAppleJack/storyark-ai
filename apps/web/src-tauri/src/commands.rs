@@ -1,6 +1,6 @@
 use crate::storage::{
-    CreateBook, CreateChapter, CreateVolume, Delete, Rename, Reorder, SaveChapter, SetReadOnly,
-    Storage, StorageError,
+    ArchiveCharacter, CreateBook, CreateChapter, CreateCharacter, CreateVolume, Delete, Rename,
+    Reorder, SaveChapter, SetReadOnly, Storage, StorageError, UpdateCharacter,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -79,6 +79,46 @@ pub async fn local_reorder(
 #[tauri::command]
 pub async fn local_delete(storage: tauri::State<'_, Storage>, input: Delete) -> Result<Reply, ()> {
     Ok(storage.run(move |db| db.delete(input)).await.into())
+}
+#[tauri::command]
+pub async fn local_list_characters(
+    storage: tauri::State<'_, Storage>,
+    book_id: String,
+) -> Result<Reply, ()> {
+    Ok(storage
+        .run(move |db| db.list_characters(&book_id))
+        .await
+        .into())
+}
+#[tauri::command]
+pub async fn local_create_character(
+    storage: tauri::State<'_, Storage>,
+    input: CreateCharacter,
+) -> Result<Reply, ()> {
+    Ok(storage
+        .run(move |db| db.create_character(input))
+        .await
+        .into())
+}
+#[tauri::command]
+pub async fn local_update_character(
+    storage: tauri::State<'_, Storage>,
+    input: UpdateCharacter,
+) -> Result<Reply, ()> {
+    Ok(storage
+        .run(move |db| db.update_character(input))
+        .await
+        .into())
+}
+#[tauri::command]
+pub async fn local_archive_character(
+    storage: tauri::State<'_, Storage>,
+    input: ArchiveCharacter,
+) -> Result<Reply, ()> {
+    Ok(storage
+        .run(move |db| db.archive_character(input))
+        .await
+        .into())
 }
 #[tauri::command]
 pub async fn local_backup(storage: tauri::State<'_, Storage>) -> Result<Reply, ()> {
