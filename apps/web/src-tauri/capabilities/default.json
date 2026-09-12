@@ -6,6 +6,7 @@
     "main"
   ],
   "permissions": [
+    "allow-local-reorder-characters",
     "dialog:allow-save",
     "fs:allow-write-file",
     "allow-local-list-books", "allow-local-read-book", "allow-local-create-book",

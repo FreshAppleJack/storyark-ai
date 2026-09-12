@@ -27,6 +27,7 @@ fn main() {
             "local_reorder",
             "local_delete",
             "local_list_characters",
+            "local_reorder_characters",
             "local_create_character",
             "local_update_character",
             "local_archive_character",

@@ -137,3 +137,87 @@ fn character_validation_and_book_locks_are_enforced() {
         "READ_ONLY"
     );
 }
+
+#[test]
+fn character_order_is_atomic_versioned_and_survives_reopen() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let book = db
+        .create_book(CreateBook {
+            title: "Order".into(),
+            author: "Writer".into(),
+            cover_color: "".into(),
+        })
+        .unwrap();
+    let book_id = book["id"].as_str().unwrap().to_string();
+    let mut ids = Vec::new();
+    for version in 1..=3 {
+        let created = db
+            .create_character(CreateCharacter {
+                character: character_input(&book_id),
+                expected_book_version: version,
+            })
+            .unwrap();
+        ids.push(created["character"]["id"].as_str().unwrap().to_string());
+    }
+    let request = |order: &[String], version| ReorderCharacters {
+        book_id: book_id.clone(),
+        expected_book_version: 4,
+        items: order
+            .iter()
+            .map(|id| CharacterOrderItem {
+                character_id: id.clone(),
+                expected_database_version: version,
+            })
+            .collect(),
+    };
+    let before = db.list_characters(&book_id).unwrap();
+    let reversed: Vec<_> = ids.iter().rev().cloned().collect();
+    db.connection.execute_batch("CREATE TRIGGER fail_order BEFORE UPDATE OF position ON characters WHEN NEW.position=1 BEGIN SELECT RAISE(ABORT, 'injected failure'); END;").unwrap();
+    assert!(db.reorder_characters(request(&reversed, 1)).is_err());
+    assert_eq!(db.list_characters(&book_id).unwrap(), before);
+    db.connection
+        .execute_batch("DROP TRIGGER fail_order;")
+        .unwrap();
+    assert!(db.reorder_characters(request(&ids[..2], 1)).is_err());
+    assert!(db
+        .reorder_characters(request(
+            &[ids[0].clone(), ids[0].clone(), ids[2].clone()],
+            1
+        ))
+        .is_err());
+    let saved = db.reorder_characters(request(&reversed, 1)).unwrap();
+    assert_eq!(saved[0]["id"], reversed[0]);
+    assert_eq!(saved[0]["databaseVersion"], 2);
+    assert_eq!(saved[0]["description"], before[0]["description"]);
+    assert_eq!(
+        db.reorder_characters(request(&ids, 1)).unwrap_err().code,
+        "VERSION_CONFLICT"
+    );
+    drop(db);
+    let mut reopened = Database::open(&temp.0).unwrap();
+    assert_eq!(reopened.list_characters(&book_id).unwrap(), saved);
+    let foreign = reopened
+        .create_book(CreateBook {
+            title: "Other".into(),
+            author: "Writer".into(),
+            cover_color: "".into(),
+        })
+        .unwrap();
+    let other = reopened
+        .create_character(CreateCharacter {
+            character: character_input(foreign["id"].as_str().unwrap()),
+            expected_book_version: 1,
+        })
+        .unwrap();
+    let mut wrong = ids.clone();
+    wrong[0] = other["character"]["id"].as_str().unwrap().into();
+    assert_eq!(
+        reopened
+            .reorder_characters(request(&wrong, 2))
+            .unwrap_err()
+            .code,
+        "OWNERSHIP_MISMATCH"
+    );
+    assert_eq!(reopened.list_characters(&book_id).unwrap(), saved);
+}

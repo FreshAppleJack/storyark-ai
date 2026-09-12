@@ -290,7 +290,21 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
             } catch (error) { fail(error); return false; }
         },
         // Unimplemented actions cannot reach HTTP, optimistic cache writes, or fake success.
-        reorderCharacters: unavailable,
+        reorderCharacters: (bookId, ordered) => writes.run(bookId, 'characters', async () => {
+            try {
+                const detail = client.getQueryData<LocalBookDetail>(localKeys.book(bookId));
+                const stored = client.getQueryData<LocalCharacter[]>(localKeys.characters(bookId));
+                if (!detail || !stored) throw new Error('Characters not loaded. Reopen the book.');
+                const items = ordered.map(character => {
+                    const record = stored.find(item => item.id === character.id);
+                    if (!record) throw new Error('Character not found. Reopen the book.');
+                    return { characterId: record.id, expectedDatabaseVersion: record.databaseVersion };
+                });
+                const records = await localRepository.reorderCharacters({ bookId, expectedBookVersion: detail.book.databaseVersion, items });
+                client.setQueryData(localKeys.characters(bookId), records);
+                return true;
+            } catch (error) { fail(error); return false; }
+        }),
         getRelations: unavailableRead, fetchGraphData: unavailableRead, saveGraphData: unavailable,
         fetchStoryPlanning: unavailableRead, saveStoryPlanning: unavailable,
     };

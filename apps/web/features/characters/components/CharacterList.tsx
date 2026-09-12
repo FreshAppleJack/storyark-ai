@@ -15,8 +15,8 @@ export function CharacterList({ characters, selectedCharId, handleSelect, handle
     const [characterSearchQuery, setCharacterSearchQuery] = useState('');
     const [characterSearchMessage, setCharacterSearchMessage] = useState('');
     const [characterSearchTargetId, setCharacterSearchTargetId] = useState<string | null>(null);
-    const dragItemRef = useRef<number | null>(null);
-    const dragOverItemRef = useRef<number | null>(null);
+    const dragItemRef = useRef<string | null>(null);
+    const reorderPending = useRef(false);
     const characterSearchResults = useMemo(() => searchCharacters(characters, characterSearchQuery), [characters, characterSearchQuery]);
     const scrollCharacterIntoView = (characterId: string) => {
         requestAnimationFrame(() => {
@@ -52,7 +52,7 @@ export function CharacterList({ characters, selectedCharId, handleSelect, handle
 
     // --- Drag-and-drop logic ---
     const handleDragStart = (e: React.DragEvent, index: number) => {
-        dragItemRef.current = index;
+        dragItemRef.current = characters[index].id;
         // Reduce the transparency of the drag-and-drop source
         (e.currentTarget as HTMLDivElement).style.opacity = '0.5';
         e.dataTransfer.effectAllowed = 'move';
@@ -60,8 +60,9 @@ export function CharacterList({ characters, selectedCharId, handleSelect, handle
 
     const handleDragEnter = (e: React.DragEvent, index: number) => {
         e.preventDefault();
-        const dragIndex = dragItemRef.current;
-        if (dragIndex === null || dragIndex === index) return;
+        if (reorderPending.current || dragItemRef.current === null) return;
+        const dragIndex = characters.findIndex(character => character.id === dragItemRef.current);
+        if (dragIndex < 0 || dragIndex === index) return;
 
         // Execute sorting logic
         const newCharacters = [...characters];
@@ -69,18 +70,20 @@ export function CharacterList({ characters, selectedCharId, handleSelect, handle
         newCharacters.splice(dragIndex, 1);
         newCharacters.splice(index, 0, draggedItem);
 
-        // Call the sorting method in the Context (optimistic update + backend request)
-        void onReorder(newCharacters).then(ok => { if (!ok) toast.error('Failed to save character order.'); });
-
-        // Update the current drag index to ensure the logic is correct when dragging continuously
-        dragItemRef.current = index;
+        // Wait for committed order before accepting another reorder. Track the
+        // dragged identity rather than an index that becomes stale after saving.
+        reorderPending.current = true;
+        void onReorder(newCharacters)
+            .then(ok => { if (!ok) toast.error('Failed to save character order.'); })
+            .catch(() => toast.error('Failed to save character order.'))
+            .finally(() => { reorderPending.current = false; });
     };
 
     const handleDragEnd = (e: React.DragEvent) => {
         // Restore transparency
         (e.currentTarget as HTMLDivElement).style.opacity = '1';
         dragItemRef.current = null;
-        dragOverItemRef.current = null;
+
     };
 
     const handleDragOver = (e: React.DragEvent) => {

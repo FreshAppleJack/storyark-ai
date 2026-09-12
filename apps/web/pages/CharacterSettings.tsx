@@ -19,7 +19,9 @@ function CharacterSettingsContent({ bookId }: { bookId: string }) {
     // Local mode loads the book detail and characters into the query cache
     // that getBook projects from; legacy mode relies on the books query.
     const detailQuery = useQuery({ ...localBookOptions(bookId), enabled: isLocal });
-    const charactersQuery = useQuery({ ...localCharactersOptions(bookId), enabled: isLocal });
+    // getBook reads the cache indirectly, so explicitly subscribe to data changes.
+    const charactersQuery = useQuery({ ...localCharactersOptions(bookId), enabled: isLocal,
+        notifyOnChangeProps: ['data', 'error', 'isPending'] });
     const book = getBook(bookId);
     const editor = useCharacterEditor(bookId);
     const { selectedCharId, selectCharacter } = editor;

@@ -2,6 +2,7 @@
 //! their transaction boundaries inside each Database operation.
 mod backup;
 mod brainstorm;
+mod character_order;
 mod characters;
 mod content;
 mod database;
@@ -24,6 +25,9 @@ mod tests;
 mod validation;
 
 pub use brainstorm::SaveBrainstorm;
+#[cfg(test)]
+pub use character_order::CharacterOrderItem;
+pub use character_order::ReorderCharacters;
 pub use error::{Result, StorageError};
 pub use foreshadowing::UpdateNote;
 pub use graph_types::SaveGraph;

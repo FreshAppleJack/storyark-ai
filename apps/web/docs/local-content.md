@@ -89,7 +89,7 @@ CONTENT_INCOMPATIBLE, STORAGE_FAILURE).
 | local_create_character | `{ input: { bookId, name, role, aliases, description, color, tags, avatar?, handleConfig? } }` → character | Rust assigns UUID/position; book must be unlocked. |
 | local_update_character | `{ input: { bookId, characterId, expectedDatabaseVersion, ...fields } }` → character | Version-guarded partial update; never touches chapter content. |
 | local_archive_character | `{ input: { bookId, characterId, expectedDatabaseVersion, isArchived } }` → character | Archive/unarchive; references preserved. |
-| local_reorder_characters | `{ input: { bookId, expectedDatabaseVersion?/per-item versions, items } }` → characters | Same complete-set rules as volume reorder. |
+| local_reorder_characters | `{ input: { bookId, expectedBookVersion, items: [{ characterId, expectedDatabaseVersion }] } }` → ordered characters | Complete set including archived characters; validate ownership, book lock and all versions, then commit positions atomically. Only character versions advance. |
 | local_read_graph | `{ bookId }` → `{ graph, nodes, edges } \| null` | `null` means "not initialized yet" — never an empty-graph lie. Load failure is an error, not null. |
 | local_initialize_graph | `{ input: { bookId } }` → `{ graph, nodes: [], edges: [] }` | Explicit first-time creation, persisted; seeding from characters is a separate explicit call, not an automatic side effect of opening the page. |
 | local_save_graph | `{ input: { bookId, expectedGraphVersion, nodes, edges } }` → `{ graph, nodes, edges }` | Whole-snapshot write in one transaction: endpoint ownership, dangling edges, coordinate/handle validation; stale version rejected. |

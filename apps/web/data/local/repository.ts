@@ -42,6 +42,8 @@ export const localRepository = {
     delete: <T extends LocalRecord = LocalRecord>(input: ExpectedTarget & { expectedParentVersion?: number }) =>
         call<{ deletedId: string; parent: T | null }>('local_delete', { input }),
     listCharacters: (bookId: string) => call<LocalCharacter[]>('local_list_characters', { bookId }),
+    reorderCharacters: (input: { bookId: string; expectedBookVersion: number; items: { characterId: string; expectedDatabaseVersion: number }[] }) =>
+        call<LocalCharacter[]>('local_reorder_characters', { input }),
     createCharacter: (input: LocalCharacterInput & { bookId: string; expectedBookVersion: number }) =>
         call<{ character: LocalCharacter; book: LocalBook }>('local_create_character', { input }),
     updateCharacter: (input: LocalCharacterInput & { bookId: string; characterId: string; expectedDatabaseVersion: number }) =>

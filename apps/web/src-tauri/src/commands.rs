@@ -1,6 +1,7 @@
 use crate::storage::{
     ArchiveCharacter, CreateBook, CreateChapter, CreateCharacter, CreateVolume, Delete, Rename,
-    Reorder, SaveChapter, SetReadOnly, Storage, StorageError, UpdateBook, UpdateCharacter,
+    Reorder, ReorderCharacters, SaveChapter, SetReadOnly, Storage, StorageError, UpdateBook,
+    UpdateCharacter,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -130,4 +131,15 @@ pub async fn local_archive_character(
 #[tauri::command]
 pub async fn local_backup(storage: tauri::State<'_, Storage>) -> Result<Reply, ()> {
     Ok(storage.run(|db| db.backup()).await.into())
+}
+
+#[tauri::command]
+pub async fn local_reorder_characters(
+    storage: tauri::State<'_, Storage>,
+    input: ReorderCharacters,
+) -> Result<Reply, ()> {
+    Ok(storage
+        .run(move |db| db.reorder_characters(input))
+        .await
+        .into())
 }
