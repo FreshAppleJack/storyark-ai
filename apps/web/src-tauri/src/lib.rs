@@ -28,6 +28,7 @@ fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri
         commands::local_create_chapter,
         commands::local_save_chapter,
         commands::local_rename,
+        commands::local_update_book,
         commands::local_set_read_only,
         commands::local_reorder,
         commands::local_delete,

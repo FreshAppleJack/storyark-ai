@@ -22,6 +22,7 @@ fn main() {
             "local_create_chapter",
             "local_save_chapter",
             "local_rename",
+            "local_update_book",
             "local_set_read_only",
             "local_reorder",
             "local_delete",

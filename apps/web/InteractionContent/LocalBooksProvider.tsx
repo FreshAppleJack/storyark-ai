@@ -6,6 +6,8 @@ import { localBookOptions, localKeys, localRepository, projectBook, projectChara
 import type { LocalBook, LocalChapter, LocalCharacter, LocalVolume } from '../data/local/contracts';
 import { createChapterWriteQueue } from '../services/chapterWrites';
 import { planningKey } from '../data/local/planningRepository';
+import { localGraphKey } from '../data/local/graphRepository';
+import { brainstormKey } from '../data/local/brainstormRepository';
 
 export function LocalBooksProvider({ children }: { children: React.ReactNode }) {
     const client = useQueryClient();
@@ -34,7 +36,10 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
         },
         createBook: async (title, author = '') => {
             try {
-                const book = await localRepository.createBook(title, author);
+                // Same fixed palette the legacy shelf used: one accent per book,
+                // chosen at creation.
+                const coverColor = `bg-${['blue', 'emerald', 'rose', 'amber', 'purple'][Math.floor(Math.random() * 5)]}-600`;
+                const book = await localRepository.createBook(title, author, coverColor);
                 await client.cancelQueries({ queryKey: localKeys.books });
                 rememberBook(book);
                 client.setQueryData<LocalBookDetail>(localKeys.book(book.id), { book, volumes: [], chapters: [] });
@@ -254,9 +259,38 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 return true;
             } catch (error) { fail(error); return false; }
         }),
+        // Bookshelf management commits through IPC first, then updates caches.
+        updateBook: async (bookId, data) => {
+            try {
+                const current = (query.data ?? []).find(book => book.id === bookId)
+                    ?? client.getQueryData<LocalBookDetail>(localKeys.book(bookId))?.book;
+                if (!current) throw new LocalStorageError('NOT_FOUND', 'Book not found.');
+                const updated = await localRepository.updateBook({
+                    bookId, expectedDatabaseVersion: current.databaseVersion, ...data,
+                });
+                await client.cancelQueries({ queryKey: localKeys.books });
+                rememberBook(updated);
+                client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({ ...old, book: updated }));
+                return true;
+            } catch (error) { fail(error); return false; }
+        },
+        deleteBook: async (bookId) => {
+            try {
+                const current = (query.data ?? []).find(book => book.id === bookId)
+                    ?? client.getQueryData<LocalBookDetail>(localKeys.book(bookId))?.book;
+                if (!current) throw new LocalStorageError('NOT_FOUND', 'Book not found.');
+                // One transaction cascades volumes, chapters, characters, the
+                // graph, planning and the brainstorm workspace; locks refuse.
+                await localRepository.delete({ kind: 'book', bookId, expectedDatabaseVersion: current.databaseVersion });
+                client.setQueryData<LocalBook[]>(localKeys.books, previous => previous?.filter(book => book.id !== bookId));
+                for (const key of [localKeys.book(bookId), localKeys.characters(bookId), planningKey(bookId), localGraphKey(bookId), brainstormKey(bookId)]) {
+                    client.removeQueries({ queryKey: key });
+                }
+                return true;
+            } catch (error) { fail(error); return false; }
+        },
         // Unimplemented actions cannot reach HTTP, optimistic cache writes, or fake success.
         reorderCharacters: unavailable,
-        updateBook: unavailable, deleteBook: unavailable,
         getRelations: unavailableRead, fetchGraphData: unavailableRead, saveGraphData: unavailable,
         fetchStoryPlanning: unavailableRead, saveStoryPlanning: unavailable,
     };

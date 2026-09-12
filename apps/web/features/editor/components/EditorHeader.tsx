@@ -144,7 +144,6 @@ export function EditorHeader({
                     variant="ghost"
                     size="sm"
                     onClick={onNavigateSettings}
-                    disabled={localMode}
                     title="Global Settings"
                 >
                     <Settings className="block w-4 h-4" />

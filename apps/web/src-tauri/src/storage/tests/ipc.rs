@@ -38,7 +38,7 @@ fn tauri_ipc_creates_saves_and_reads_after_reopening_the_database() {
     let book = ipc(
         &window,
         "local_create_book",
-        json!({"input":{"title":"IPC Book","author":"Writer"}}),
+        json!({"input":{"title":"IPC Book","author":"Writer","coverColor":"bg-rose-600"}}),
     );
     assert_eq!(book["ok"], true);
     let book_id = book["value"]["id"].clone();
@@ -106,7 +106,7 @@ fn ipc_renames_reorders_and_deletes_through_registered_commands() {
     let book = ipc(
         &window,
         "local_create_book",
-        json!({"input":{"title":"IPC","author":""}}),
+        json!({"input":{"title":"IPC","author":"","coverColor":""}}),
     );
     let book_id = book["value"]["id"].clone();
     let volume = ipc(

@@ -5,7 +5,8 @@ use std::{path::Path, time::Duration};
 
 const MIGRATION_0001: &str = include_str!("../../migrations/0001_library.sql");
 const MIGRATION_0002: &str = include_str!("../../migrations/0002_local_content.sql");
-const LATEST_VERSION: i64 = 2;
+const MIGRATION_0003: &str = include_str!("../../migrations/0003_book_cover.sql");
+const LATEST_VERSION: i64 = 3;
 
 impl Database {
     pub fn open(directory: &Path) -> Result<Self> {
@@ -33,10 +34,18 @@ impl Database {
                 tx.pragma_update(None, "user_version", 1)?;
                 tx.execute_batch(MIGRATION_0002)?;
                 tx.pragma_update(None, "user_version", 2)?;
+                tx.execute_batch(MIGRATION_0003)?;
+                tx.pragma_update(None, "user_version", 3)?;
             }
             1 => {
                 tx.execute_batch(MIGRATION_0002)?;
                 tx.pragma_update(None, "user_version", 2)?;
+                tx.execute_batch(MIGRATION_0003)?;
+                tx.pragma_update(None, "user_version", 3)?;
+            }
+            2 => {
+                tx.execute_batch(MIGRATION_0003)?;
+                tx.pragma_update(None, "user_version", 3)?;
             }
             v if v == LATEST_VERSION => {}
             _ => {
@@ -47,7 +56,7 @@ impl Database {
             }
         }
         // Catch missing tables/columns even for an allegedly current database.
-        tx.prepare("SELECT b.author,v.book_id,c.content_version,c.foreshadowings_json FROM books b,volumes v,chapters c LIMIT 0")?;
+        tx.prepare("SELECT b.author,b.cover_color,v.book_id,c.content_version,c.foreshadowings_json FROM books b,volumes v,chapters c LIMIT 0")?;
         tx.prepare("SELECT ch.aliases_json,g.book_id,gn.character_id,ge.label,p.story_summary,ap.dark_mode,bw.final_content FROM characters ch,graphs g,graph_nodes gn,graph_edges ge,planning p,application_preferences ap,brainstorm_workspaces bw LIMIT 0")?;
         let integrity: String = tx.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
         if integrity != "ok" || tx.prepare("PRAGMA foreign_key_check")?.exists([])? {

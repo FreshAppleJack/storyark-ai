@@ -330,3 +330,63 @@ fn delete_cascades_and_advances_parent_versions() {
         "READ_ONLY"
     );
 }
+
+#[test]
+fn update_book_changes_title_and_status_with_lock_and_version_guards() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let chapter = fixture(&mut db);
+    let book_id = chapter.book_id.clone();
+    let book = db.read_book(&book_id).unwrap()["book"].clone();
+    assert_eq!(book["coverColor"], "bg-blue-600");
+    let updated = db
+        .update_book(crate::storage::requests::UpdateBook {
+            book_id: book_id.clone(),
+            expected_database_version: book["databaseVersion"].as_i64().unwrap(),
+            title: Some("Renamed Shelf".into()),
+            status: Some("completed".into()),
+        })
+        .unwrap();
+    assert_eq!(updated["title"], "Renamed Shelf");
+    assert_eq!(updated["status"], "completed");
+    assert_eq!(
+        updated["databaseVersion"],
+        book["databaseVersion"].as_i64().unwrap() + 1
+    );
+    // Validation: empty title, unknown status, no fields, stale version.
+    for input in [
+        json!({"bookId":book_id,"expectedDatabaseVersion":2,"title":"  "}),
+        json!({"bookId":book_id,"expectedDatabaseVersion":2,"status":"draft"}),
+        json!({"bookId":book_id,"expectedDatabaseVersion":2}),
+        json!({"bookId":book_id,"expectedDatabaseVersion":9,"status":"serializing"}),
+    ] {
+        assert!(db
+            .update_book(
+                serde_json::from_value::<crate::storage::requests::UpdateBook>(input).unwrap()
+            )
+            .is_err());
+    }
+    assert_eq!(
+        db.read_book(&book_id).unwrap()["book"]["title"],
+        "Renamed Shelf"
+    );
+    // Locked books reject updates; cover color is not mutable through this command.
+    db.connection
+        .execute("UPDATE books SET is_read_only=1 WHERE id=?", [&book_id])
+        .unwrap();
+    assert_eq!(
+        db.update_book(crate::storage::requests::UpdateBook {
+            book_id: book_id.clone(),
+            expected_database_version: 2,
+            status: Some("serializing".into()),
+            title: None,
+        })
+        .unwrap_err()
+        .code,
+        "READ_ONLY"
+    );
+    let rejected = serde_json::from_value::<crate::storage::requests::UpdateBook>(
+        json!({"bookId":book_id,"expectedDatabaseVersion":2,"coverColor":"bg-rose-600"}),
+    );
+    assert!(rejected.is_err());
+}

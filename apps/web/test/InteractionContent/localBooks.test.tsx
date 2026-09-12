@@ -12,7 +12,7 @@ const http = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), dele
 vi.mock('@tauri-apps/api/core', () => native);
 vi.mock('../../services/api', () => ({ default: http }));
 
-const book = { id: 'book-1', title: 'Local book', author: 'Writer', status: 'serializing' as const, position: 0, isReadOnly: false, databaseVersion: 1, createdAt: 1, updatedAt: 1 };
+const book = { id: 'book-1', title: 'Local book', author: 'Writer', status: 'serializing' as const, coverColor: 'bg-blue-600', position: 0, isReadOnly: false, databaseVersion: 1, createdAt: 1, updatedAt: 1 };
 const volume = { ...book, id: 'volume-1', bookId: book.id, title: 'Volume', status: 'draft' as const };
 const chapter = { ...volume, id: 'chapter-1', volumeId: volume.id, title: 'Chapter', wordCount: 0, foreshadowings: [],
     body: { format: 'tiptap-json' as const, version: 1 as const, content: '{"type":"doc","content":[{"type":"paragraph"}]}', originalContent: null, originalFormat: null } };
@@ -63,7 +63,10 @@ describe('Local books', () => {
         expect(result.current.books).toEqual([]);
         await act(async () => { complete({ ok: true, value: book }); expect(await create).toBe(book.id); });
         await waitFor(() => expect(result.current.books[0]?.author).toBe('Writer'));
-        expect(native.invoke).toHaveBeenLastCalledWith('local_create_book', { input: { title: 'Local book', author: 'Writer' } });
+        const [command, args] = native.invoke.mock.calls.at(-1)!;
+        expect(command).toBe('local_create_book');
+        expect(args).toMatchObject({ input: { title: 'Local book', author: 'Writer' } });
+        expect((args as { input: { coverColor: string } }).input.coverColor).toMatch(/^bg-(blue|emerald|rose|amber|purple)-600$/);
         expect(client.getQueryData(localKeys.book(book.id))).toEqual({ book, volumes: [], chapters: [] });
     });
 
@@ -326,6 +329,53 @@ describe('Local characters', () => {
         const cached = client.getQueryData<LocalCharacter[]>(localKeys.characters(book.id));
         expect(cached).toHaveLength(1);
         expect(cached?.[0].isArchived).toBe(true);
+    });
+
+    it('updates book title and status through IPC and mirrors the committed record', async () => {
+        const { result, client } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        client.setQueryData(localKeys.book(book.id), detail);
+        const committed = { ...book, title: 'Renamed', status: 'completed' as const, databaseVersion: 2, updatedAt: 2 };
+        native.invoke.mockImplementation(async (command: string) =>
+            ({ ok: true, value: command === 'local_update_book' ? committed : [book] }));
+        let ok!: boolean;
+        await act(async () => { ok = await result.current.updateBook(book.id, { title: 'Renamed', status: 'completed' }); });
+        expect(ok).toBe(true);
+        expect(native.invoke).toHaveBeenLastCalledWith('local_update_book', {
+            input: { bookId: book.id, expectedDatabaseVersion: 1, title: 'Renamed', status: 'completed' },
+        });
+        await waitFor(() => expect(result.current.books[0]).toMatchObject({ title: 'Renamed', status: 'completed' }));
+        expect(client.getQueryData<LocalBookDetail>(localKeys.book(book.id))?.book).toEqual(committed);
+    });
+
+    it('keeps the book when its update is rejected', async () => {
+        native.invoke.mockImplementation(async (command: string) => command === 'local_update_book'
+            ? { ok: false, error: { code: 'READ_ONLY', message: 'locked' } }
+            : { ok: true, value: [book] });
+        const { result } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        let ok!: boolean;
+        await act(async () => { ok = await result.current.updateBook(book.id, { status: 'completed' }); });
+        expect(ok).toBe(false);
+        expect(result.current.books[0]).toMatchObject({ title: 'Local book', status: 'serializing' });
+    });
+
+    it('deletes a book through IPC and clears every dependent cache entry', async () => {
+        const { result, client } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        client.setQueryData(localKeys.book(book.id), detail);
+        client.setQueryData(localKeys.characters(book.id), [character]);
+        native.invoke.mockImplementation(async (command: string) =>
+            ({ ok: true, value: command === 'local_delete' ? { deletedId: book.id, parent: null } : [book] }));
+        let ok!: boolean;
+        await act(async () => { ok = await result.current.deleteBook(book.id); });
+        expect(ok).toBe(true);
+        expect(native.invoke).toHaveBeenLastCalledWith('local_delete', {
+            input: { kind: 'book', bookId: book.id, expectedDatabaseVersion: 1 },
+        });
+        await waitFor(() => expect(result.current.books).toEqual([]));
+        expect(client.getQueryData(localKeys.book(book.id))).toBeUndefined();
+        expect(client.getQueryData(localKeys.characters(book.id))).toBeUndefined();
     });
 
     it('projects stored characters for the editor, normalizing handle config', () => {

@@ -22,6 +22,7 @@ fn character_crud_and_archive_follow_the_same_concurrency_rules() {
         .create_book(CreateBook {
             title: "Book".into(),
             author: "Writer".into(),
+            cover_color: "".into(),
         })
         .unwrap();
     let book_id = book["id"].as_str().unwrap().to_string();
@@ -77,6 +78,7 @@ fn character_crud_and_archive_follow_the_same_concurrency_rules() {
         .create_book(CreateBook {
             title: "Other".into(),
             author: "".into(),
+            cover_color: "".into(),
         })
         .unwrap();
     let wrong_book = db.archive_character(ArchiveCharacter {
@@ -96,6 +98,7 @@ fn character_validation_and_book_locks_are_enforced() {
         .create_book(CreateBook {
             title: "Book".into(),
             author: "Writer".into(),
+            cover_color: "".into(),
         })
         .unwrap();
     let book_id = book["id"].as_str().unwrap().to_string();

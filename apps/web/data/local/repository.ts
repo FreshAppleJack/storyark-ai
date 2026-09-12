@@ -24,7 +24,9 @@ export async function call<T>(command: string, args?: Record<string, unknown>): 
 export const localRepository = {
     listBooks: () => call<LocalBook[]>('local_list_books'),
     readBook: (bookId: string) => call<LocalBookDetail>('local_read_book', { bookId }),
-    createBook: (title: string, author: string) => call<LocalBook>('local_create_book', { input: { title, author } }),
+    createBook: (title: string, author: string, coverColor: string) => call<LocalBook>('local_create_book', { input: { title, author, coverColor } }),
+    updateBook: (input: { bookId: string; expectedDatabaseVersion: number; title?: string; status?: 'serializing' | 'completed' }) =>
+        call<LocalBook>('local_update_book', { input }),
     createVolume: (bookId: string, title: string, expectedBookVersion: number) =>
         call<{ volume: LocalVolume; book: LocalBook }>('local_create_volume', { input: { bookId, title, expectedBookVersion } }),
     createChapter: (bookId: string, volumeId: string, title: string, expectedVolumeVersion: number) =>
@@ -76,6 +78,7 @@ export function projectCharacter(record: LocalCharacter): Character {
 export function projectBook(book: LocalBook, detail?: LocalBookDetail, characters?: Character[]): Book {
     return {
         id: book.id, title: book.title, author: book.author, status: book.status,
+        coverColor: book.coverColor || undefined,
         lastModified: Math.max(book.updatedAt, ...(detail?.chapters.map(ch => ch.updatedAt) ?? [])),
         characters: characters ?? NO_CHARACTERS,
         volumes: detail?.volumes.map(volume => ({

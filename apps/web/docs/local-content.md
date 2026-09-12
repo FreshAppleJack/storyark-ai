@@ -337,3 +337,64 @@ opened from the outline with generation disabled, accepted a chapter
 selection and handwritten final content, saved and recovered after restart;
 the snapshot carried the chapter source version and a later chapter edit
 surfaced the stale hint.
+
+## Unit 6 implementation: bookshelf management and acceptance coverage
+
+Bookshelf management is fully wired: the context menu works in local mode,
+`local_update_book` renames and toggles lifecycle status in one
+version-checked write (locks and stale versions refuse), and deleting a book
+cascades volumes, chapters, characters, the graph, planning and the
+brainstorm workspace in the existing transaction — the confirmation dialog
+now names those attachments. New books receive one accent from the fixed
+legacy palette (blue/emerald/rose/amber/purple 600), persisted in the
+`cover_color` column added by migration 0003 (additive, backup-first like
+0002). The editor's settings button is enabled again now that `/settings`
+exists. `local_list_characters` reports NOT_FOUND for deleted books, matching
+every other read. A real-desktop probe on an isolated data directory
+verified: same-named characters stay distinct across books; book B reads
+contain nothing of book A; wrong-book IDs are rejected for notes, brainstorm
+selections, graph nodes and planning references; deleting book A removes
+every attachment while book B stays intact. Legacy migration tooling is
+deliberately skipped (the legacy project holds no real data).
+
+### Verification record (2026-09-13, unit 6)
+
+Frontend: 284 tests (+3), typecheck, zero-warning lint and production build
+pass. Rust: 38 tests (+1), Clippy and `cargo fmt --check` clean. Secret scan
+clean. Full user-acceptance walkthroughs (long manual flows) are performed
+by the maintainer by decision; probe-level checks above ran on a throwaway
+`STORYARK_DATA_DIR`, never the real database.
+
+## Preparing whole-book JSON interchange (next stage, not started)
+
+This list is a design inventory only — **JSON round-trip is NOT implemented
+or verified in this stage**, and nothing below may be claimed as working.
+
+Snapshot entity set (one document per book, `schemaVersion` stamped):
+book record (title/author/status/cover color/position/lock), volumes with
+positions, chapters with typed bodies (`format`/`version`/`content`,
+`originalContent`/`originalFormat`, word count, foreshadowing notes with all
+unknown fields preserved verbatim), characters (including archived ones and
+their handle defaults), the relationship graph (graph version, node
+instances keyed by `nodeKey` with per-node handle overrides, edges with
+handles/labels), the planning aggregate (story summary/background, chapter
+summaries with source versions, plot settings with chapter references and
+missing-link annotations), and the brainstorm workspace (live selection,
+historical context snapshot, generated options, selection, final content).
+Application preferences are explicitly excluded; API keys never appear.
+
+Reference checks on import: chapter→volume, everything→book, graph node
+→character (same book), graph edge→node instances, chapter summary→chapter,
+plot setting chapterIds, workspace selectedChapterIds, and foreshadowing
+mark IDs↔chapter note IDs. Violations are reported, never silently dropped.
+
+Asset boundary: avatar presets/colors are inline values and travel with the
+document; machine-local file paths are never required and never written into
+the snapshot. The style library stays outside (localStorage today).
+
+ID rewriting when adding a copy: every entity ID (book/volume/chapter/
+character/nodeKey/edge/note/plot entry) is re-allocated on import so the
+copy can never collide with the original; every reference above is rewritten
+through the same mapping in one transaction, and content strings that embed
+IDs (mentions, foreshadowing marks) are rewritten with documented coverage
+— unknown content formats keep their original text untouched.

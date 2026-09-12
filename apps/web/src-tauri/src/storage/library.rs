@@ -1,7 +1,7 @@
 use super::records::{bump, record, rows};
 use super::requests::{CreateBook, CreateChapter, CreateVolume, SaveChapter};
 use super::validation::{
-    expected, invalid, now, ownership, title, unlocked, valid_id, MAX_INTEGER,
+    cover_color, expected, invalid, now, ownership, title, unlocked, valid_id, MAX_INTEGER,
 };
 use super::{content, Database, Result, StorageError};
 use rusqlite::{params, TransactionBehavior};
@@ -38,12 +38,13 @@ impl Database {
         if input.author.len() > 1024 {
             return Err(invalid());
         }
+        cover_color(&input.cover_color)?;
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let id = Uuid::new_v4().to_string();
         let now = now()?;
-        tx.execute("INSERT INTO books(id,title,author,position,created_at,updated_at) VALUES (?,?,?,(SELECT coalesce(max(position)+1,0) FROM books),?,?)", params![id,input.title,input.author,now,now])?;
+        tx.execute("INSERT INTO books(id,title,author,cover_color,position,created_at,updated_at) VALUES (?,?,?,?,(SELECT coalesce(max(position)+1,0) FROM books),?,?)", params![id,input.title,input.author,input.cover_color,now,now])?;
         let result = record(&tx, "books", &id)?;
         tx.commit()?;
         Ok(result)

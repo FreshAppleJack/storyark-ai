@@ -15,6 +15,21 @@ pub(super) fn title(value: &str) -> Result<()> {
         Ok(())
     }
 }
+
+// The bookshelf accent palette is fixed; anything outside it (or empty for
+// "no accent") is rejected so stored values always render.
+pub(super) fn cover_color(value: &str) -> Result<()> {
+    if value.is_empty()
+        || matches!(
+            value,
+            "bg-blue-600" | "bg-emerald-600" | "bg-rose-600" | "bg-amber-600" | "bg-purple-600"
+        )
+    {
+        Ok(())
+    } else {
+        Err(invalid())
+    }
+}
 pub(super) fn valid_id(value: &str) -> Result<()> {
     if Uuid::parse_str(value)
         .map(|id| id.to_string() == value)

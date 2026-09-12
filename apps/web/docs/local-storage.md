@@ -12,24 +12,32 @@ SQL migrations and transaction boundaries remain unchanged.
 | `backup.rs` | Consistent SQLite backup and the backup operation |
 | `requests.rs`, `error.rs` | IPC request types and storage errors |
 | `library.rs` | Read/create books and volumes; create/save chapters |
-| `mutations.rs` | Rename, lock, reorder and delete library records |
+| `mutations.rs` | Rename, update-book, lock, reorder and delete library records |
 | `characters.rs` | Character validation, reads, writes and archival |
+| `graph.rs`, `graph_types.rs`, `graph_validation.rs` | Relationship graph snapshots, types and integrity rules |
+| `planning.rs`, `planning_validation.rs`, `planning_cleanup.rs` | Planning aggregate, reference checks and deletion cleanup |
+| `foreshadowing.rs` | Cross-chapter note patching |
+| `preferences.rs` | Single-row application preferences |
+| `brainstorm.rs` | Brainstorm workspace aggregate |
 | `targets.rs` | Resolve book/volume/chapter ancestry for mutations |
 | `validation.rs` | Shared identity, version, lock and input checks |
 | `records.rs` | Query rows, map stored fields and advance parent versions |
 | `content.rs` | Validate supported rich content and foreshadowing notes |
-| `tests/` | Existing regression tests grouped by feature, with shared fixtures in `mod.rs` |
+| `tests/` | Regression tests grouped by feature, with shared fixtures in `mod.rs` |
 
 Each business module implements methods on the same `Database`; splitting files
 does not create extra connections or queues. Internal helpers are visible only
-within storage. Future graph and planning operations should get their own modules
-when implemented, rather than expanding the facade or adding unused abstractions.
+within storage. New domains get their own module rather than expanding the
+facade or adding unused abstractions.
 
-Work unit 2, 2026-09-12. Deliverables: `data/local/contracts.ts` and
-`src-tauri/migrations/0001_library.sql`. These are a specification and executable
-schema. Work unit 3 now implements connection management, startup migration, and
-the seven commands listed below. The application UI still uses its existing data
-provider; UI integration and the remaining mutation commands are follow-up work.
+> History: this document started in week 9–10 work unit 2 (2026-09-12) with
+> `data/local/contracts.ts` and `migrations/0001_library.sql` as the
+> specification. Weeks 9–10 delivered the library foundation (units below);
+> weeks 11–12 moved every remaining work surface — characters, the
+> relationship graph, foreshadowing/planning, preferences and the brainstorm
+> workspace — onto the same storage (see `local-content.md`). What is still
+> **not** local: model generation (AI continue, brainstorm generation), RAG,
+> whole-book JSON interchange and platform features.
 
 ## Identity and schema
 
@@ -389,25 +397,27 @@ schema version, so no upgrade migration exists yet — this is recorded
 honestly, and any future upgrade must add a failing-migration rollback test
 alongside the existing initialization checks.
 
-## Remaining legacy-backend dependencies (checked 2026-09-12)
+## Remaining legacy-backend dependencies (checked 2026-09-13)
 
-Core writing (books, volumes, chapters, chapter locks, foreshadowing marks
-inside chapter content) is fully local. Everything below still depends on the
-legacy HTTP backend and is either explicitly disabled or clearly marked
-unavailable in the local UI — the app is NOT fully local yet:
+Every work surface is local now. Only model-backed features still depend on
+a backend and stay explicitly disabled with honest capability notes — the
+app does not call the legacy HTTP API at runtime:
 
 | Area | Local status | Legacy dependency |
 | --- | --- | --- |
-| Characters | Disabled (unavailable page/stub) | `CharacterController`; also feeds graph handles and positions |
-| Relationship graph | Disabled | `GraphController` nodes/edges; `nodeKey` instance IDs vs `characterId` |
+| Bookshelf management (rename, status, delete, cover color) | Local transactions with locks and cascading deletes (weeks 11–12 unit 6) | No legacy calls |
+| Characters | Local SQLite CRUD and archival (weeks 11–12 unit 2) | No legacy calls |
+| Relationship graph | Local whole-snapshot writes (weeks 11–12 unit 3) | No legacy calls |
 | Foreshadowing board (cross-chapter) | Local SQLite aggregation and versioned note patches (weeks 11–12 unit 4) | No legacy calls |
 | Story planning / plot settings | Local SQLite aggregate, guarded drafts and source versions (weeks 11–12 unit 4) | No legacy calls |
 | Preferences remote sync | Local SQLite single row (weeks 11–12 unit 5); localStorage is only a launch cache | No legacy calls |
 | AI brainstorm workspace | Local SQLite aggregate with guarded drafts (weeks 11–12 unit 5); generation stays disabled | No legacy calls |
-| AI continue | Explicitly disabled | `AiController` |
+| AI continue | Explicitly disabled until user-configured models arrive | `AiController` |
+| Brainstorm generation | Explicitly disabled until user-configured models arrive | `AiBrainstormController` generate endpoint |
 | DOCX/PDF export | Works locally (pure frontend, input is the local chapter) | none |
-| Style library | Works locally (localStorage) | none |
-| Auth pages (login/register/settings) | Redirected / unavailable page | `AuthController` |
+| Style library | Works locally (localStorage; not covered by SQLite backups) | none |
+| Auth pages (login/register) | Redirected to the shelf; source kept, never mounted | `AuthController` |
+| Settings page | Local at `/settings` (weeks 11–12 unit 5); account sections stay unmounted | none |
 
 ## Legacy migration entry point and UUID mapping (types and structure)
 

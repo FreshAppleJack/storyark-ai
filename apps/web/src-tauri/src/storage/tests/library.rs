@@ -60,6 +60,7 @@ fn ownership_missing_records_and_locks_have_distinct_results() {
         .create_book(CreateBook {
             title: "Other".into(),
             author: "".into(),
+            cover_color: "".into(),
         })
         .unwrap();
     let mut wrong = input.clone();

@@ -7,13 +7,19 @@ use serde_json::{json, Value};
 use uuid::Uuid;
 
 impl Database {
-    pub fn list_characters(&self, book_id: &str) -> Result<Value> {
+    pub fn list_characters(&mut self, book_id: &str) -> Result<Value> {
         valid_id(book_id)?;
-        Ok(Value::Array(rows(
-            &self.connection,
+        let tx = self.connection.transaction()?;
+        // Missing books are NOT_FOUND here too, matching every other read:
+        // a deleted book must not expose an empty character list.
+        record(&tx, "books", book_id)?;
+        let result = Value::Array(rows(
+            &tx,
             "SELECT * FROM characters WHERE book_id=? ORDER BY position,id",
             &[&book_id],
-        )?))
+        )?);
+        tx.commit()?;
+        Ok(result)
     }
     pub fn create_character(&mut self, input: CreateCharacter) -> Result<Value> {
         valid_id(&input.character.book_id)?;

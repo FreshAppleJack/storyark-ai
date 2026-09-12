@@ -1,6 +1,6 @@
 use crate::storage::{
     ArchiveCharacter, CreateBook, CreateChapter, CreateCharacter, CreateVolume, Delete, Rename,
-    Reorder, SaveChapter, SetReadOnly, Storage, StorageError, UpdateCharacter,
+    Reorder, SaveChapter, SetReadOnly, Storage, StorageError, UpdateBook, UpdateCharacter,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -61,6 +61,13 @@ pub async fn local_save_chapter(
 #[tauri::command]
 pub async fn local_rename(storage: tauri::State<'_, Storage>, input: Rename) -> Result<Reply, ()> {
     Ok(storage.run(move |db| db.rename(input)).await.into())
+}
+#[tauri::command]
+pub async fn local_update_book(
+    storage: tauri::State<'_, Storage>,
+    input: UpdateBook,
+) -> Result<Reply, ()> {
+    Ok(storage.run(move |db| db.update_book(input)).await.into())
 }
 #[tauri::command]
 pub async fn local_set_read_only(

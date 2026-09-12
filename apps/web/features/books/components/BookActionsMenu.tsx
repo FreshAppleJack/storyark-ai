@@ -58,7 +58,7 @@ export function BookActionsMenu({ contextMenu, showDeleteModal, setShowDeleteMod
                     <p className="text-slate-600 dark:text-slate-300 mb-6 text-sm leading-relaxed">
                         Are you sure you want to delete this book?
                         <br />
-                        <span className="font-semibold text-rose-600">This action cannot be undone</span> and all volumes and chapters will be permanently lost.
+                        <span className="font-semibold text-rose-600">This action cannot be undone</span> and all volumes, chapters, characters, the relationship map, story planning and the brainstorm workspace will be permanently lost.
                     </p>
 
                     <div className="flex justify-end gap-3">

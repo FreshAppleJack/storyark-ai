@@ -8,7 +8,7 @@
   "permissions": [
     "allow-local-list-books", "allow-local-read-book", "allow-local-create-book",
     "allow-local-create-volume", "allow-local-create-chapter", "allow-local-save-chapter",
-    "allow-local-rename", "allow-local-set-read-only", "allow-local-reorder", "allow-local-delete",
+    "allow-local-rename", "allow-local-update-book", "allow-local-set-read-only", "allow-local-reorder", "allow-local-delete",
     "allow-local-list-characters", "allow-local-create-character", "allow-local-update-character",
     "allow-local-archive-character", "allow-local-backup",
     "allow-local-read-graph", "allow-local-initialize-graph", "allow-local-save-graph",

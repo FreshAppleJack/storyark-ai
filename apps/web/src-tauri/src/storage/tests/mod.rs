@@ -42,6 +42,7 @@ fn fixture(db: &mut Database) -> SaveChapter {
         .create_book(CreateBook {
             title: "Book".into(),
             author: "Writer".into(),
+            cover_color: "bg-blue-600".into(),
         })
         .unwrap();
     let book_id = book["id"].as_str().unwrap().to_string();

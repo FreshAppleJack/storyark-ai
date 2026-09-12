@@ -6,6 +6,16 @@ use serde_json::Value;
 pub struct CreateBook {
     pub title: String,
     pub author: String,
+    pub cover_color: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UpdateBook {
+    pub book_id: String,
+    pub expected_database_version: i64,
+    pub title: Option<String>,
+    pub status: Option<String>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

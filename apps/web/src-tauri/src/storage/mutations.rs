@@ -1,12 +1,49 @@
 use super::records::{bump, record, rows};
-use super::requests::{Delete, Rename, Reorder, SetReadOnly, Target};
+use super::requests::{Delete, Rename, Reorder, SetReadOnly, Target, UpdateBook};
 use super::targets::{locate, unlocked_ancestors};
-use super::validation::{expected, invalid, now, title, unlocked};
+use super::validation::{expected, invalid, now, title, unlocked, valid_id};
 use super::{Database, Result, StorageError};
 use rusqlite::{params, TransactionBehavior};
 use serde_json::{json, Value};
 
 impl Database {
+    // Bookshelf management: title and/or lifecycle status in one version-checked
+    // write. At least one field is required; author stays creation-time only.
+    pub fn update_book(&mut self, input: UpdateBook) -> Result<Value> {
+        valid_id(&input.book_id)?;
+        if let Some(new_title) = &input.title {
+            title(new_title)?;
+        }
+        if let Some(status) = &input.status {
+            if !matches!(status.as_str(), "serializing" | "completed") {
+                return Err(invalid());
+            }
+        }
+        if input.title.is_none() && input.status.is_none() {
+            return Err(invalid());
+        }
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let book = record(&tx, "books", &input.book_id)?;
+        unlocked(&book)?;
+        expected(&book, input.expected_database_version)?;
+        let next_title = input
+            .title
+            .as_deref()
+            .unwrap_or_else(|| book["title"].as_str().unwrap());
+        let next_status = input
+            .status
+            .as_deref()
+            .unwrap_or_else(|| book["status"].as_str().unwrap());
+        let changed = tx.execute("UPDATE books SET title=?,status=?,database_version=database_version+1,updated_at=max(updated_at,?) WHERE id=? AND database_version=?", params![next_title, next_status, now()?, input.book_id, input.expected_database_version])?;
+        if changed != 1 {
+            return Err(StorageError::new("VERSION_CONFLICT", "Book changed"));
+        }
+        let result = record(&tx, "books", &input.book_id)?;
+        tx.commit()?;
+        Ok(result)
+    }
     pub fn rename(&mut self, input: Rename) -> Result<Value> {
         title(&input.title)?;
         let tx = self

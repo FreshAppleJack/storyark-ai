@@ -23,6 +23,7 @@ export interface LocalRecord {
 export interface LocalBook extends LocalRecord {
     author: string;
     status: 'serializing' | 'completed';
+    coverColor: string;
 }
 export interface LocalVolume extends LocalRecord {
     bookId: UUID;
@@ -83,12 +84,12 @@ export type StorageResult<T> =
 export interface LocalStorageCommands {
     listBooks(): Promise<StorageResult<LocalBook[]>>;
     readBook(input: { bookId: UUID }): Promise<StorageResult<{ book: LocalBook; volumes: LocalVolume[]; chapters: LocalChapter[] }>>;
-    createBook(input: { title: string; author: string }): Promise<StorageResult<LocalBook>>;
+    createBook(input: { title: string; author: string; coverColor: string }): Promise<StorageResult<LocalBook>>;
     createVolume(input: { bookId: UUID; title: string; expectedBookVersion: DatabaseVersion }): Promise<StorageResult<{ volume: LocalVolume; book: LocalBook }>>;
     createChapter(input: { bookId: UUID; volumeId: UUID; title: string; expectedVolumeVersion: DatabaseVersion }): Promise<StorageResult<{ chapter: LocalChapter; volume: LocalVolume }>>;
     saveChapter(input: SaveChapterRequest): Promise<StorageResult<{ chapter: LocalChapter; sessionKey: string; revision: number }>>;
     rename(input: ExpectedTarget & { title: string }): Promise<StorageResult<LocalRecord>>;
-    setStatus(input: ExpectedTarget & { status: 'serializing' | 'completed' | 'draft' | 'published' }): Promise<StorageResult<LocalRecord>>;
+    updateBook(input: { bookId: UUID; expectedDatabaseVersion: DatabaseVersion; title?: string; status?: 'serializing' | 'completed' }): Promise<StorageResult<LocalBook>>;
     setReadOnly(input: ExpectedTarget & { isReadOnly: boolean }): Promise<StorageResult<LocalRecord>>;
     reorder(input: {
         parent: null | ExpectedTarget;
