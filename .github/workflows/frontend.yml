@@ -33,5 +33,7 @@ jobs:
       - run: npm ci
       - run: npm run lint -- --max-warnings 0
       - run: npm test
+      - name: SQLite schema contract
+        run: node --test scripts/local-storage-schema.test.mjs
       - name: Typecheck and production build
         run: npm run build

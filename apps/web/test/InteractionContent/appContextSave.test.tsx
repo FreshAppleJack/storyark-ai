@@ -124,7 +124,8 @@ describe('AppContext updateChapterContent', () => {
         });
         expect(api.put).toHaveBeenCalledTimes(2);
         expect(api.put).toHaveBeenLastCalledWith('/story/chapters/3?bookId=1', expect.objectContaining({ title: 'Second rename', content: 'body 2' }));
-        expect(result.current.getBook('1')?.volumes[0].chapters[0].title).toBe('Second rename');
+        // Query observers notify asynchronously after the write promise settles.
+        await waitFor(() => expect(result.current.getBook('1')?.volumes[0].chapters[0].title).toBe('Second rename'));
     });
 
     it('returns true and applies the optimistic update when the PUT succeeds', async () => {

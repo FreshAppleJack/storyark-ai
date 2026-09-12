@@ -63,10 +63,11 @@ No Tauri JavaScript API package is needed until the UI calls native commands.
 
 ## Scope and existing backend
 
-This is a window/container integration, not local persistence. The current
-login page and authentication routes are preserved. Books and AI still use
-the existing HTTP services; SQLite, an anonymous bookshelf, and native
-save-on-close handling have not been implemented.
+The desktop now initializes local SQLite and exposes create/read/save/backup
+commands, documented in [local-storage.md](local-storage.md). The current login
+page and authentication routes are preserved. Books and AI in the UI still use
+the existing HTTP services; an anonymous bookshelf and native save-on-close
+handling have not been implemented. Native storage is tested independently.
 
 In development, Vite's existing `/api` proxy still applies. In an embedded
 production build there is no Vite proxy: `/api` is not the Spring backend.
@@ -76,9 +77,10 @@ an explicit build-time API base URL and matching backend CORS/authentication;
 this stage does not change that contract or launch Java automatically.
 
 The generated CSP remains unset for compatibility with the existing UI,
-including its remote Google Fonts stylesheet. No native commands, plugins,
-or IPC permissions are exposed. Define the asset/network policy when native
-data access and model connections are introduced. Remote fonts use system
+including its remote Google Fonts stylesheet. Only the seven local storage
+commands are granted to the local main window; no arbitrary SQL, filesystem or
+remote-origin permissions are exposed. Define the final asset/network policy
+before connecting the local UI and model providers. Remote fonts use system
 fallbacks when unavailable; full offline asset packaging is a later task.
 
 The app identifier is `io.github.freshapplejack.storyark`. Treat it as stable

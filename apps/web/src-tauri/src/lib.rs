@@ -1,6 +1,30 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    with_storage_commands(tauri::Builder::default())
+        .setup(|app| {
+            let directory = app.path().app_data_dir()?;
+            // Initialize on a worker before showing a usable application.
+            let storage = std::thread::spawn(move || storage::Storage::open(&directory))
+                .join()
+                .map_err(|_| std::io::Error::other("Storage initialization worker failed"))??;
+            app.manage(storage);
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running StoryArk");
 }
+
+fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    builder.invoke_handler(tauri::generate_handler![
+        commands::local_list_books,
+        commands::local_read_book,
+        commands::local_create_book,
+        commands::local_create_volume,
+        commands::local_create_chapter,
+        commands::local_save_chapter,
+        commands::local_backup,
+    ])
+}
+mod commands;
+mod storage;
+use tauri::Manager;

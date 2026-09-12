@@ -1,9 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "React-only desktop shell; no native IPC permissions are needed yet.",
+  "description": "Local library commands for the main application window only.",
   "windows": [
     "main"
   ],
-  "permissions": []
+  "permissions": [
+    "allow-local-list-books", "allow-local-read-book", "allow-local-create-book",
+    "allow-local-create-volume", "allow-local-create-chapter", "allow-local-save-chapter",
+    "allow-local-backup"
+  ]
 }

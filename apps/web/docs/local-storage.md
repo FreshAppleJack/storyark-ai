@@ -2,9 +2,9 @@
 
 Work unit 2, 2026-09-12. Deliverables: `data/local/contracts.ts` and
 `src-tauri/migrations/0001_library.sql`. These are a specification and executable
-schema, not registered Tauri commands. The application still uses its existing
-data provider. Connection management, Rust command implementations, migrations at
-startup, and UI integration belong to subsequent work units.
+schema. Work unit 3 now implements connection management, startup migration, and
+the seven commands listed below. The application UI still uses its existing data
+provider; UI integration and the remaining mutation commands are follow-up work.
 
 ## Identity and schema
 
@@ -136,13 +136,14 @@ version or clear its dirty state. Reuse the existing autosave session guards.
 
 ## Migration runner handoff and verification
 
-Unit 3 will use rusqlite with bundled SQLite, one owned connection, foreign_keys
+Unit 3 uses rusqlite with bundled SQLite, one owned connection, foreign_keys
 enabled on every connection, and the platform app-data directory. Before SQL,
 reject a user_version newer than supported and unexpected pre-existing tables in
 a version-0 database. In a write transaction recheck version, execute 0001, set
 user_version to 1, then commit. Already-version-1 databases skip 0001. Any failure
 rolls back schema and version; never drop/recreate to recover. No production
-database is opened by this work unit. Before later upgrades, use a consistent
+database is opened by the contract-only schema test. Application startup now opens
+the app-data database. Before later upgrades, use a consistent
 SQLite backup mechanism, not copying a live main file alone.
 
 Run the migration contract checks with Node 24 (built-in SQLite; test-only):
@@ -152,6 +153,79 @@ node --test scripts/local-storage-schema.test.mjs
 npm.cmd run typecheck
 ```
 
-These tests exercise real SQLite SQL, not Rust command behavior. Unit 3 must
-repeat on bundled rusqlite and add disk reopen, command validation, lock handling,
-conflict error mapping and lossless-content fixtures before exposing IPC.
+These Node tests exercise real SQLite SQL, not Rust command behavior. See the
+Rust tests below for bundled SQLite, disk reopen, command validation and IPC.
+
+## Work unit 3 implementation
+
+`src-tauri/src/storage` owns a rusqlite 0.32.1 bundled connection behind a mutex.
+Each command runs its synchronous work on `spawn_blocking`; the mutex serializes
+access within the process. `BEGIN IMMEDIATE`, a five-second busy timeout and
+expected database versions also protect against a second process. This does not
+provide live multi-window synchronization or merge conflicting drafts.
+
+Startup initializes on a worker before application startup completes. Initialization
+failure aborts startup with a storage error; it never deletes the database. The
+normal application path comes only from Tauri `app_data_dir()`:
+
+```text
+<app_data_dir>/storyark.sqlite3
+<app_data_dir>/backups/storyark-<time>-<uuid>.sqlite3
+```
+
+On Windows the app data directory is normally
+`%APPDATA%/io.github.freshapplejack.storyark`. Tests instead create isolated UUID
+directories under the OS temp directory. WAL plus synchronous FULL are enabled;
+the WAL/SHM files are managed by SQLite and must not be deleted as a reset strategy.
+
+Registered IPC commands (only the local `main` window has permission):
+
+| Command | Arguments |
+| --- | --- |
+| local_list_books | none |
+| local_read_book | `{ bookId }` |
+| local_create_book | `{ input: { title, author } }` |
+| local_create_volume | `{ input: { bookId, title, expectedBookVersion } }` |
+| local_create_chapter | `{ input: { bookId, volumeId, title, expectedVolumeVersion } }` |
+| local_save_chapter | `{ input: SaveChapterRequest }` |
+| local_backup | none; returns `{ fileName }` inside the success envelope |
+
+Business results use `{ ok, value/error }` from the contract. Malformed IPC
+payloads rejected by serde and capability denials are transport rejections; the
+future frontend adapter must catch them without marking drafts saved. UI remains
+unconnected, so no current bookshelf action claims SQLite persistence. Rename,
+status, locking, reorder and delete remain specified but unregistered; subsequent
+units will implement them before exposing local UI actions.
+
+Current saves accept a conservative v1 node/mark/attribute subset matching the
+existing editor and store the submitted string unchanged. Unknown fields, invalid
+trees, HTML, or incompatible stored content block overwrites. Legacy conversion
+is still disabled. This validates structure and preservation at the database
+boundary, not a browser editor round-trip for every historical extension. Full
+editor compatibility fixtures are required when wiring the UI. No legacy records
+or users are automatically migrated from the server.
+
+`local_backup` uses the SQLite online backup API while holding the connection
+owner. It includes committed WAL data, validates the destination, and renames a
+unique `.partial` file only on success. Callers cannot supply paths. A backup is a
+consistent database snapshot, not a JSON export. Retention and a restore UI are
+not implemented. Before future schema upgrades, create a verified backup with this
+mechanism; version 1 has no upgrade from an existing supported schema yet. Never
+restore over a running database: stop all instances and validate the backup in a
+separate directory first. Tests demonstrate that separate-directory restore.
+
+```powershell
+cd apps/web/src-tauri
+cargo test --locked
+cargo fmt --check
+```
+
+Ten Rust tests cover rich-content disk reopen, stale writes across connections,
+ownership/locks/not-found errors, injected save and parent-update failures,
+unrecognized content, migration rollback, refusal of newer/corrupt/unversioned
+databases, consistent backup restore, serialized workers, and Tauri IPC with the
+actual handler registration and capabilities. The IPC test uses Tauri's mock window
+runtime with real on-disk SQLite, not a visual WebView or in-memory repository.
+Windows CI runs these independently of frontend CI. Windows test executables need
+the Common Controls v6 manifest, following the
+[Tauri example](https://github.com/tauri-apps/tauri/blob/dev/examples/api/src-tauri/build.rs).
