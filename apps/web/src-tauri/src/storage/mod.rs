@@ -1,6 +1,7 @@
 //! Local storage facade. Business modules share one connection owner and keep
 //! their transaction boundaries inside each Database operation.
 mod backup;
+mod brainstorm;
 mod characters;
 mod content;
 mod database;
@@ -14,6 +15,7 @@ mod mutations;
 mod planning;
 mod planning_cleanup;
 mod planning_validation;
+mod preferences;
 mod records;
 mod requests;
 mod targets;
@@ -21,10 +23,12 @@ mod targets;
 mod tests;
 mod validation;
 
+pub use brainstorm::SaveBrainstorm;
 pub use error::{Result, StorageError};
 pub use foreshadowing::UpdateNote;
 pub use graph_types::SaveGraph;
 pub use planning::SavePlanning;
+pub use preferences::SavePreferences;
 pub use requests::*;
 
 use rusqlite::Connection;

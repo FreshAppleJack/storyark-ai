@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
 mod backup;
+mod brainstorm;
 mod characters;
 mod graph;
 mod ipc;
@@ -12,6 +13,7 @@ mod library;
 mod migrations;
 mod mutations;
 mod planning;
+mod preferences;
 mod worker;
 
 struct TempDirectory(PathBuf);

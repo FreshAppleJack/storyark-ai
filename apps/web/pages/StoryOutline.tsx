@@ -55,7 +55,7 @@ function StoryOutlineContent({ bookId, localBook, persistence }: { bookId: strin
                     <Button onClick={handleSave} disabled={isSaving || isLoading || loadError} icon={isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}>
                         {isSaving ? 'Saving...' : 'Save Planning'}
                     </Button>
-                    <Button variant="secondary" disabled={!!persistence} title={persistence ? 'Model integration is not available yet' : undefined} onClick={openAiBrainstorm} icon={<BrainCircuit size={16} />}>
+                    <Button variant="secondary" onClick={openAiBrainstorm} icon={<BrainCircuit size={16} />}>
                         AI Brainstorm
                     </Button>
                 </div>

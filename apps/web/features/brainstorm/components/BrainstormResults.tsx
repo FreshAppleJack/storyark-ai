@@ -2,8 +2,8 @@ import React from 'react';
 import { BrainCircuit, CheckCircle2, Loader2, Sparkles, Wand2 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import type { BrainstormEditor } from '../hooks/useBrainstormWorkspace';
-type Props = Pick<BrainstormEditor, 'isGenerating' | 'isSaving' | 'handleGenerate' | 'selectedChapterIds' | 'missingSummaryChapters' | 'errorMessage' | 'visibleOptions' | 'workspace' | 'chooseOption' | 'showAllOptions' | 'updateFinalContent'>;
-export function BrainstormResults({ isGenerating, isSaving, handleGenerate, selectedChapterIds, missingSummaryChapters, errorMessage, visibleOptions, workspace, chooseOption, showAllOptions, updateFinalContent }: Props) {
+type Props = Pick<BrainstormEditor, 'isGenerating' | 'isSaving' | 'handleGenerate' | 'generationAvailable' | 'selectedChapterIds' | 'missingSummaryChapters' | 'isSnapshotStale' | 'errorMessage' | 'visibleOptions' | 'workspace' | 'chooseOption' | 'showAllOptions' | 'updateFinalContent'>;
+export function BrainstormResults({ isGenerating, isSaving, handleGenerate, generationAvailable, selectedChapterIds, missingSummaryChapters, isSnapshotStale, errorMessage, visibleOptions, workspace, chooseOption, showAllOptions, updateFinalContent }: Props) {
     return (
         <main className="min-h-0 overflow-y-auto p-6">
             <div className="mx-auto max-w-4xl space-y-5">
@@ -19,11 +19,22 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, sele
                                 Generate options from the story outline, background, selected chapter summaries, appearing characters, and relationships.
                             </p>
                         </div>
-                        <Button onClick={handleGenerate} disabled={isGenerating || isSaving || selectedChapterIds.length === 0} icon={isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}>
+                        <Button onClick={handleGenerate} disabled={!generationAvailable || isGenerating || isSaving || selectedChapterIds.length === 0}
+                            title={generationAvailable ? undefined : 'Model integration is not available yet'} icon={isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}>
                             {isGenerating ? 'Generating...' : 'AI Brainstorm'}
                         </Button>
                     </div>
 
+                    {!generationAvailable && (
+                        <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
+                            AI generation is not connected yet. You can still select chapters, review the context, write the final content by hand, and keep previously saved options.
+                        </div>
+                    )}
+                    {isSnapshotStale && (
+                        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
+                            The saved context snapshot was built from older chapter or summary versions. Save again to refresh it.
+                        </div>
+                    )}
                     {missingSummaryChapters.length > 0 && (
                         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
                             Some selected chapters do not have plot summaries yet. Add chapter summaries first, otherwise the brainstorm may be less relevant.
@@ -80,11 +91,13 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, sele
                     </div>
                 )}
 
-                {workspace.selectedOptionId && (
+                {(workspace.selectedOptionId || !generationAvailable) && (
                     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white">Editable Result</h3>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                            This is the selected direction. Edit it freely, then save it as the working brainstorm result.
+                            {workspace.selectedOptionId
+                                ? 'This is the selected direction. Edit it freely, then save it as the working brainstorm result.'
+                                : 'Write the final content by hand, then save it as the working brainstorm result.'}
                         </p>
                         <textarea
                             value={workspace.finalContent}

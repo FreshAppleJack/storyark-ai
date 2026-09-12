@@ -1,20 +1,19 @@
 import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Info, Moon, Sun } from 'lucide-react';
-import { useSession } from '../InteractionContent/SessionContext';
 import { usePreferences } from '../InteractionContent/PreferencesContext';
 import { SettingShell, ToggleControl } from '../features/settings/components/SettingControls';
-import { ProfileSettings } from '../features/settings/components/ProfileSettings';
 import { WritingPreferences } from '../features/settings/components/WritingPreferences';
 import { Button } from '../components/ui/Button';
 
+// Local mode: account/profile settings stay unmounted (no login, no account
+// page); appearance and writing preferences persist to local SQLite.
 const UserSettings: React.FC = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const returnTo = typeof location.state?.returnTo === 'string' && location.state.returnTo.startsWith('/')
         ? location.state.returnTo
         : '/dashboard';
-    const { user } = useSession();
     const { isDarkMode, toggleDarkMode } = usePreferences();
     return (
         <div className="min-h-screen bg-slate-50 text-slate-900 transition-colors duration-300 dark:bg-slate-950 dark:text-slate-100">
@@ -89,7 +88,7 @@ const UserSettings: React.FC = () => {
                         </div>
                     </SettingShell>
 
-                    <WritingPreferences><ProfileSettings key={user?.id} /></WritingPreferences>
+                    <WritingPreferences />
                 </div>
 
                 <div className="flex justify-end">

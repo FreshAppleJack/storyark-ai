@@ -1,5 +1,4 @@
 import type { Book, Chapter, Character, StoryPlanning, BrainstormOption } from '../../types';
-import type { GraphData } from '../../data/dto';
 import { extractContentSignals } from '../../domain/chapterContent';
 import { escapeRegex, getCharacterMatchTerms } from '../../domain/characters';
 export interface BrainstormRelationship { source: string; target: string; label: string }
@@ -9,6 +8,7 @@ export interface ChapterOption {
     volumeTitle: string;
     summary: string;
     content: string;
+    databaseVersion?: number;
 }
 
 export const getMentionedCharacterIds = (
@@ -48,10 +48,17 @@ export function getBrainstormChapters(book: Book | undefined, planning: StoryPla
             volumeTitle: volume.title,
             summary: summaryMap.get(chapter.id) || '',
             content: chapter.content || '',
+            databaseVersion: chapter.databaseVersion,
         }))
     ));
 }
-export const buildRelationships = (graphData: GraphData | null, characters: Character[]) => {
+// Minimal structural shape so both the legacy API DTO and the local graph
+// snapshot can feed the panel without mapping.
+interface BrainstormGraphSource {
+    nodes?: Array<{ id?: unknown; nodeKey?: unknown; characterId?: unknown }>;
+    edges?: Array<{ sourceNodeKey?: unknown; targetNodeKey?: unknown; label?: unknown }>;
+}
+export const buildRelationships = (graphData: BrainstormGraphSource | null, characters: Character[]) => {
     const characterByNodeKey = new Map<string, string>();
     const validCharacterIds = new Set(characters.map(character => character.id));
 
@@ -70,12 +77,33 @@ export const buildRelationships = (graphData: GraphData | null, characters: Char
             return {
                 source: characterByNodeKey.get(sourceKey) || sourceKey,
                 target: characterByNodeKey.get(targetKey) || targetKey,
-                label: edge.label || '',
+                label: typeof edge.label === 'string' ? edge.label : '',
             };
         })
         .filter((edge: { source: string; target: string }) => edge.source && edge.target);
 };
 
+
+/**
+ * A saved snapshot is historical: it goes stale when a referenced chapter
+ * advanced (its recorded databaseVersion is behind, or was never recorded)
+ * or when the chapter summary text no longer matches current planning. Live
+ * selections are separate from this snapshot and never marked stale.
+ */
+export function isContextSnapshotStale(snapshot: Record<string, unknown>, chapterOptions: ChapterOption[]): boolean {
+    const saved = snapshot.selectedChapters;
+    if (!Array.isArray(saved) || saved.length === 0) return false;
+    const current = new Map(chapterOptions.map(option => [option.id, option]));
+    return saved.some(entry => {
+        if (!entry || typeof entry !== 'object') return true;
+        const { id, databaseVersion, summary } = entry as { id?: unknown; databaseVersion?: unknown; summary?: unknown };
+        if (typeof id !== 'string') return true;
+        const chapter = current.get(id);
+        if (!chapter) return false; // Deleted chapters are reported elsewhere.
+        if (typeof databaseVersion !== 'number' || chapter.databaseVersion === undefined || databaseVersion !== chapter.databaseVersion) return true;
+        return typeof summary === 'string' && summary !== chapter.summary;
+    });
+}
 
 export function buildContextSnapshot(book: Book, planning: StoryPlanning, selectedChapters: ChapterOption[],
     mentionedCharacters: Character[], relationships: BrainstormRelationship[]) {
@@ -95,6 +123,7 @@ export function buildContextSnapshot(book: Book, planning: StoryPlanning, select
             title: chapter.title,
             volumeTitle: chapter.volumeTitle,
             summary: chapter.summary,
+            databaseVersion: chapter.databaseVersion,
         })),
         missingSummaryChapterTitles: missingSummaryChapters.map(chapter => chapter.title),
         appearingCharacters: mentionedCharacters.map(character => ({

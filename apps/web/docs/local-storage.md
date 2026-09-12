@@ -402,8 +402,8 @@ unavailable in the local UI — the app is NOT fully local yet:
 | Relationship graph | Disabled | `GraphController` nodes/edges; `nodeKey` instance IDs vs `characterId` |
 | Foreshadowing board (cross-chapter) | Local SQLite aggregation and versioned note patches (weeks 11–12 unit 4) | No legacy calls |
 | Story planning / plot settings | Local SQLite aggregate, guarded drafts and source versions (weeks 11–12 unit 4) | No legacy calls |
-| Preferences remote sync | Local localStorage only; no HTTP without a user | `UserSettingsController` |
-| AI brainstorm | Explicitly disabled | `AiBrainstormController` |
+| Preferences remote sync | Local SQLite single row (weeks 11–12 unit 5); localStorage is only a launch cache | No legacy calls |
+| AI brainstorm workspace | Local SQLite aggregate with guarded drafts (weeks 11–12 unit 5); generation stays disabled | No legacy calls |
 | AI continue | Explicitly disabled | `AiController` |
 | DOCX/PDF export | Works locally (pure frontend, input is the local chapter) | none |
 | Style library | Works locally (localStorage) | none |

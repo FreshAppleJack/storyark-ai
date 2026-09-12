@@ -1,10 +1,10 @@
 # Local work content contract (weeks 11–12)
 
-> Status: contract defined and schema migrated (unit 1); characters (unit 2)
-> the relationship graph (unit 3), and foreshadowing/planning (unit 4) are fully local. Remaining handlers
-> land in their follow-up units (
-> preferences/brainstorm). This document is the field-level source of truth;
-> `local-storage.md` covers the weeks 9–10 foundation.
+> Status: contract defined and schema migrated (unit 1); characters (unit 2),
+> the relationship graph (unit 3), foreshadowing/planning (unit 4) and
+> preferences/brainstorm (unit 5) are fully local. This document is the
+> field-level source of truth; `local-storage.md` covers the weeks 9–10
+> foundation.
 
 Scope: characters, the relationship graph, cross-chapter foreshadowing,
 story planning, application preferences and the brainstorm workspace become
@@ -282,3 +282,58 @@ chapter summary source version and plot links persisted. An injected SQLite
 failure retained the visible draft and blocked route departure; retry worked.
 Closing the native window with an unsaved planning field flushed it, and a new
 process recovered all fields. No production user database was used.
+
+## Unit 5 implementation: application preferences and the brainstorm workspace
+
+`local_read_preferences` returns null only when the single row was never
+initialized; that alone authorizes the one-time import. The import reads this
+origin's four known localStorage keys, validates each through the existing
+normalizers, and commits the write expecting version 0 — a row created
+meanwhile makes the import fail with a conflict, and the importer adopts the
+stored row instead of overwriting it. Unreadable entries fall back to
+defaults with a one-time notice, and their raw localStorage values survive
+(launch-cache writes skip preserved keys until the user replaces them through
+the UI). The style library stays in localStorage as before and is not covered
+by SQLite backups; secrets never enter the preferences table, and whole-book
+JSON will not include application preferences.
+
+SQLite is the persistence authority on desktop; `storyark_dark_mode` and the
+other keys remain only a launch cache against theme flicker. While the row is
+loading nothing writes back (no default can race ahead — cache effects skip
+their first run), and a change made during loading wins over the arriving row
+and is persisted. Every UI change applies instantly as a visual preview and
+is serialized through a save queue with the optimistic version; failures are
+announced, never shown as saved, and leave the visible choice for retry.
+Preferences are unaffected by book locks. The settings page is back at
+`/settings` without login/register/account sections.
+
+The brainstorm workspace splits the local repository from any future
+generation provider. `local_read_brainstorm` returns the empty aggregate with
+version 0 only when the row genuinely does not exist; `local_save_brainstorm`
+takes the whole workspace with sessionKey/revision acknowledgement and
+validates live selected chapter IDs against the book in-transaction.
+Generation is explicitly unavailable: both generate buttons are disabled with
+an honest note, and no legacy AI endpoint is touched. Chapter selection,
+context review, handwritten final content and previously saved options all
+work. The editable result area is always present so final content can be
+written by hand. The context snapshot is rebuilt at every save with chapter
+source versions, and a later chapter edit or summary drift surfaces a
+conservative stale hint. Draft saves drain edits made while a commit was
+pending; route departure and native close wait for the flush; a failed read
+can never be overwritten by an empty workspace. Saving the workspace never
+writes into chapter content.
+
+### Verification record (2026-09-12, unit 5)
+
+Frontend: 281 tests (+12), typecheck, zero-warning lint and production build
+pass. Rust: 37 tests (+8) covering NULL-field round-trips, stale-importer and
+version conflicts, invalid ranges, lock immunity for preferences and lock
+enforcement plus book-delete cascade for the workspace, and IPC registration;
+Clippy and `cargo fmt --check` clean. Secret scan clean. Real Windows desktop
+CDP smoke: first launch imported localStorage preferences into version 1;
+theme toggle persisted (version 2) with the launch cache updated; a real
+restart restored settings without re-importing. The brainstorm workspace
+opened from the outline with generation disabled, accepted a chapter
+selection and handwritten final content, saved and recovered after restart;
+the snapshot carried the chapter source version and a later chapter edit
+surfaced the stale hint.

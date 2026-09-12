@@ -42,10 +42,16 @@ fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri
         graph_commands::local_read_graph,
         graph_commands::local_initialize_graph,
         graph_commands::local_save_graph,
+        preferences_commands::local_read_preferences,
+        preferences_commands::local_save_preferences,
+        brainstorm_commands::local_read_brainstorm,
+        brainstorm_commands::local_save_brainstorm,
     ])
 }
+mod brainstorm_commands;
 mod commands;
 mod graph_commands;
 mod planning_commands;
+mod preferences_commands;
 mod storage;
 use tauri::Manager;

@@ -82,15 +82,15 @@ const Dashboard: React.FC = () => {
                 <div className="flex items-center gap-4">
                     {isLocal ? <span className="text-sm text-slate-500">Local workspace · No account required</span> : <>
                     <span className="text-sm text-slate-600 dark:text-slate-300">Welcome, <strong>{user?.username}</strong></span>
+                    </>}
                     <Link to="/settings">
                         <Button variant="ghost" size="sm" icon={<Settings size={14} />}>
                             Settings
                         </Button>
                     </Link>
-                    <Button variant="secondary" size="sm" onClick={handleLogout} icon={<LogOut size={14} />}>
+                    {!isLocal && <Button variant="secondary" size="sm" onClick={handleLogout} icon={<LogOut size={14} />}>
                         Logout
-                    </Button>
-                    </>}
+                    </Button>}
                 </div>
             </nav>
 

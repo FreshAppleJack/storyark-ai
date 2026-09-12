@@ -36,6 +36,10 @@ fn main() {
             "local_read_graph",
             "local_initialize_graph",
             "local_save_graph",
+            "local_read_preferences",
+            "local_save_preferences",
+            "local_read_brainstorm",
+            "local_save_brainstorm",
         ])),
     )
     .expect("Failed to build the application permission manifest")
