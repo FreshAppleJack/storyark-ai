@@ -24,6 +24,7 @@ export function WritingPreferences({ children }: { children?: React.ReactNode })
                     valueLabel={`${editorSpacingSettings.editorMarginPx}px`}
                     minLabel={`${EDITOR_SPACING_LIMITS.marginPx.min}px`}
                     maxLabel={`${EDITOR_SPACING_LIMITS.marginPx.max}px`}
+                    defaultValue={EDITOR_SPACING_LIMITS.marginPx.default}
                     value={editorSpacingSettings.editorMarginPx}
                     min={EDITOR_SPACING_LIMITS.marginPx.min}
                     max={EDITOR_SPACING_LIMITS.marginPx.max}
@@ -35,6 +36,7 @@ export function WritingPreferences({ children }: { children?: React.ReactNode })
                     valueLabel={`${editorSpacingSettings.editorLineHeight.toFixed(2)}x`}
                     minLabel={`${EDITOR_SPACING_LIMITS.lineHeight.min.toFixed(2)}x`}
                     maxLabel={`${EDITOR_SPACING_LIMITS.lineHeight.max.toFixed(2)}x`}
+                    defaultValue={EDITOR_SPACING_LIMITS.lineHeight.default}
                     value={editorSpacingSettings.editorLineHeight}
                     min={EDITOR_SPACING_LIMITS.lineHeight.min}
                     max={EDITOR_SPACING_LIMITS.lineHeight.max}
@@ -59,7 +61,7 @@ export function WritingPreferences({ children }: { children?: React.ReactNode })
         </SettingShell>
         <SettingShell
             title="AI Continue"
-            description="Tune only the AI continuation behavior: how much recent text is used as context, and roughly how long the generated continuation should be. The middle position matches the original hardcoded behavior."
+            description="Tune how much recent text is used as context and roughly how long the generated continuation should be. The Default marker shows the original hardcoded behavior."
             icon={<Sparkles size={22} />}
         >
             <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
@@ -68,6 +70,7 @@ export function WritingPreferences({ children }: { children?: React.ReactNode })
                     valueLabel={`${aiContinueSettings.contextChars} chars`}
                     minLabel={`${AI_CONTINUE_LIMITS.contextChars.min}`}
                     maxLabel={`${AI_CONTINUE_LIMITS.contextChars.max}`}
+                    defaultValue={AI_CONTINUE_LIMITS.contextChars.default}
                     value={aiContinueSettings.contextChars}
                     min={AI_CONTINUE_LIMITS.contextChars.min}
                     max={AI_CONTINUE_LIMITS.contextChars.max}
@@ -79,6 +82,7 @@ export function WritingPreferences({ children }: { children?: React.ReactNode })
                     valueLabel={`~${aiContinueSettings.outputChars} chars`}
                     minLabel={`~${AI_CONTINUE_LIMITS.outputChars.min}`}
                     maxLabel={`~${AI_CONTINUE_LIMITS.outputChars.max}`}
+                    defaultValue={AI_CONTINUE_LIMITS.outputChars.default}
                     value={aiContinueSettings.outputChars}
                     min={AI_CONTINUE_LIMITS.outputChars.min}
                     max={AI_CONTINUE_LIMITS.outputChars.max}

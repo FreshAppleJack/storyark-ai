@@ -17,7 +17,7 @@ export interface ContextSnapshot extends ContextInput {
 export interface GenerationRequest {
     requestId: string; bookId: string; sessionId: string; draftRevision: number;
     config: { id: string; expectedConfigVersion: number };
-    target: GenerationTarget; contextSnapshotId: string;
+    target: GenerationTarget; contextSnapshotId: string; outputChars: number;
 }
 export type GenerationPayload =
     | { kind: 'started' }

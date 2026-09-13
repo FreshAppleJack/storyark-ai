@@ -216,7 +216,9 @@ manuscript prose after the draft, matching its language, voice, tense,
 viewpoint, formatting and established facts. Reviews, critiques, summaries,
 corrections, labels and other meta-commentary are explicitly excluded from the
 continuation output. The draft is delimited as input context and is never
-treated as generated text.
+treated as generated text. The author-facing output character target is
+captured with the generation request and added to this prompt; provider token
+limits remain a technical safety cap rather than the writing-length control.
 
 Adoption rechecks the chapter/session/revision, lock, editor selection and
 document size. A changed source preserves the candidate and requires

@@ -39,13 +39,18 @@ export const RangeControl: React.FC<{
     valueLabel: string;
     minLabel: string;
     maxLabel: string;
+    defaultValue: number;
     value: number;
     min: number;
     max: number;
     step: number;
     onChange: (value: number) => void;
-}> = ({ label, valueLabel, minLabel, maxLabel, value, min, max, step, onChange }) => (
-    <div className="space-y-2">
+}> = ({ label, valueLabel, minLabel, maxLabel, defaultValue, value, min, max, step, onChange }) => {
+    const defaultPosition = max === min
+        ? 50
+        : Math.min(100, Math.max(0, ((defaultValue - min) / (max - min)) * 100));
+
+    return <div className="space-y-2">
         <div className="flex items-center justify-between gap-3">
             <label className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</label>
             <span className="font-mono text-xs font-semibold text-brand-600 dark:text-brand-300">{valueLabel}</span>
@@ -59,10 +64,10 @@ export const RangeControl: React.FC<{
             onChange={(event) => onChange(Number(event.target.value))}
             className="w-full accent-brand-600"
         />
-        <div className="flex justify-between text-[11px] text-slate-400 dark:text-slate-500">
+        <div className="relative h-4 text-[11px] text-slate-400 dark:text-slate-500">
             <span>{minLabel}</span>
-            <span>Default</span>
-            <span>{maxLabel}</span>
+            <span className="absolute -translate-x-1/2" style={{ left: `${defaultPosition}%` }}>Default</span>
+            <span className="absolute right-0">{maxLabel}</span>
         </div>
-    </div>
-);
+    </div>;
+};

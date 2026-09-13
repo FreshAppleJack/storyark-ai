@@ -3,7 +3,7 @@ import { useBlocker } from 'react-router-dom';
 import { aiErrorMessage, aiSettingsRepository as repo, type AiConfig, type AiConfigList, type AiConfigRecord } from '../../data/local/aiSettingsRepository';
 import { useWindowCloseGuard } from '../editor/hooks/useWindowCloseGuard';
 
-export const emptyAiConfig: AiConfig = { name: '', protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1', modelId: '', timeoutMs: 30000, maxOutputTokens: 1024 };
+export const emptyAiConfig: AiConfig = { name: '', protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1', modelId: '', timeoutMs: 60000, maxOutputTokens: 100000 };
 
 export function useAiSettings() {
     const [data, setData] = useState<AiConfigList | null>(null);

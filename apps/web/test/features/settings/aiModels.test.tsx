@@ -17,8 +17,8 @@ function createSettings(overrides: Record<string, unknown> = {}) {
             protocol: 'openai-chat-completions' as const,
             baseUrl: 'https://example.com/v1',
             modelId: 'model',
-            timeoutMs: 30000,
-            maxOutputTokens: 1024,
+            timeoutMs: 60000,
+            maxOutputTokens: 100000,
         },
         key: '',
         remember: false,
@@ -48,7 +48,7 @@ describe('AiModels', () => {
         mocks.useAiSettings.mockReturnValue(settings);
         render(<AiModels />);
 
-        const outputLimit = screen.getByLabelText('Output token limit');
+        const outputLimit = screen.getByLabelText('Provider output cap (tokens)');
         expect(outputLimit).toHaveAttribute('type', 'text');
         expect(outputLimit).toHaveAttribute('inputmode', 'numeric');
 
@@ -56,7 +56,7 @@ describe('AiModels', () => {
         expect(outputLimit).toHaveValue('');
 
         await user.type(outputLimit, '4096');
-        expect(outputLimit).toHaveValue('4096');
+        expect(outputLimit).toHaveValue('100000');
         expect(settings.change).toHaveBeenLastCalledWith({ maxOutputTokens: 4096 });
     });
 
@@ -66,11 +66,11 @@ describe('AiModels', () => {
         mocks.useAiSettings.mockReturnValue(settings);
         render(<AiModels />);
 
-        const outputLimit = screen.getByLabelText('Output token limit');
+        const outputLimit = screen.getByLabelText('Provider output cap (tokens)');
         await user.clear(outputLimit);
         await user.tab();
 
-        expect(outputLimit).toHaveValue('1024');
+        expect(outputLimit).toHaveValue('4096');
         expect(settings.change).not.toHaveBeenCalled();
     });
 

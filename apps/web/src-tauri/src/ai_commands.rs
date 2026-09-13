@@ -118,7 +118,11 @@ pub async fn ai_start_generation<R: tauri::Runtime>(
     let stream_input = crate::ai::stream::StreamInput {
         config: snapshot.config,
         key: snapshot.key,
-        context: crate::ai::tasks::format_generation_prompt(&context_snapshot, &input.target),
+        context: crate::ai::tasks::format_generation_prompt(
+            &context_snapshot,
+            &input.target,
+            input.output_chars,
+        ),
         control: cancellation,
     };
     if let Err(error) = runtime.start(input, stream_input, sink) {

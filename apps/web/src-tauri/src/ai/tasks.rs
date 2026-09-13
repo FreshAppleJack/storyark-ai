@@ -248,10 +248,15 @@ pub fn format_context(snapshot: &ContextSnapshot) -> String {
         .join("\n\n")
 }
 
-pub fn format_generation_prompt(snapshot: &ContextSnapshot, target: &GenerationTarget) -> String {
+pub fn format_generation_prompt(
+    snapshot: &ContextSnapshot,
+    target: &GenerationTarget,
+    output_chars: u32,
+) -> String {
     match target {
         GenerationTarget::Continue { .. } => format!(
-            "{CONTINUE_INSTRUCTION}\n\n<draft>\n{}\n</draft>",
+            "{CONTINUE_INSTRUCTION}\nAim for approximately {} characters of new prose, then stop naturally.\n\n<draft>\n{}\n</draft>",
+            output_chars.max(1),
             format_context(snapshot)
         ),
         GenerationTarget::Brainstorm { .. } => format_context(snapshot),
@@ -347,8 +352,10 @@ mod tests {
                 chapter_id: "chapter".into(),
                 database_version: 1,
             },
+            300,
         );
         assert!(prompt.contains("Return only the new manuscript prose"));
+        assert!(prompt.contains("Aim for approximately 300 characters of new prose"));
         assert!(prompt.contains("<draft>\n[Current draft]\n你好\n</draft>"));
         assert!(prompt.contains("Do not review, critique, summarize"));
     }
@@ -389,6 +396,7 @@ mod tests {
                 database_version: 1,
             },
             context_snapshot_id: snapshot.context_snapshot_id.clone(),
+            output_chars: 300,
         };
         assert!(runtime
             .take_context(&snapshot.context_snapshot_id, &request)

@@ -93,8 +93,11 @@ export function AiModels() {
                     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={s.remember} disabled={!s.key} onChange={e => s.changeRemember(e.target.checked)} />Remember replacement key on this device</label>
                     <p className="text-xs text-slate-500 dark:text-slate-400">{s.remember ? 'Uses Windows Credential Manager or macOS Keychain. Keys are not included in exports or database backups.' : 'Session keys must be entered again after restarting. Enter a new key to change its storage mode.'}</p>
                     <details><summary className="cursor-pointer text-sm">Advanced limits</summary>
-                        <label className="block text-sm">Timeout (milliseconds)<NumericSettingInput value={s.form.timeoutMs} min={1000} max={600000} onChange={value => s.change({ timeoutMs: value })} /></label>
-                        <label className="block text-sm">Output token limit<NumericSettingInput value={s.form.maxOutputTokens} min={1} max={1000000} onChange={value => s.change({ maxOutputTokens: value })} /></label>
+                        <div className="mt-3 space-y-3">
+                            <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">These are technical provider safeguards. Set the author-facing AI Continue length in Writing Preferences. New configurations use a 60,000 ms timeout and a 100,000-token cap.</p>
+                            <label className="block text-sm">Request timeout (milliseconds)<NumericSettingInput value={s.form.timeoutMs} min={1000} max={600000} onChange={value => s.change({ timeoutMs: value })} /></label>
+                            <label className="block text-sm">Provider output cap (tokens)<NumericSettingInput value={s.form.maxOutputTokens} min={1} max={1000000} onChange={value => s.change({ maxOutputTokens: value })} /></label>
+                        </div>
                     </details>
                     <div className="flex gap-2"><Button type="submit">Save configuration</Button><Button type="button" variant="secondary" onClick={s.cancel}>Cancel</Button></div>
                 </fieldset>

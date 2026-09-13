@@ -39,6 +39,7 @@ function setup(overrides: Record<string, unknown> = {}) {
         databaseVersion: 7,
         isReadOnly: false,
         contextChars: 20,
+        outputChars: 300,
         getContextText: () => 'current in-memory draft text',
         captureAnchor: () => anchor,
         insertCandidateAtAnchor,
@@ -106,6 +107,7 @@ describe('useLocalAiContinue', () => {
             target: { kind: 'continue', chapterId: 'chapter-1', databaseVersion: 7 },
             config: { id: 'config-1', expectedConfigVersion: 4 },
             contextSnapshotId: 'context-1',
+            outputChars: 300,
         }));
 
         emit(view, { kind: 'started' }, 0);
@@ -121,6 +123,7 @@ describe('useLocalAiContinue', () => {
         }, 2);
         expect(view.result.current.candidate.status).toBe('completed');
         expect(view.result.current.candidate.source?.contextSource).toBe('current-in-memory-draft');
+        expect(view.result.current.candidate.source?.outputChars).toBe(300);
 
         act(() => { view.result.current.adoptCandidate(); });
         expect(insertCandidateAtAnchor).toHaveBeenCalledWith('first line\nsecond line', anchor);
@@ -145,6 +148,7 @@ describe('useLocalAiContinue', () => {
             databaseVersion: 7,
             isReadOnly: false,
             contextChars: 20,
+            outputChars: 300,
             getContextText: () => 'changed draft',
             captureAnchor: () => anchor,
             insertCandidateAtAnchor,
@@ -171,6 +175,7 @@ describe('useLocalAiContinue', () => {
             databaseVersion: 7,
             isReadOnly: false,
             contextChars: 20,
+            outputChars: 300,
             getContextText: () => 'current in-memory draft text',
             captureAnchor: () => ({ ...anchor, from: 5 }),
             insertCandidateAtAnchor,
@@ -203,6 +208,7 @@ describe('useLocalAiContinue', () => {
             databaseVersion: 7,
             isReadOnly: true,
             contextChars: 20,
+            outputChars: 300,
             getContextText: () => 'current in-memory draft text',
             captureAnchor: () => anchor,
             insertCandidateAtAnchor: readonly.insertCandidateAtAnchor,

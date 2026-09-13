@@ -11,8 +11,6 @@ use reqwest::StatusCode;
 use std::{sync::Arc, time::Duration};
 use tokio::time::{timeout, Instant};
 
-const FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(30);
-const IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_TOTAL_BYTES: usize = 8 * 1024 * 1024;
 
 pub struct StreamInput {
@@ -37,7 +35,7 @@ where
     let deadline = Instant::now() + total_timeout;
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(Duration::from_secs(10))
+        .connect_timeout(total_timeout)
         .build()
         .map_err(|_| provider_error(AiErrorCode::Unavailable))?;
     let adapter = providers::make(input.config.clone());
@@ -46,7 +44,7 @@ where
         .map_err(|_| provider_error(AiErrorCode::ValidationError))?;
     let response = tokio::select! {
         _ = input.control.cancelled() => return Err(provider_error(AiErrorCode::Cancelled)),
-        result = timeout(FIRST_BYTE_TIMEOUT.min(remaining(deadline)), request.send()) => {
+        result = timeout(remaining(deadline), request.send()) => {
             result.map_err(|_| provider_error(AiErrorCode::Timeout))?
                 .map_err(|error| provider_error(if error.is_timeout() { AiErrorCode::Timeout } else { AiErrorCode::Unavailable }))?
         }
@@ -62,7 +60,7 @@ where
     let mut total_bytes = 0usize;
 
     while finish_reason.is_none() {
-        let next = timeout(IDLE_TIMEOUT.min(remaining(deadline)), bytes_stream.next());
+        let next = timeout(remaining(deadline), bytes_stream.next());
         let chunk = tokio::select! {
             _ = input.control.cancelled() => return Err(provider_error(AiErrorCode::Cancelled)),
             result = next => result.map_err(|_| provider_error(AiErrorCode::Timeout))?

@@ -25,6 +25,7 @@ export interface AiContinueSource {
     databaseVersion: number;
     contextSource: 'current-in-memory-draft';
     contextText: string;
+    outputChars: number;
     anchor: AiContinueAnchor;
     lockWasValid: boolean;
 }
@@ -45,6 +46,7 @@ interface UseLocalAiContinueOptions {
     databaseVersion: number;
     isReadOnly: boolean;
     contextChars: number;
+    outputChars: number;
     getContextText: () => string;
     captureAnchor: () => AiContinueAnchor | null;
     insertCandidateAtAnchor: (candidate: string, anchor: AiContinueAnchor) => boolean;
@@ -293,6 +295,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
                 databaseVersion: current.databaseVersion,
                 contextSource: 'current-in-memory-draft',
                 contextText,
+                outputChars: current.outputChars,
                 anchor,
                 lockWasValid: !current.isReadOnly,
             },
@@ -337,6 +340,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
                     databaseVersion: current.databaseVersion,
                 },
                 contextSnapshotId: contextSnapshot.contextSnapshotId,
+                outputChars: current.outputChars,
             };
             await aiGenerationRepository.start(input);
         } catch (error) {

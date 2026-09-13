@@ -306,6 +306,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         databaseVersion: activeChapter?.databaseVersion ?? 0,
         isReadOnly: chapterDraft.isReadOnly || chapterLock.isChangingLock,
         contextChars: aiContinueSettings.contextChars,
+        outputChars: aiContinueSettings.outputChars,
         getContextText: () => editorRef.current?.editor?.getText() ?? getEditorPlainText(chapterDraft.content),
         captureAnchor: () => editorRef.current?.captureSelection() ?? null,
         insertCandidateAtAnchor: (candidate, anchor) => editorRef.current?.insertAiCandidateAtAnchor(candidate, anchor) ?? false,

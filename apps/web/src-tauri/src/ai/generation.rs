@@ -37,6 +37,7 @@ pub struct GenerateRequest {
     pub config: ConfigVersion,
     pub target: GenerationTarget,
     pub context_snapshot_id: String,
+    pub output_chars: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
