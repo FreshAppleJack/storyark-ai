@@ -59,7 +59,7 @@ fn upgrade_from_v1_preserves_work_data_and_creates_a_prior_backup() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 3);
+    assert_eq!(version, 4);
     let loaded = db.read_book(&book_id).unwrap();
     let chapter = &loaded["chapters"][0];
     // Content, original recovery copy, ids, unknown note fields and the lock
@@ -79,6 +79,8 @@ fn upgrade_from_v1_preserves_work_data_and_creates_a_prior_backup() {
     );
     // The new stage tables exist and are empty for an upgraded library.
     for table in [
+        "ai_model_configs",
+        "ai_generation_settings",
         "characters",
         "graphs",
         "graph_nodes",
@@ -161,11 +163,13 @@ fn a_fresh_database_initializes_at_the_latest_version_with_all_tables() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 3);
+    assert_eq!(version, 4);
     for table in [
         "books",
         "volumes",
         "chapters",
+        "ai_model_configs",
+        "ai_generation_settings",
         "characters",
         "graphs",
         "graph_nodes",
@@ -209,4 +213,56 @@ fn migration_failure_rolls_back_schema_and_version() {
         .unwrap(),
         0
     );
+}
+
+#[test]
+fn version_three_upgrade_adds_only_ai_schema_and_rolls_back_on_collision() {
+    for collision in [false, true] {
+        let temp = TempDirectory::new();
+        let (book, _, _) = seed_v1_database(&temp.0);
+        let connection = Connection::open(temp.0.join("storyark.sqlite3")).unwrap();
+        connection
+            .execute_batch(include_str!("../../../migrations/0002_local_content.sql"))
+            .unwrap();
+        connection
+            .execute_batch(include_str!("../../../migrations/0003_book_cover.sql"))
+            .unwrap();
+        connection.pragma_update(None, "user_version", 3).unwrap();
+        if collision {
+            connection
+                .execute_batch("CREATE TABLE ai_generation_settings(precious TEXT);")
+                .unwrap();
+        }
+        drop(connection);
+        let result = Database::open(&temp.0);
+        if collision {
+            assert!(result.is_err());
+            let connection = Connection::open(temp.0.join("storyark.sqlite3")).unwrap();
+            assert_eq!(
+                connection
+                    .pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
+                    .unwrap(),
+                3
+            );
+            assert!(connection
+                .prepare("SELECT * FROM ai_model_configs")
+                .is_err());
+            assert_eq!(
+                connection
+                    .query_row("SELECT id FROM books", [], |r| r.get::<_, String>(0))
+                    .unwrap(),
+                book
+            );
+        } else {
+            let mut db = result.unwrap();
+            assert_eq!(db.read_book(&book).unwrap()["book"]["id"], book);
+            assert_eq!(
+                db.connection
+                    .query_row("SELECT count(*) FROM ai_model_configs", [], |r| r
+                        .get::<_, i64>(0))
+                    .unwrap(),
+                0
+            );
+        }
+    }
 }

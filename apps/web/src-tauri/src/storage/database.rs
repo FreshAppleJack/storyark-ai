@@ -6,7 +6,8 @@ use std::{path::Path, time::Duration};
 const MIGRATION_0001: &str = include_str!("../../migrations/0001_library.sql");
 const MIGRATION_0002: &str = include_str!("../../migrations/0002_local_content.sql");
 const MIGRATION_0003: &str = include_str!("../../migrations/0003_book_cover.sql");
-const LATEST_VERSION: i64 = 3;
+const MIGRATION_0004: &str = include_str!("../../migrations/0004_ai_model_configs.sql");
+const LATEST_VERSION: i64 = 4;
 
 impl Database {
     pub fn open(directory: &Path) -> Result<Self> {
@@ -47,6 +48,7 @@ impl Database {
                 tx.execute_batch(MIGRATION_0003)?;
                 tx.pragma_update(None, "user_version", 3)?;
             }
+            3 => {}
             v if v == LATEST_VERSION => {}
             _ => {
                 return Err(StorageError::new(
@@ -55,6 +57,11 @@ impl Database {
                 ))
             }
         }
+        if version < 4 {
+            tx.execute_batch(MIGRATION_0004)?;
+            tx.pragma_update(None, "user_version", 4)?;
+        }
+        tx.prepare("SELECT c.config_version,s.default_config_id FROM ai_model_configs c,ai_generation_settings s LIMIT 0")?;
         // Catch missing tables/columns even for an allegedly current database.
         tx.prepare("SELECT b.author,b.cover_color,v.book_id,c.content_version,c.foreshadowings_json FROM books b,volumes v,chapters c LIMIT 0")?;
         tx.prepare("SELECT ch.aliases_json,g.book_id,gn.character_id,ge.label,p.story_summary,ap.dark_mode,bw.final_content FROM characters ch,graphs g,graph_nodes gn,graph_edges ge,planning p,application_preferences ap,brainstorm_workspaces bw LIMIT 0")?;

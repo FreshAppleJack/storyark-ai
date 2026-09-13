@@ -59,3 +59,5 @@ mod planning_commands;
 mod preferences_commands;
 mod storage;
 use tauri::Manager;
+
+pub mod ai;

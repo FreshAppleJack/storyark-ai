@@ -36,3 +36,25 @@ test('new database creation refuses existing files and cleans failed creations',
         assert.throws(() => readFileSync(broken), /ENOENT/);
     } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('AI schema rejects invalid limits and dangling defaults without storing credentials', () => {
+    const db = new DatabaseSync(':memory:');
+    try {
+        db.exec(buildSchema().sql);
+        const columns = db.prepare('PRAGMA table_info(ai_model_configs)').all().map(row => row.name);
+        assert.equal(columns.includes('credential_ref'), true);
+        assert.equal(columns.some(name => /api_key|secret|password/.test(name)), false);
+        assert.throws(() => db.exec("INSERT INTO ai_generation_settings VALUES (1, 'missing', 1, 0)"));
+        const insert = db.prepare(`INSERT INTO ai_model_configs
+            (id,name,protocol,base_url,model_id,timeout_ms,max_output_tokens,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?)`);
+        const id = '00000000-0000-4000-8000-000000000001';
+        assert.throws(() => insert.run(id,'Example','embedding','https://example.com','model',30000,1000,0,0));
+        assert.throws(() => insert.run(id,'Example','openai-responses','https://example.com','model',0,1000,0,0));
+        insert.run(id,'Example','openai-responses','https://example.com','model',30000,1000,0,0);
+        db.prepare('INSERT INTO ai_generation_settings VALUES (1, ?, 1, 0)').run(id);
+        assert.throws(() => db.prepare('DELETE FROM ai_model_configs WHERE id=?').run(id));
+        db.exec('BEGIN; UPDATE ai_generation_settings SET default_config_id=NULL,database_version=2; DELETE FROM ai_model_configs; COMMIT;');
+        assert.equal(db.prepare('SELECT database_version FROM ai_generation_settings').get().database_version, 2);
+    } finally { db.close(); }
+});
