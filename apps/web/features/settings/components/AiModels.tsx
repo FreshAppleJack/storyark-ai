@@ -1,4 +1,5 @@
 import { KeyRound } from 'lucide-react';
+import { useState, type ChangeEvent } from 'react';
 import { SettingShell } from './SettingControls';
 import { Button } from '../../../components/ui/Button';
 import { SaveStatusIndicator } from '../../../components/ui/SaveStatusIndicator';
@@ -7,6 +8,51 @@ import type { AiProtocol } from '../../../data/local/aiSettingsRepository';
 
 const inputClass = 'mt-1 w-full rounded-lg border border-slate-300 bg-white p-2 text-sm text-slate-900 focus:border-brand-500 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:bg-slate-950';
 const credentialLabels = { session: 'This session only', configured: 'Configured in system credential store', unavailable: 'Credential unavailable' };
+const actionButtonClass = 'h-9 w-full whitespace-nowrap';
+
+interface NumericSettingInputProps {
+    value: number;
+    min: number;
+    max: number;
+    onChange: (value: number) => void;
+}
+
+function NumericSettingInput({ value, min, max, onChange }: NumericSettingInputProps) {
+    const [draft, setDraft] = useState(() => String(value));
+
+    const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
+        const next = event.currentTarget.value.replace(/[^0-9]/g, '');
+        const normalized = next.replace(/^0+(?=\d)/, '');
+        setDraft(normalized);
+        if (normalized) onChange(Number(normalized));
+    };
+
+    const restoreValue = () => {
+        if (!draft) {
+            setDraft(String(value));
+            return;
+        }
+        const parsed = Number(draft);
+        if (!Number.isInteger(parsed)) return;
+        const bounded = Math.min(max, Math.max(min, parsed));
+        if (bounded !== parsed) {
+            setDraft(String(bounded));
+            onChange(bounded);
+        }
+    };
+
+    return <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        required
+        maxLength={String(max).length}
+        className={inputClass}
+        value={draft}
+        onChange={handleChange}
+        onBlur={restoreValue}
+    />;
+}
 
 export function AiModels() {
     const s = useAiSettings();
@@ -24,11 +70,11 @@ export function AiModels() {
                     <div className="flex flex-wrap items-center justify-between gap-2"><strong className="text-sm">{record.config.name}</strong>{s.data?.defaultConfigId === record.id && <span className="text-xs text-brand-600 dark:text-brand-300">Default</span>}</div>
                     <p className="break-all text-xs text-slate-500 dark:text-slate-400">{record.config.modelId}<br />{record.config.baseUrl}</p>
                     <p className="text-xs">{credentialLabels[record.credentialStatus]}</p>
-                    <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="secondary" disabled={s.busy} onClick={() => s.edit(record)}>Edit</Button>
-                        <Button size="sm" variant="secondary" disabled={s.busy || record.credentialStatus === 'unavailable'} onClick={() => void s.test(record)}>Test connection</Button>
-                        <Button size="sm" variant="ghost" disabled={s.busy} onClick={() => void s.makeDefault(s.data?.defaultConfigId === record.id ? null : record)}>{s.data?.defaultConfigId === record.id ? 'Clear default' : 'Set default'}</Button>
-                        <Button size="sm" variant="danger" disabled={s.busy} onClick={() => void s.remove(record)}>Delete</Button>
+                    <div className="grid grid-cols-2 gap-2">
+                        <Button size="sm" variant="secondary" className={actionButtonClass} disabled={s.busy} onClick={() => s.edit(record)}>Edit</Button>
+                        <Button size="sm" variant="secondary" className={actionButtonClass} disabled={s.busy || record.credentialStatus === 'unavailable'} onClick={() => void s.test(record)}>Test connection</Button>
+                        <Button size="sm" variant="secondary" className={actionButtonClass} disabled={s.busy} onClick={() => void s.makeDefault(s.data?.defaultConfigId === record.id ? null : record)}>{s.data?.defaultConfigId === record.id ? 'Clear default' : 'Set default'}</Button>
+                        <Button size="sm" variant="danger" className={actionButtonClass} disabled={s.busy} onClick={() => void s.remove(record)}>Delete</Button>
                     </div>
                 </div>)}
                 <p className="text-xs text-slate-500 dark:text-slate-400">Connection tests may incur a small API charge. Saving a configuration does not test it.</p>
@@ -47,8 +93,8 @@ export function AiModels() {
                     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={s.remember} disabled={!s.key} onChange={e => s.changeRemember(e.target.checked)} />Remember replacement key on this device</label>
                     <p className="text-xs text-slate-500 dark:text-slate-400">{s.remember ? 'Uses Windows Credential Manager or macOS Keychain. Keys are not included in exports or database backups.' : 'Session keys must be entered again after restarting. Enter a new key to change its storage mode.'}</p>
                     <details><summary className="cursor-pointer text-sm">Advanced limits</summary>
-                        <label className="block text-sm">Timeout (milliseconds)<input type="number" required min={1000} max={600000} className={inputClass} value={s.form.timeoutMs} onChange={e => s.change({ timeoutMs: Number(e.target.value) })} /></label>
-                        <label className="block text-sm">Output token limit<input type="number" required min={1} max={1000000} className={inputClass} value={s.form.maxOutputTokens} onChange={e => s.change({ maxOutputTokens: Number(e.target.value) })} /></label>
+                        <label className="block text-sm">Timeout (milliseconds)<NumericSettingInput value={s.form.timeoutMs} min={1000} max={600000} onChange={value => s.change({ timeoutMs: value })} /></label>
+                        <label className="block text-sm">Output token limit<NumericSettingInput value={s.form.maxOutputTokens} min={1} max={1000000} onChange={value => s.change({ maxOutputTokens: value })} /></label>
                     </details>
                     <div className="flex gap-2"><Button type="submit">Save configuration</Button><Button type="button" variant="secondary" onClick={s.cancel}>Cancel</Button></div>
                 </fieldset>
