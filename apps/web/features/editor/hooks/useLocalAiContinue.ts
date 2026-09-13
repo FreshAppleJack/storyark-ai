@@ -58,6 +58,7 @@ interface UseLocalAiContinueResult {
     continueWriting: () => Promise<void>;
     stop: () => void;
     adoptCandidate: () => void;
+    closeCandidate: () => void;
     discardCandidate: () => void;
     regenerate: () => Promise<void>;
 }
@@ -349,10 +350,14 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
         }
     }, [cleanupActive, handleEvent, isActive, updateCandidate]);
 
-    const discardCandidate = useCallback(() => {
+    const closeCandidate = useCallback(() => {
         if (activeRef.current) stop();
         updateCandidate(INITIAL_CANDIDATE);
     }, [stop, updateCandidate]);
+
+    const discardCandidate = useCallback(() => {
+        closeCandidate();
+    }, [closeCandidate]);
 
     const regenerate = useCallback(async () => {
         discardCandidate();
@@ -432,6 +437,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
         continueWriting,
         stop,
         adoptCandidate,
+        closeCandidate,
         discardCandidate,
         regenerate,
     };

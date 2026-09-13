@@ -211,6 +211,13 @@ anchor/selection, and the lock state. The context section is labeled
 current draft. Deltas stay in a session-only candidate buffer. A completed
 candidate is distinct from a saved chapter.
 
+Continue generation uses a dedicated prompt that asks for only the new
+manuscript prose after the draft, matching its language, voice, tense,
+viewpoint, formatting and established facts. Reviews, critiques, summaries,
+corrections, labels and other meta-commentary are explicitly excluded from the
+continuation output. The draft is delimited as input context and is never
+treated as generated text.
+
 Adoption rechecks the chapter/session/revision, lock, editor selection and
 document size. A changed source preserves the candidate and requires
 regeneration or restoring the original insertion position. Successful
@@ -222,8 +229,9 @@ range are not rewritten.
 
 Failures, cancellation, empty output and truncation leave the original body
 untouched and never show it as saved. The candidate panel provides preview,
-stop, adopt, regenerate and discard actions; adopted text remains subject to
-the existing navigation and native-close save guards. Frontend tests cover the
-candidate lifecycle, stale revisions/anchors, read-only adoption, terminal
-failure states, structured insertion and undo. Real provider and packaged
-desktop acceptance remain separate evidence items.
+stop, adopt, regenerate, discard and close actions; closing an adopted panel
+does not undo the inserted text. Adopted text remains subject to the existing
+navigation and native-close save guards. Frontend tests cover the candidate
+lifecycle, stale revisions/anchors, read-only adoption, terminal failure
+states, structured insertion and undo. Real provider and packaged desktop
+acceptance remain separate evidence items.

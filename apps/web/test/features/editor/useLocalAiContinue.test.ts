@@ -125,6 +125,10 @@ describe('useLocalAiContinue', () => {
         act(() => { view.result.current.adoptCandidate(); });
         expect(insertCandidateAtAnchor).toHaveBeenCalledWith('first line\nsecond line', anchor);
         expect(view.result.current.candidate.status).toBe('adopted');
+
+        act(() => { view.result.current.closeCandidate(); });
+        expect(view.result.current.candidate.status).toBe('idle');
+        expect(insertCandidateAtAnchor).toHaveBeenCalledTimes(1);
     });
 
     it('preserves a candidate when the draft revision changes before adoption', async () => {

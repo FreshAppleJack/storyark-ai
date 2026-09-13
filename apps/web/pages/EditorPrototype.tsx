@@ -477,6 +477,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     adoptDisabledReason={aiContinue.adoptDisabledReason}
                     onStop={aiContinue.stop}
                     onAdopt={aiContinue.adoptCandidate}
+                    onClose={aiContinue.closeCandidate}
                     onDiscard={aiContinue.discardCandidate}
                     onRegenerate={aiContinue.regenerate}
                 />

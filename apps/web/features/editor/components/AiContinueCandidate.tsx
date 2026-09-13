@@ -1,4 +1,4 @@
-import { Check, Loader2, RefreshCw, Square, Trash2 } from 'lucide-react';
+import { Check, Loader2, RefreshCw, Square, Trash2, X } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import type { AiContinueCandidate as AiContinueCandidateState } from '../hooks/useLocalAiContinue';
 
@@ -9,6 +9,7 @@ interface AiContinueCandidateProps {
     adoptDisabledReason: string | null;
     onStop: () => void;
     onAdopt: () => void;
+    onClose: () => void;
     onDiscard: () => void;
     onRegenerate: () => void;
 }
@@ -33,6 +34,7 @@ export function AiContinueCandidate({
     adoptDisabledReason,
     onStop,
     onAdopt,
+    onClose,
     onDiscard,
     onRegenerate,
 }: AiContinueCandidateProps): React.ReactElement | null {
@@ -49,7 +51,7 @@ export function AiContinueCandidate({
             <div className="flex items-center justify-between gap-3">
                 <div>
                     <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">AI Continue candidate</h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{statusLabel(candidate.status)} · The original draft is unchanged until adoption.</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{statusLabel(candidate.status)} · {candidate.status === 'adopted' ? 'The insertion is queued for normal persistence.' : 'The original draft is unchanged until adoption.'}</p>
                 </div>
                 {candidate.source && (
                     <span className="text-right text-[11px] text-slate-500 dark:text-slate-400">
@@ -100,6 +102,12 @@ export function AiContinueCandidate({
                     <Button variant="ghost" size="sm" onClick={onDiscard}>
                         <Trash2 size={14} className="mr-2" />
                         Discard candidate
+                    </Button>
+                )}
+                {candidate.status === 'adopted' && (
+                    <Button variant="secondary" size="sm" className="ml-auto" onClick={onClose}>
+                        <X size={14} className="mr-2" />
+                        Close
                     </Button>
                 )}
             </div>

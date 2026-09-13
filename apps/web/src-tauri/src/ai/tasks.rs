@@ -1,6 +1,9 @@
 use super::{
     error::AiErrorCode,
-    generation::{ContextInput, ContextKind, ContextSnapshot, GenerateRequest, GenerationPayload},
+    generation::{
+        ContextInput, ContextKind, ContextSnapshot, GenerateRequest, GenerationPayload,
+        GenerationTarget,
+    },
     stream::{self, StreamInput},
 };
 use crate::storage::{Result, StorageError};
@@ -17,6 +20,13 @@ use tokio::sync::{Notify, Semaphore};
 
 const MAX_CONTEXT_CHARS: u32 = 64_000;
 const MAX_CONTEXT_SECTIONS: usize = 64;
+const CONTINUE_INSTRUCTION: &str = r#"Continue the manuscript from the end of the draft below.
+Return only the new manuscript prose that belongs after the final character.
+Do not review, critique, summarize, correct, explain, or mention the draft.
+Do not give feedback, editing suggestions, or an assessment of the preceding text.
+Do not include a preface, label, heading, bullet list, markdown wrapper, quotation wrapper, or meta-commentary.
+Match the draft's language, narrative voice, tense, viewpoint, formatting, established facts, and character details.
+Begin immediately with the continuation. If the draft ends mid-sentence, continue it naturally."#;
 
 pub struct Cancellation {
     cancelled: AtomicBool,
@@ -237,6 +247,17 @@ pub fn format_context(snapshot: &ContextSnapshot) -> String {
         .collect::<Vec<_>>()
         .join("\n\n")
 }
+
+pub fn format_generation_prompt(snapshot: &ContextSnapshot, target: &GenerationTarget) -> String {
+    match target {
+        GenerationTarget::Continue { .. } => format!(
+            "{CONTINUE_INSTRUCTION}\n\n<draft>\n{}\n</draft>",
+            format_context(snapshot)
+        ),
+        GenerationTarget::Brainstorm { .. } => format_context(snapshot),
+    }
+}
+
 fn kind_label(kind: &ContextKind) -> &'static str {
     match kind {
         ContextKind::CurrentDraft => "Current draft",
@@ -306,6 +327,30 @@ mod tests {
             format_context(&snapshot),
             "[Current draft]\n你好\n\n[Author settings]\n规则"
         );
+    }
+
+    #[test]
+    fn continuation_prompt_requests_only_manuscript_prose() {
+        let runtime = AiRuntime::default();
+        let snapshot = runtime
+            .prepare(ContextInput {
+                book_id: uuid::Uuid::new_v4().to_string(),
+                session_id: "session".into(),
+                draft_revision: 3,
+                max_chars: 10,
+                sections: vec![section(ContextKind::CurrentDraft, "你好")],
+            })
+            .unwrap();
+        let prompt = format_generation_prompt(
+            &snapshot,
+            &GenerationTarget::Continue {
+                chapter_id: "chapter".into(),
+                database_version: 1,
+            },
+        );
+        assert!(prompt.contains("Return only the new manuscript prose"));
+        assert!(prompt.contains("<draft>\n[Current draft]\n你好\n</draft>"));
+        assert!(prompt.contains("Do not review, critique, summarize"));
     }
 
     #[test]
