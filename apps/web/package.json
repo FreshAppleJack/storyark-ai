@@ -7,6 +7,9 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
+    "schema:sync": "node scripts/sync-schema.mjs",
+    "schema:check": "node scripts/sync-schema.mjs --check",
+    "schema:test": "node --test scripts/schema-sync.node-test.mjs",
     "dev": "vite",
     "dev:desktop": "vite --host 127.0.0.1 --port 1420 --strictPort",
     "tauri": "tauri",
