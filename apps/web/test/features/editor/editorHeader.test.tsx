@@ -17,6 +17,7 @@ function createProps(overrides: Record<string, unknown> = {}) {
         onNavigateForeshadowingBoard: vi.fn(),
         onNavigateWorldBuilding: vi.fn(),
         onAIContinue: vi.fn(),
+        onStopAI: vi.fn(),
         onToggleContextPanel: vi.fn(),
         onRetrySave: vi.fn(),
         onNavigateSettings: vi.fn(),
@@ -71,6 +72,16 @@ describe('EditorHeader', () => {
 
         rerender(<EditorHeader {...createProps({ isReadOnly: true })} />);
         expect(screen.getByText('AI Continue').closest('button')).toBeDisabled();
+    });
+
+    it('offers a stop action while a local continuation is streaming', async () => {
+        const user = userEvent.setup();
+        const props = createProps({ isAiLoading: true });
+        render(<EditorHeader {...props} />);
+
+        expect(screen.queryByText('AI Continue')).not.toBeInTheDocument();
+        await user.click(screen.getByText('Stop AI'));
+        expect(props.onStopAI).toHaveBeenCalledTimes(1);
     });
 
     it('shows the context panel item count and delegates the toggle', async () => {

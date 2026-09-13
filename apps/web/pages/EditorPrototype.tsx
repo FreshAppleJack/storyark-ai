@@ -7,12 +7,12 @@ import { localBookOptions, localCharactersOptions, projectBook, projectCharacter
 import { localPlanningOptions, type LocalPlanning } from '../data/local/planningRepository';
 import { toast } from 'react-hot-toast';
 import { useApp } from '../InteractionContent/AppContext';
-import { aiApi } from '../data/aiApi';
 import { asRecord } from '../utils/serialization';
 import TiptapEditor, { TiptapEditorRef } from '../components/TiptapEditor';
 import { Book, Chapter, ForeshadowingNote, PlotSetting, Volume } from '../types';
 import { ChapterNavigator, NavigatorDeleteTarget } from '../features/editor/components/ChapterNavigator';
 import { EditorHeader } from '../features/editor/components/EditorHeader';
+import { AiContinueCandidate } from '../features/editor/components/AiContinueCandidate';
 import { WritingContextPanel } from '../features/editor/components/WritingContextPanel';
 import { Button } from '../components/ui/Button';
 import { getEditorPlainText, getForeshadowingExcerptMap } from '../domain/chapterContent';
@@ -20,7 +20,7 @@ import { useChapterDraft } from '../features/editor/hooks/useChapterDraft';
 import { useChapterLock } from '../features/editor/hooks/useChapterLock';
 import { useChapterAutosave } from '../features/editor/hooks/useChapterAutosave';
 import { useWindowCloseGuard } from '../features/editor/hooks/useWindowCloseGuard';
-import { useAiContinue } from '../features/editor/hooks/useAiContinue';
+import { useLocalAiContinue } from '../features/editor/hooks/useLocalAiContinue';
 import { useChapterExport } from '../features/editor/export/useChapterExport';
 
 function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?: LocalPlanning }): React.ReactElement {
@@ -68,32 +68,6 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
             console.error(`${format.toUpperCase()} export failed:`, error);
             toast.error(`${format === 'docx' ? 'Word' : 'PDF'} export failed. Please try again.`);
         },
-    });
-
-    // AI continuation with chapter-switch protection: results arriving after
-    // a switch are dropped, and a stale request never clears a newer one.
-    const aiContinue = useAiContinue({
-        chapterId: activeChapterId,
-        isReadOnly: isLocal || chapterDraft.isReadOnly,
-        hasContent: !!chapterDraft.content,
-        contextChars: aiContinueSettings.contextChars,
-        outputChars: aiContinueSettings.outputChars,
-        getContextText: () => {
-            if (editorRef.current && editorRef.current.editor) {
-                return editorRef.current.editor.getText();
-            }
-            return getEditorPlainText(chapterDraft.content);
-        },
-        requestContinue: isLocal ? async () => { throw new Error('AI is not available in local mode yet.'); } : aiApi.continueWriting,
-        insertResult: (formattedHtml) => {
-            const editor = editorRef.current?.editor;
-            // The hook pins the chapter identity; this only guards a lock
-            // toggled while the request was in flight.
-            if (editor && editor.isEditable !== false) {
-                editorRef.current?.insertContent(formattedHtml);
-            }
-        },
-        onError: () => toast.error('AI continue failed. Please try again.'),
     });
 
     // Save scheduler: debounce, serial saves, flush and retry all go through
@@ -322,6 +296,21 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         persistToggle: () => book && activeVolume && activeChapter
             ? toggleChapterLock(book.id, activeVolume.id, activeChapter.id) : Promise.resolve(false),
     });
+
+    const aiContinue = useLocalAiContinue({
+        enabled: isLocal && !!activeChapter,
+        bookId: book?.id ?? bookId ?? '',
+        chapterId: activeChapterId,
+        sessionId: chapterDraft.sessionKey,
+        draftRevision: chapterDraft.revision,
+        databaseVersion: activeChapter?.databaseVersion ?? 0,
+        isReadOnly: chapterDraft.isReadOnly || chapterLock.isChangingLock,
+        contextChars: aiContinueSettings.contextChars,
+        getContextText: () => editorRef.current?.editor?.getText() ?? getEditorPlainText(chapterDraft.content),
+        captureAnchor: () => editorRef.current?.captureSelection() ?? null,
+        insertCandidateAtAnchor: (candidate, anchor) => editorRef.current?.insertAiCandidateAtAnchor(candidate, anchor) ?? false,
+    });
+
     const handleToggleReadOnly = chapterLock.toggle;
     // --- Editor Interaction Handlers ---
     const handleEditorUpdate = (newContent: string, newWordCount: number) => {
@@ -464,6 +453,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     chapterTitle={chapterDraft.title}
                     hasActiveChapter={!!activeChapter}
                     saveStatus={autosave.saveStatus}
+                    aiAvailable={isLocal && !!activeChapter}
                     isAiLoading={aiContinue.isAiLoading}
                     isReadOnly={chapterDraft.isReadOnly || chapterLock.isChangingLock}
                     isContextPanelOpen={isForeshadowingPanelOpen}
@@ -472,11 +462,23 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     onNavigateForeshadowingBoard={() => void navigateAfterSave(`/books/${bookId}/foreshadowing`)}
                     onNavigateWorldBuilding={() => void navigateAfterSave(`/books/${bookId}/settings`)}
                     onAIContinue={aiContinue.continueWriting}
+                    onStopAI={aiContinue.stop}
                     onToggleContextPanel={() => setIsForeshadowingPanelOpen(prev => !prev)}
                     onRetrySave={autosave.retry}
                     onNavigateSettings={() => void navigateAfterSave('/settings', { state: { returnTo: `/editor/${bookId}` } })}
                     onExportWord={handleExportWord}
                     onExportPdf={handleExportPDF}
+                />
+
+                <AiContinueCandidate
+                    candidate={aiContinue.candidate}
+                    isAiLoading={aiContinue.isAiLoading}
+                    canAdopt={aiContinue.canAdopt}
+                    adoptDisabledReason={aiContinue.adoptDisabledReason}
+                    onStop={aiContinue.stop}
+                    onAdopt={aiContinue.adoptCandidate}
+                    onDiscard={aiContinue.discardCandidate}
+                    onRegenerate={aiContinue.regenerate}
                 />
 
                 <div className="flex-1 min-h-0 bg-slate-100 dark:bg-slate-900 flex overflow-hidden">
@@ -549,7 +551,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     <div className="flex gap-4">
                         <span>Words: <span className="font-mono text-slate-700 dark:text-slate-200">{chapterDraft.wordCount}</span></span>
                     </div>
-                    <div><span>{isLocal ? 'Local storage · AI and book management unavailable' : 'StoryArk Sprint 5'}</span></div>
+                    <div><span>{isLocal ? 'Local storage · AI uses the configured desktop model' : 'StoryArk Sprint 5'}</span></div>
                 </footer>
             </main>
 

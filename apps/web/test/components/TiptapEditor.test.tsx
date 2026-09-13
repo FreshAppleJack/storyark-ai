@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import TiptapEditor, { TiptapEditorRef } from '../../components/TiptapEditor';
@@ -77,7 +77,7 @@ describe('TiptapEditor', () => {
     expect(onUpdate).not.toHaveBeenCalled();
   });
 
-  it('registers the underline extension exactly once (StarterKit already provides it)', () => {
+    it('registers the underline extension exactly once (StarterKit already provides it)', () => {
     const ref = React.createRef<TiptapEditorRef>();
     const onUpdate = vi.fn();
     render(<TiptapEditor ref={ref} contentId="chapter-1" content={chapter('已有正文')} characters={characters} onUpdate={onUpdate} />);
@@ -85,8 +85,31 @@ describe('TiptapEditor', () => {
     const editor = ref.current!.editor;
     const underlineExtensions = editor.extensionManager.extensions.filter((ext: { name: string }) => ext.name === 'underline');
     expect(underlineExtensions).toHaveLength(1);
-    expect(editor.schema.marks.underline).toBeDefined();
-  });
+        expect(editor.schema.marks.underline).toBeDefined();
+    });
+
+    it('inserts a candidate as structured content and keeps the edit undoable', () => {
+        const ref = React.createRef<TiptapEditorRef>();
+        const onUpdate = vi.fn();
+        render(<TiptapEditor ref={ref} contentId="chapter-1" content={chapter('已有正文')} characters={characters} onUpdate={onUpdate} />);
+
+        const anchor = ref.current!.captureSelection();
+        expect(anchor).not.toBeNull();
+
+        act(() => {
+            expect(ref.current!.insertAiCandidateAtAnchor('<safe text>\nsecond line', anchor!)).toBe(true);
+        });
+
+        const editor = ref.current!.editor!;
+        expect(editor.getText()).toContain('<safe text>');
+        expect(editor.getText()).toContain('second line');
+        expect(onUpdate).toHaveBeenCalledTimes(1);
+
+        act(() => {
+            editor.commands.undo();
+        });
+        expect(editor.getText()).toBe('已有正文');
+    });
 
   it('blocks typing while read-only and accepts input again after unlocking', async () => {
     const user = userEvent.setup();

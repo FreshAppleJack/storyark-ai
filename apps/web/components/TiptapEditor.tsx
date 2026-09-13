@@ -5,7 +5,7 @@ import { createCharacterTooltipHandler } from '../features/editor/integrations/c
 import { getCharacterDisplayTerms } from '../domain/characters';
 import React, {useEffect, useEffectEvent, useState, useImperativeHandle, forwardRef, useMemo, useRef} from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
-import type { Editor } from '@tiptap/core';
+import type { Editor, JSONContent } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import TextAlign from '@tiptap/extension-text-align';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -21,11 +21,15 @@ import { EditorToolbar } from '../features/editor/components/EditorToolbar';
 import { EditorContextMenu } from '../features/editor/components/EditorContextMenu';
 import { Character, EDITOR_SPACING_LIMITS, ForeshadowingNote } from '../types';
 import { calculateMixedWordCount } from '../utils/textUtils'; // Import common utility function
+import type { AiContinueAnchor } from '../features/editor/types/aiContinue';
+import { buildAiContinueContent } from '../features/editor/utils/aiContinueText';
 
 const EMPTY_CHARACTERS: Character[] = [];
 
 export interface TiptapEditorRef {
     insertContent: (content: string) => void;
+    captureSelection: () => AiContinueAnchor | null;
+    insertAiCandidateAtAnchor: (candidate: string, anchor: AiContinueAnchor) => boolean;
     editor: Editor | null;
     getHTML: () => string; // Allow parent component to directly get latest updated HTML content
     /** Force refresh all character highlights in the editor (use after character settings change) */
@@ -458,6 +462,32 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                         .run();
                 }
             }
+        },
+        captureSelection: () => {
+            if (!editor || editor.isDestroyed) return null;
+            const { from, to } = editor.state.selection;
+            return {
+                from,
+                to,
+                docSize: editor.state.doc.content.size,
+                selectedText: editor.state.doc.textBetween(from, to, '\n', '\n'),
+            };
+        },
+        insertAiCandidateAtAnchor: (candidate: string, anchor: AiContinueAnchor) => {
+            if (!editor || editor.isDestroyed || !editor.isEditable || !candidate.trim()) return false;
+
+            const { selection, doc } = editor.state;
+            if (
+                selection.from !== anchor.from ||
+                selection.to !== anchor.to ||
+                doc.content.size !== anchor.docSize
+            ) {
+                return false;
+            }
+
+            const content: JSONContent[] = buildAiContinueContent(candidate);
+            if (content.length === 0) return false;
+            return editor.commands.insertContent(content);
         },
         editor: editor,
         // Fix: Add getHTML method implementation to avoid error in parent component call

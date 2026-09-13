@@ -197,3 +197,33 @@ Windows desktop acceptance additionally verified normal application close/reopen
 session credentials became unavailable, system credentials remained configured,
 and deleting both fixtures cleared the default and pending credential cleanup.
 The native fixture and the isolated test configuration were removed after testing.
+
+## Work unit 4 implementation: AI Continue adoption boundary
+
+The local editor now uses `aiGenerationRepository` and Tauri IPC directly. The
+local path no longer imports the legacy HTTP continuation service and does not
+retry or fall back to it when local generation fails.
+
+Each request captures the book/chapter identity, editor session, draft
+revision, bounded context from the current in-memory draft, the insertion
+anchor/selection, and the lock state. The context section is labeled
+`Current in-memory draft`; no database body is reread and relabeled as the
+current draft. Deltas stay in a session-only candidate buffer. A completed
+candidate is distinct from a saved chapter.
+
+Adoption rechecks the chapter/session/revision, lock, editor selection and
+document size. A changed source preserves the candidate and requires
+regeneration or restoring the original insertion position. Successful
+adoption uses one structured Tiptap insertion command, so the editor's normal
+serialization, revision tracking and autosave queue handle persistence without
+flattening the document or parsing generated text as HTML. Existing nodes,
+marks, mentions, foreshadowing data and unknown content outside the insertion
+range are not rewritten.
+
+Failures, cancellation, empty output and truncation leave the original body
+untouched and never show it as saved. The candidate panel provides preview,
+stop, adopt, regenerate and discard actions; adopted text remains subject to
+the existing navigation and native-close save guards. Frontend tests cover the
+candidate lifecycle, stale revisions/anchors, read-only adoption, terminal
+failure states, structured insertion and undo. Real provider and packaged
+desktop acceptance remain separate evidence items.

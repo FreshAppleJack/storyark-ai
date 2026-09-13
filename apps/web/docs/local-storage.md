@@ -35,9 +35,10 @@ facade or adding unused abstractions.
 > specification. Weeks 9–10 delivered the library foundation (units below);
 > weeks 11–12 moved every remaining work surface — characters, the
 > relationship graph, foreshadowing/planning, preferences and the brainstorm
-> workspace — onto the same storage (see `local-content.md`). What is still
-> **not** local: model generation (AI continue, brainstorm generation), RAG,
-> whole-book JSON interchange and platform features.
+> workspace — onto the same storage (see `local-content.md`). AI Continue now
+> uses the configured-model Tauri generation boundary; what is still **not**
+> local is brainstorm generation, RAG, whole-book JSON interchange and
+> platform features.
 
 ## Identity and schema
 
@@ -399,9 +400,9 @@ alongside the existing initialization checks.
 
 ## Remaining legacy-backend dependencies (checked 2026-09-13)
 
-Every work surface is local now. Only model-backed features still depend on
-a backend and stay explicitly disabled with honest capability notes — the
-app does not call the legacy HTTP API at runtime:
+Every work surface is local now. Only brainstorm generation remains disabled;
+the model-backed editor path uses configured providers through Tauri IPC and
+the app does not call the legacy HTTP API at runtime:
 
 | Area | Local status | Legacy dependency |
 | --- | --- | --- |
@@ -412,7 +413,7 @@ app does not call the legacy HTTP API at runtime:
 | Story planning / plot settings | Local SQLite aggregate, guarded drafts and source versions (weeks 11–12 unit 4) | No legacy calls |
 | Preferences remote sync | Local SQLite single row (weeks 11–12 unit 5); localStorage is only a launch cache | No legacy calls |
 | AI brainstorm workspace | Local SQLite aggregate with guarded drafts (weeks 11–12 unit 5); generation stays disabled | No legacy calls |
-| AI continue | Explicitly disabled until user-configured models arrive | `AiController` |
+| AI continue | Local configured-model generation through repository/IPC; candidate adoption uses the normal draft save queue | No legacy calls |
 | Brainstorm generation | Explicitly disabled until user-configured models arrive | `AiBrainstormController` generate endpoint |
 | DOCX/PDF export | Works locally (pure frontend, input is the local chapter) | none |
 | Style library | Works locally (localStorage; not covered by SQLite backups) | none |

@@ -14,6 +14,7 @@ interface EditorHeaderProps {
     chapterTitle: string;
     hasActiveChapter: boolean;
     saveStatus: EditorSaveStatus;
+    aiAvailable?: boolean;
     isAiLoading: boolean;
     isReadOnly: boolean;
     isContextPanelOpen: boolean;
@@ -22,6 +23,7 @@ interface EditorHeaderProps {
     onNavigateForeshadowingBoard: () => void;
     onNavigateWorldBuilding: () => void;
     onAIContinue: () => void;
+    onStopAI?: () => void;
     onToggleContextPanel: () => void;
     onRetrySave: () => void;
     onNavigateSettings: () => void;
@@ -40,6 +42,7 @@ export function EditorHeader({
     chapterTitle,
     hasActiveChapter,
     saveStatus,
+    aiAvailable = true,
     isAiLoading,
     isReadOnly,
     isContextPanelOpen,
@@ -48,6 +51,7 @@ export function EditorHeader({
     onNavigateForeshadowingBoard,
     onNavigateWorldBuilding,
     onAIContinue,
+    onStopAI,
     onToggleContextPanel,
     onRetrySave,
     onNavigateSettings,
@@ -96,17 +100,29 @@ export function EditorHeader({
 
                 <div className="h-4 mx-1 border-l border-slate-300 dark:border-slate-700" />
 
-                <Button
-                    variant="secondary"
-                    size="sm"
-                    className="text-brand-600 dark:text-brand-300 border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-950/40 hover:bg-brand-100 dark:hover:bg-brand-900/50"
-                    onClick={onAIContinue}
-                    disabled={localMode || isAiLoading || isReadOnly}
-                    title={localMode ? 'Local model integration is not available yet' : undefined}
-                >
-                    {isAiLoading ? <Loader2 size={16} className="animate-spin mr-2"/> : <Wand2 size={16} className="mr-2"/>}
-                    {isAiLoading ? 'AI Writing...' : 'AI Continue'}
-                </Button>
+                {isAiLoading ? (
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        className="text-brand-600 dark:text-brand-300 border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-950/40 hover:bg-brand-100 dark:hover:bg-brand-900/50"
+                        onClick={onStopAI}
+                    >
+                        <Loader2 size={16} className="animate-spin mr-2"/>
+                        Stop AI
+                    </Button>
+                ) : (
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        className="text-brand-600 dark:text-brand-300 border-brand-200 dark:border-brand-800 bg-brand-50 dark:bg-brand-950/40 hover:bg-brand-100 dark:hover:bg-brand-900/50"
+                        onClick={onAIContinue}
+                        disabled={!aiAvailable || isReadOnly}
+                        title={!aiAvailable ? 'Configure a local AI model before generating' : undefined}
+                    >
+                        <Wand2 size={16} className="mr-2"/>
+                        AI Continue
+                    </Button>
+                )}
                 <Button
                     variant="secondary"
                     size="sm"
