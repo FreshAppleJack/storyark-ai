@@ -2,7 +2,7 @@
 
 -- Full schema snapshot for NEW EMPTY databases only; not an incremental migration.
 
--- Based on the registered Rust migrations through version 4. No application data.
+-- Based on the registered Rust migrations through version 5. No application data.
 
 -- Do not add this file to the runtime migration registry or execute all *.sql files.
 
@@ -192,13 +192,19 @@ CREATE TABLE ai_model_configs (
     config_version INTEGER NOT NULL DEFAULT 1 CHECK(config_version > 0),
     created_at INTEGER NOT NULL CHECK(created_at >= 0),
     updated_at INTEGER NOT NULL CHECK(updated_at >= created_at)
-) STRICT;
+, credential_mode TEXT NOT NULL DEFAULT 'session'
+    CHECK(credential_mode IN ('session','system'))) STRICT;
 
 CREATE TABLE ai_generation_settings (
     id INTEGER PRIMARY KEY CHECK(id = 1),
     default_config_id TEXT REFERENCES ai_model_configs(id) ON DELETE RESTRICT,
     database_version INTEGER NOT NULL DEFAULT 1 CHECK(database_version > 0),
     updated_at INTEGER NOT NULL CHECK(updated_at >= 0)
+) STRICT;
+
+CREATE TABLE ai_credential_cleanup (
+    credential_ref TEXT PRIMARY KEY NOT NULL CHECK(length(credential_ref)=36),
+    credential_mode TEXT NOT NULL CHECK(credential_mode IN ('session','system'))
 ) STRICT;
 
 CREATE INDEX books_order ON books(position, id);
@@ -213,7 +219,7 @@ CREATE INDEX graph_nodes_book ON graph_nodes(book_id, node_key);
 
 CREATE INDEX graph_edges_book ON graph_edges(book_id, id);
 
-PRAGMA user_version = 4;
+PRAGMA user_version = 5;
 
 COMMIT;
 

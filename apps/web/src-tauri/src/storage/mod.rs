@@ -1,5 +1,7 @@
 //! Local storage facade. Business modules share one connection owner and keep
 //! their transaction boundaries inside each Database operation.
+mod ai_cleanup;
+mod ai_settings;
 mod backup;
 mod brainstorm;
 mod character_order;
@@ -52,6 +54,12 @@ impl Storage {
     where
         F: FnOnce(&mut Database) -> Result<Value> + Send + 'static,
     {
+        self.run_typed(operation).await
+    }
+    pub async fn run_typed<T: Send + 'static, F>(&self, operation: F) -> Result<T>
+    where
+        F: FnOnce(&mut Database) -> Result<T> + Send + 'static,
+    {
         let owner = self.0.clone();
         tauri::async_runtime::spawn_blocking(move || {
             let mut db = owner
@@ -67,4 +75,5 @@ impl Storage {
 pub struct Database {
     connection: Connection,
     directory: PathBuf,
+    credentials: crate::ai::credentials::Credentials,
 }

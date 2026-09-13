@@ -56,6 +56,23 @@ pub struct ConfigRecord {
     pub config_version: u64,
     pub created_at: u64,
     pub updated_at: u64,
+    pub credential_mode: CredentialMode,
+    pub credential_status: CredentialStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CredentialMode {
+    Session,
+    System,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CredentialStatus {
+    Session,
+    Configured,
+    Unavailable,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +81,7 @@ pub struct ConfigList {
     pub configs: Vec<ConfigRecord>,
     pub default_config_id: Option<String>,
     pub database_version: u64,
+    pub cleanup_pending: bool,
 }
 
 impl ConfigInput {

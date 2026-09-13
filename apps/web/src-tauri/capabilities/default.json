@@ -6,6 +6,9 @@
     "main"
   ],
   "permissions": [
+    "allow-ai-list-configs", "allow-ai-save-config", "allow-ai-set-default",
+    "allow-ai-delete-config", "allow-ai-test-connection",
+    "allow-ai-prepare-context", "allow-ai-start-generation", "allow-ai-cancel-generation",
     "allow-local-reorder-characters",
     "dialog:allow-save",
     "fs:allow-write-file",

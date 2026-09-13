@@ -46,13 +46,37 @@ pub struct CancelRequest {
     pub session_id: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TokenUsage {
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub total_tokens: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum FinishReason {
+    Stop,
+    Length,
+    Provider(String),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum GenerationPayload {
     Started,
-    Delta { text: String },
-    Completed { text: String },
-    Failed { error: AiError },
+    Delta {
+        text: String,
+    },
+    Completed {
+        text: String,
+        usage: TokenUsage,
+        finish_reason: FinishReason,
+    },
+    Failed {
+        error: AiError,
+    },
     Cancelled,
 }
 
@@ -105,6 +129,45 @@ pub struct CancelledRequest {
     pub outcome: CancelOutcome,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContextSection {
+    pub kind: ContextKind,
+    pub label: String,
+    pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ContextKind {
+    CurrentDraft,
+    WrittenFact,
+    AuthorSetting,
+    ManualSummary,
+    FuturePlan,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContextInput {
+    pub book_id: String,
+    pub session_id: String,
+    pub draft_revision: u64,
+    pub max_chars: u32,
+    pub sections: Vec<ContextSection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextSnapshot {
+    pub context_snapshot_id: String,
+    pub book_id: String,
+    pub session_id: String,
+    pub draft_revision: u64,
+    pub sections: Vec<ContextSection>,
+    pub char_count: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,6 +196,8 @@ mod tests {
             sequence: 2,
             payload: GenerationPayload::Completed {
                 text: "candidate".into(),
+                usage: TokenUsage::default(),
+                finish_reason: FinishReason::Stop,
             },
         };
         let value = serde_json::to_value(event).unwrap();

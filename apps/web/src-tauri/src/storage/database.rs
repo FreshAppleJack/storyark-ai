@@ -7,7 +7,8 @@ const MIGRATION_0001: &str = include_str!("../../migrations/0001_library.sql");
 const MIGRATION_0002: &str = include_str!("../../migrations/0002_local_content.sql");
 const MIGRATION_0003: &str = include_str!("../../migrations/0003_book_cover.sql");
 const MIGRATION_0004: &str = include_str!("../../migrations/0004_ai_model_configs.sql");
-const LATEST_VERSION: i64 = 4;
+const MIGRATION_0005: &str = include_str!("../../migrations/0005_ai_credentials.sql");
+const LATEST_VERSION: i64 = 5;
 
 impl Database {
     pub fn open(directory: &Path) -> Result<Self> {
@@ -49,6 +50,7 @@ impl Database {
                 tx.pragma_update(None, "user_version", 3)?;
             }
             3 => {}
+            4 => {}
             v if v == LATEST_VERSION => {}
             _ => {
                 return Err(StorageError::new(
@@ -61,6 +63,12 @@ impl Database {
             tx.execute_batch(MIGRATION_0004)?;
             tx.pragma_update(None, "user_version", 4)?;
         }
+        if version < 5 {
+            tx.execute_batch(MIGRATION_0005)?;
+            tx.pragma_update(None, "user_version", 5)?;
+        }
+        tx.prepare("SELECT credential_mode FROM ai_model_configs LIMIT 0")?;
+        tx.prepare("SELECT credential_ref FROM ai_credential_cleanup LIMIT 0")?;
         tx.prepare("SELECT c.config_version,s.default_config_id FROM ai_model_configs c,ai_generation_settings s LIMIT 0")?;
         // Catch missing tables/columns even for an allegedly current database.
         tx.prepare("SELECT b.author,b.cover_color,v.book_id,c.content_version,c.foreshadowings_json FROM books b,volumes v,chapters c LIMIT 0")?;
@@ -75,9 +83,12 @@ impl Database {
         tx.commit()?;
         connection.pragma_update(None, "journal_mode", "WAL")?;
         connection.pragma_update(None, "synchronous", "FULL")?;
-        Ok(Self {
+        let mut database = Self {
             connection,
             directory: directory.to_owned(),
-        })
+            credentials: Default::default(),
+        };
+        database.cleanup_credentials()?;
+        Ok(database)
     }
 }

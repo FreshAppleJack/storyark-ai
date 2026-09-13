@@ -4,6 +4,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
+            app.manage(ai::tasks::AiRuntime::default());
             // STORYARK_DATA_DIR redirects the database directory for controlled
             // smoke tests; production runs always use the platform app-data dir.
             let directory = match std::env::var_os("STORYARK_DATA_DIR") {
@@ -23,6 +24,14 @@ pub fn run() {
 
 fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder.invoke_handler(tauri::generate_handler![
+        ai_commands::ai_list_configs,
+        ai_commands::ai_save_config,
+        ai_commands::ai_set_default,
+        ai_commands::ai_delete_config,
+        ai_commands::ai_test_connection,
+        ai_commands::ai_prepare_context,
+        ai_commands::ai_start_generation,
+        ai_commands::ai_cancel_generation,
         commands::local_list_books,
         commands::local_read_book,
         commands::local_create_book,
@@ -61,3 +70,5 @@ mod storage;
 use tauri::Manager;
 
 pub mod ai;
+
+mod ai_commands;

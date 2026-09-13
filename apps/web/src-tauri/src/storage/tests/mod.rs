@@ -73,3 +73,5 @@ fn fixture(db: &mut Database) -> SaveChapter {
         foreshadowings:vec![json!({"id":"legacy-note","excerpt":"Alice","note":"Return later","createdAt":1,"updatedAt":2,"extra":{"preserve":true}})],
     }
 }
+
+mod ai_settings;

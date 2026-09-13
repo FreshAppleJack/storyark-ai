@@ -15,6 +15,14 @@ fn main() {
     };
     tauri_build::try_build(
         attributes.app_manifest(tauri_build::AppManifest::new().commands(&[
+            "ai_list_configs",
+            "ai_save_config",
+            "ai_set_default",
+            "ai_delete_config",
+            "ai_test_connection",
+            "ai_prepare_context",
+            "ai_start_generation",
+            "ai_cancel_generation",
             "local_list_books",
             "local_read_book",
             "local_create_book",

@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum AiErrorCode {
     ValidationError,
     CredentialUnavailable,
+    CredentialReplacementRequired,
     AuthenticationFailed,
     ModelNotFound,
     RateLimited,
@@ -18,6 +19,7 @@ pub enum AiErrorCode {
     ContextChanged,
     Locked,
     Unavailable,
+    Busy,
 }
 
 /// Closed error payload: no provider body, URL, key, or arbitrary message.
