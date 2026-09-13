@@ -17,6 +17,7 @@ import { WritingContextPanel } from '../features/editor/components/WritingContex
 import { Button } from '../components/ui/Button';
 import { getEditorPlainText, getForeshadowingExcerptMap } from '../domain/chapterContent';
 import { useChapterDraft } from '../features/editor/hooks/useChapterDraft';
+import { useChapterLock } from '../features/editor/hooks/useChapterLock';
 import { useChapterAutosave } from '../features/editor/hooks/useChapterAutosave';
 import { useWindowCloseGuard } from '../features/editor/hooks/useWindowCloseGuard';
 import { useAiContinue } from '../features/editor/hooks/useAiContinue';
@@ -311,20 +312,17 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         navigate(to, options);
     };
 
-    // Handle toggle read only state. Persist pending edits first: locking a
-    // chapter with an unsaved draft would strand the draft behind READ_ONLY.
-    const handleToggleReadOnly = async () => {
-        if (!book || !activeVolume || !activeChapter) return;
-        if (chapterDraft.isDirty) {
-            const ok = await autosave.flush();
-            if (!ok) return;
-        }
-        const nextReadOnlyState = !chapterDraft.isReadOnly;
-        chapterDraft.setReadOnly(nextReadOnlyState);
-        const persisted = await toggleChapterLock(book.id, activeVolume.id, activeChapter.id);
-        if (!persisted) chapterDraft.setReadOnly(!nextReadOnlyState);
-    };
-
+    const chapterLock = useChapterLock({
+        sessionKey: chapterDraft.sessionKey,
+        isReadOnly: chapterDraft.isReadOnly,
+        isDirty: chapterDraft.isDirty,
+        pauseEdits: chapterDraft.pauseEdits,
+        setReadOnly: chapterDraft.setReadOnly,
+        flush: autosave.flush,
+        persistToggle: () => book && activeVolume && activeChapter
+            ? toggleChapterLock(book.id, activeVolume.id, activeChapter.id) : Promise.resolve(false),
+    });
+    const handleToggleReadOnly = chapterLock.toggle;
     // --- Editor Interaction Handlers ---
     const handleEditorUpdate = (newContent: string, newWordCount: number) => {
         chapterDraft.applyEditorUpdate(newContent, newWordCount);
@@ -467,7 +465,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     hasActiveChapter={!!activeChapter}
                     saveStatus={autosave.saveStatus}
                     isAiLoading={aiContinue.isAiLoading}
-                    isReadOnly={chapterDraft.isReadOnly}
+                    isReadOnly={chapterDraft.isReadOnly || chapterLock.isChangingLock}
                     isContextPanelOpen={isForeshadowingPanelOpen}
                     contextPanelItemCount={contextPanelItemCount}
                     isExporting={isExporting}
@@ -499,7 +497,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                                             placeholder="Chapter Title"
                                             value={chapterDraft.title}
                                             onChange={handleTitleChange}
-                                            disabled={chapterDraft.isReadOnly}
+                                            disabled={chapterDraft.isReadOnly || chapterLock.isChangingLock}
                                         />
                                     </div>
                                     <div className="mt-4 h-px bg-slate-100 dark:bg-slate-800 w-full"></div>
@@ -515,7 +513,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                                         onCharacterClick={handleCharacterClick}
                                         onForeshadowingCreate={handleForeshadowingCreate}
                                         onForeshadowingClick={handleForeshadowingClick}
-                                        isEditable={!chapterDraft.isReadOnly}
+                                        isEditable={!chapterDraft.isReadOnly && !chapterLock.isChangingLock}
                                         onToggleReadOnly={handleToggleReadOnly}
                                         placeholder={isLocal ? 'Start writing your story here...' : "Start writing your story here... Type '@' to mention a character."}
                                         editorMarginPx={editorSpacingSettings.editorMarginPx}
@@ -537,7 +535,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                         excerptMap={foreshadowingExcerptMap}
                         activeForeshadowingId={activeForeshadowingId}
                         plotSettings={linkedPlotSettings}
-                        isReadOnly={chapterDraft.isReadOnly}
+                        isReadOnly={chapterDraft.isReadOnly || chapterLock.isChangingLock}
                         canOpenOutline={!!activeChapterId}
                         onClose={() => setIsForeshadowingPanelOpen(false)}
                         onFocusForeshadowing={handleFocusForeshadowing}

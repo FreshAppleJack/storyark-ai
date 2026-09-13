@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Chapter, ForeshadowingNote } from '../../../types';
 
 /**
@@ -67,6 +67,8 @@ function draftFromChapter(chapter: Chapter, revision: number, isDirty: boolean):
  */
 export function useChapterDraft({ bookId = '', volumeId = '', chapterId, chapter }: UseChapterDraftOptions) {
     const [draft, setDraft] = useState<DraftState>(EMPTY_DRAFT);
+    const editsPaused = useRef(false);
+    const pauseEdits = useCallback((paused: boolean) => { editsPaused.current = paused; }, []);
     const identity = JSON.stringify([bookId, volumeId, chapter ? chapterId : '']);
     const [loaded, setLoaded] = useState<{ id: string; chapter?: Chapter; session: number }>({ id: '', session: 0 });
 
@@ -78,17 +80,20 @@ export function useChapterDraft({ bookId = '', volumeId = '', chapterId, chapter
         setDraft(current => {
             if (!chapter) return EMPTY_DRAFT;
             if (isSwitch) return draftFromChapter(chapter, 0, false);
-            if (current.isDirty) return current;
+            if (current.isDirty) return { ...current, isReadOnly: chapter.isEditable === false };
             return draftFromChapter(chapter, current.revision, current.isDirty);
         });
     }
 
     const setTitle = useCallback((title: string) => {
-        setDraft(current => ({ ...current, title, revision: current.revision + 1, isDirty: true }));
+        if (editsPaused.current) return;
+        setDraft(current => current.isReadOnly ? current : ({ ...current, title, revision: current.revision + 1, isDirty: true }));
     }, []);
 
     const applyEditorUpdate = useCallback((content: string, wordCount: number) => {
+        if (editsPaused.current) return;
         setDraft(current => {
+            if (current.isReadOnly) return current;
             if (content === current.content) {
                 return wordCount === current.wordCount ? current : { ...current, wordCount };
             }
@@ -104,7 +109,8 @@ export function useChapterDraft({ bookId = '', volumeId = '', chapterId, chapter
     }, []);
 
     const addForeshadowing = useCallback((note: ForeshadowingNote) => {
-        setDraft(current => ({
+        if (editsPaused.current) return;
+        setDraft(current => current.isReadOnly ? current : ({
             ...current,
             foreshadowings: [note, ...current.foreshadowings],
             revision: current.revision + 1,
@@ -114,7 +120,8 @@ export function useChapterDraft({ bookId = '', volumeId = '', chapterId, chapter
 
     // `updatedAt` is passed in by the caller so this hook stays pure.
     const updateForeshadowingNote = useCallback((id: string, noteText: string, updatedAt: number) => {
-        setDraft(current => ({
+        if (editsPaused.current) return;
+        setDraft(current => current.isReadOnly ? current : ({
             ...current,
             foreshadowings: current.foreshadowings.map(item => (
                 item.id === id ? { ...item, note: noteText, updatedAt } : item
@@ -125,7 +132,8 @@ export function useChapterDraft({ bookId = '', volumeId = '', chapterId, chapter
     }, []);
 
     const removeForeshadowing = useCallback((id: string) => {
-        setDraft(current => ({
+        if (editsPaused.current) return;
+        setDraft(current => current.isReadOnly ? current : ({
             ...current,
             foreshadowings: current.foreshadowings.filter(item => item.id !== id),
             revision: current.revision + 1,
@@ -164,6 +172,7 @@ export function useChapterDraft({ bookId = '', volumeId = '', chapterId, chapter
         updateForeshadowingNote,
         removeForeshadowing,
         setReadOnly,
+        pauseEdits,
         markSaved,
         getSnapshot,
     };

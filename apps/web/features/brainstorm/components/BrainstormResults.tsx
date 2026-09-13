@@ -102,7 +102,7 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, gene
                         <textarea
                             value={workspace.finalContent}
                             onChange={(event) => updateFinalContent(event.target.value)}
-                            className="mt-4 min-h-80 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-700 outline-none transition focus:border-brand-400 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-brand-500"
+                            className="mt-4 min-h-80 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-700 outline-none transition focus:border-brand-400 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-brand-500 dark:focus:bg-slate-950"
                         />
                     </section>
                 )}

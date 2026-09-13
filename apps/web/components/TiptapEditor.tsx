@@ -417,8 +417,8 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
     useEffect(() => {
         if (editor && typeof isEditable === 'boolean') {
             if (editor.isEditable !== isEditable) {
-                // Here, we don't need to be silent as the lock status change itself may require notification but not content change
-                editor.setEditable(isEditable);
+                // Changing a lock is metadata, not a new content update.
+                editor.setEditable(isEditable, false);
             }
         }
     }, [isEditable, editor]);
