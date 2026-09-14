@@ -1,6 +1,7 @@
 //! Local storage facade. Business modules share one connection owner and keep
 //! their transaction boundaries inside each Database operation.
 mod ai_cleanup;
+mod ai_generation;
 mod ai_settings;
 mod backup;
 mod brainstorm;

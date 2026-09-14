@@ -23,7 +23,7 @@ function AiBrainstormContent({ bookId, localBook, sources }: { bookId: string; l
     const { getBook } = useBooks();
     const book = localBook ?? getBook(bookId);
     const editor = useBrainstormWorkspace(bookId, book, searchParams.get('chapterId'), sources);
-    const { isLoading, loadError, isSaving, isGenerating, saveState, handleSave, handleGenerate } = editor;
+    const { isLoading, loadError, isSaving, isGenerating, saveState, handleSave, regenerate } = editor;
     if (!book) return <div className="min-h-screen flex items-center justify-center text-slate-400">Book not found</div>;
     return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
@@ -52,7 +52,7 @@ function AiBrainstormContent({ bookId, localBook, sources }: { bookId: string; l
                         <Button onClick={handleSave} disabled={isSaving || isGenerating || isLoading || loadError} icon={isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}>
                             {isSaving ? 'Saving...' : 'Save Result'}
                         </Button>
-                        <Button variant="secondary" onClick={handleGenerate} disabled={!editor.generationAvailable || isGenerating || isSaving || isLoading || loadError}
+                        <Button variant="secondary" onClick={() => { void regenerate(); }} disabled={!editor.generationAvailable || isGenerating || isSaving || isLoading || loadError}
                             title={editor.generationAvailable ? undefined : 'Model integration is not available yet'} icon={isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}>
                             {isGenerating ? 'Brainstorming...' : 'Regenerate'}
                         </Button>
@@ -71,7 +71,8 @@ function AiBrainstormContent({ bookId, localBook, sources }: { bookId: string; l
             ) : (
                 <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[340px_minmax(520px,1fr)_340px] overflow-hidden">
                     <BrainstormChapterPicker chapterOptions={editor.chapterOptions} selectedChapterIds={editor.selectedChapterIds} toggleChapter={editor.toggleChapter} />
-                    <BrainstormResults isGenerating={isGenerating} isSaving={isSaving} handleGenerate={handleGenerate}
+                    <BrainstormResults isGenerating={isGenerating} isSaving={isSaving} handleGenerate={editor.handleGenerate} regenerate={editor.regenerate}
+                        stopGeneration={editor.stopGeneration} discardCandidate={editor.discardCandidate} candidate={editor.candidate} isReadOnly={editor.isReadOnly}
                         generationAvailable={editor.generationAvailable} isSnapshotStale={editor.isSnapshotStale}
                         selectedChapterIds={editor.selectedChapterIds} missingSummaryChapters={editor.missingSummaryChapters}
                         errorMessage={editor.errorMessage} visibleOptions={editor.visibleOptions} workspace={editor.workspace}
@@ -90,8 +91,17 @@ function LoadedLocalBrainstorm({ book, planning, initial }: { book: Book; planni
         // An uninitialized map is simply "no relationships" here; opening this
         // page must never initialize or reseed graphs.
         relationships: graph.data ? buildRelationships(graph.data, book.characters) : [],
+        generation: () => ({
+            bookId: book.id,
+            workspaceBookId: initial.bookId,
+            workspaceDatabaseVersion: persistence.getDatabaseVersion?.() ?? initial.databaseVersion,
+            planningBookId: planning.bookId,
+            planningDatabaseVersion: planning.databaseVersion,
+            graphBookId: graph.data?.bookId ?? book.id,
+            graphDatabaseVersion: graph.data?.databaseVersion ?? 0,
+        }),
         persistence,
-    }), [planning, graph.data, book.characters, persistence]);
+    }), [book.id, book.characters, graph.data, initial.bookId, initial.databaseVersion, planning, persistence]);
     if (graph.isPending || graph.isFetching) return <main className="p-8"><p role="status">Loading brainstorm workspace...</p></main>;
     if (graph.error) return <main className="p-8 space-y-4">
         <p role="alert">{graph.error.message}</p>

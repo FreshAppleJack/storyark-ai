@@ -69,8 +69,9 @@ by SQLite backups.
 
 selectedChapterIds (live selection), contextSnapshot (historical snapshot
 carrying its own source versions inside the JSON), generatedOptions,
-selectedOptionId, finalContent, plus `databaseVersion`/timestamps. Manual
-use only in this stage: generation is explicitly unavailable.
+selectedOptionId, finalContent, plus `databaseVersion`/timestamps. Generated
+options arrive through the configured-model Tauri IPC as a session-only
+candidate; only a chosen option and its normal workspace save become durable.
 
 Deferred (not in 0002): vector indexes, AI task tables, whole-book JSON
 schemaVersion, legacy-ID mapping tables (designed, not yet built).

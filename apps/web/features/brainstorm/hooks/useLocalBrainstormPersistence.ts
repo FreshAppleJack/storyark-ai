@@ -1,6 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { brainstormKey, brainstormRepository, type LocalBrainstorm } from '../../../data/local/brainstormRepository';
+import { parseBrainstormGenerationMetadata } from '../../../data/brainstormMapping';
 import type { BrainstormPersistence } from './useBrainstormWorkspace';
 
 /** Pin the version to the loaded workspace; query refetches cannot resolve conflicts. */
@@ -10,7 +11,11 @@ export function useLocalBrainstormPersistence(initial: LocalBrainstorm): Brainst
     const version = useRef(initial.databaseVersion);
     const session = useRef(crypto.randomUUID());
     return useMemo(() => ({
-        load: async () => loaded.current,
+        load: async () => ({
+            ...loaded.current,
+            generationMetadata: parseBrainstormGenerationMetadata(loaded.current.contextSnapshot.generationMetadata),
+        }),
+        getDatabaseVersion: () => version.current,
         save: async (workspace, revision) => {
             const { selectedChapterIds, contextSnapshot, generatedOptions, selectedOptionId, finalContent } = workspace;
             const response = await brainstormRepository.save({

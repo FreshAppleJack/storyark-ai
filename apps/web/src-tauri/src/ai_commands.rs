@@ -67,12 +67,20 @@ pub async fn ai_test_connection(
 
 #[tauri::command]
 pub async fn ai_prepare_context(
+    storage: tauri::State<'_, Storage>,
     runtime: tauri::State<'_, AiRuntime>,
     input: ContextInput,
 ) -> Result<Reply, ()> {
-    Ok(Reply::from(
-        context::prepare(&runtime, input).map(|snapshot| serde_json::to_value(snapshot).unwrap()),
-    ))
+    let book_id = input.book_id.clone();
+    let target = input.target.clone();
+    let result = storage
+        .run_typed(move |db| db.validate_ai_generation_target(&book_id, &target))
+        .await
+        .and_then(|_| {
+            context::prepare(&runtime, input)
+                .map(|snapshot| serde_json::to_value(snapshot).unwrap())
+        });
+    Ok(Reply::from(result))
 }
 
 #[tauri::command]
@@ -83,6 +91,14 @@ pub async fn ai_start_generation<R: tauri::Runtime>(
     input: GenerateRequest,
 ) -> Result<Reply, ()> {
     let request_id = input.request_id.clone();
+    let target_book_id = input.book_id.clone();
+    let target = input.target.clone();
+    if let Err(error) = storage
+        .run_typed(move |db| db.validate_ai_generation_target(&target_book_id, &target))
+        .await
+    {
+        return Ok(Reply::from(Err(error)));
+    }
     let context_snapshot = match runtime.take_context(&input.context_snapshot_id, &input) {
         Ok(snapshot) => snapshot,
         Err(error) => return Ok(Reply::from(Err(error))),

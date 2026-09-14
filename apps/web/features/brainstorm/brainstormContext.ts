@@ -1,7 +1,29 @@
 import type { Book, Chapter, Character, StoryPlanning, BrainstormOption } from '../../types';
-import { extractContentSignals } from '../../domain/chapterContent';
+import { extractContentSignals, getEditorPlainText } from '../../domain/chapterContent';
 import { escapeRegex, getCharacterMatchTerms } from '../../domain/characters';
-export interface BrainstormRelationship { source: string; target: string; label: string }
+
+export interface BrainstormRelationship {
+    /** Display names are resolved only when the context snapshot is built. */
+    source: string;
+    target: string;
+    /** Node instance identities are retained so duplicate character nodes stay distinct. */
+    sourceNodeKey: string;
+    targetNodeKey: string;
+    sourceCharacterId: string;
+    targetCharacterId: string;
+    label: string;
+}
+
+export interface BrainstormSourceVersions {
+    bookId: string;
+    workspaceBookId: string;
+    workspaceDatabaseVersion: number;
+    planningBookId: string;
+    planningDatabaseVersion: number;
+    graphBookId: string;
+    graphDatabaseVersion: number;
+}
+
 export interface ChapterOption {
     id: string;
     title: string;
@@ -56,15 +78,21 @@ export function getBrainstormChapters(book: Book | undefined, planning: StoryPla
 // snapshot can feed the panel without mapping.
 interface BrainstormGraphSource {
     nodes?: Array<{ id?: unknown; nodeKey?: unknown; characterId?: unknown }>;
-    edges?: Array<{ sourceNodeKey?: unknown; targetNodeKey?: unknown; label?: unknown }>;
+    edges?: Array<{
+        sourceNodeKey?: unknown;
+        targetNodeKey?: unknown;
+        sourceCharId?: unknown;
+        targetCharId?: unknown;
+        label?: unknown;
+    }>;
 }
 export const buildRelationships = (graphData: BrainstormGraphSource | null, characters: Character[]) => {
     const characterByNodeKey = new Map<string, string>();
     const validCharacterIds = new Set(characters.map(character => character.id));
 
     (graphData?.nodes || []).forEach((node) => {
-        const nodeKey = String(node.nodeKey || node.id || '');
-        const characterId = String(node.characterId || node.id || '');
+        const nodeKey = String(node.nodeKey ?? node.id ?? '');
+        const characterId = String(node.characterId ?? '');
         if (nodeKey && validCharacterIds.has(characterId)) {
             characterByNodeKey.set(nodeKey, characterId);
         }
@@ -72,15 +100,25 @@ export const buildRelationships = (graphData: BrainstormGraphSource | null, char
 
     return (graphData?.edges || [])
         .map((edge) => {
-            const sourceKey = String(edge.sourceNodeKey || '');
-            const targetKey = String(edge.targetNodeKey || '');
+            const sourceKey = String(edge.sourceNodeKey ?? edge.sourceCharId ?? '');
+            const targetKey = String(edge.targetNodeKey ?? edge.targetCharId ?? '');
+            const sourceCharacterId = characterByNodeKey.get(sourceKey) || String(edge.sourceCharId ?? '');
+            const targetCharacterId = characterByNodeKey.get(targetKey) || String(edge.targetCharId ?? '');
             return {
-                source: characterByNodeKey.get(sourceKey) || sourceKey,
-                target: characterByNodeKey.get(targetKey) || targetKey,
+                source: sourceCharacterId,
+                target: targetCharacterId,
+                sourceNodeKey: sourceKey,
+                targetNodeKey: targetKey,
+                sourceCharacterId,
+                targetCharacterId,
                 label: typeof edge.label === 'string' ? edge.label : '',
             };
         })
-        .filter((edge: { source: string; target: string }) => edge.source && edge.target);
+        .filter((edge: BrainstormRelationship) => (
+            edge.sourceNodeKey && edge.targetNodeKey
+            && validCharacterIds.has(edge.sourceCharacterId)
+            && validCharacterIds.has(edge.targetCharacterId)
+        ));
 };
 
 
@@ -105,25 +143,83 @@ export function isContextSnapshotStale(snapshot: Record<string, unknown>, chapte
     });
 }
 
+function boundedChapterText(content: string, maxChars: number): string {
+    const text = getEditorPlainText(content);
+    const characters = Array.from(text);
+    if (characters.length <= maxChars) return text;
+    return `...${characters.slice(-maxChars).join('')}`;
+}
+
+export function validateBrainstormSources(
+    book: Book,
+    planning: StoryPlanning,
+    selectedChapters: ChapterOption[],
+    relationships: BrainstormRelationship[],
+    source?: BrainstormSourceVersions,
+): string | null {
+    if (source) {
+        if (source.bookId !== book.id || source.workspaceBookId !== book.id || source.planningBookId !== book.id || source.graphBookId !== book.id) {
+            return 'The selected brainstorm sources belong to a different book.';
+        }
+        if (!Number.isSafeInteger(source.workspaceDatabaseVersion) || source.workspaceDatabaseVersion < 0
+            || !Number.isSafeInteger(source.planningDatabaseVersion) || source.planningDatabaseVersion < 0
+            || !Number.isSafeInteger(source.graphDatabaseVersion) || source.graphDatabaseVersion < 0) {
+            return 'The local brainstorm source versions are invalid. Reload the book and try again.';
+        }
+    }
+
+    const chapterIds = new Set(book.volumes.flatMap(volume => volume.chapters.map(chapter => chapter.id)));
+    if (selectedChapters.some(chapter => !chapterIds.has(chapter.id))) {
+        return 'A selected chapter no longer belongs to this book. Reload the brainstorm context.';
+    }
+    if (source && selectedChapters.some(chapter => !Number.isSafeInteger(chapter.databaseVersion) || (chapter.databaseVersion ?? 0) < 1)) {
+        return 'A selected chapter has no stable version. Reload the local book before generating.';
+    }
+    if (planning.chapterSummaries.some(summary => !chapterIds.has(summary.chapterId))) {
+        return 'The planning data references a chapter from another book.';
+    }
+    const characterIds = new Set(book.characters.filter(character => character.bookId === book.id).map(character => character.id));
+    if (book.characters.some(character => character.bookId !== book.id)) {
+        return 'The character context contains a character from another book.';
+    }
+    if (relationships.some(relationship => (
+        !relationship.sourceNodeKey || !relationship.targetNodeKey
+        || !characterIds.has(relationship.sourceCharacterId)
+        || !characterIds.has(relationship.targetCharacterId)
+    ))) {
+        return 'The relationship context contains an invalid node instance.';
+    }
+    return null;
+}
+
 export function buildContextSnapshot(book: Book, planning: StoryPlanning, selectedChapters: ChapterOption[],
-    mentionedCharacters: Character[], relationships: BrainstormRelationship[]) {
+    mentionedCharacters: Character[], relationships: BrainstormRelationship[], source?: BrainstormSourceVersions) {
     const missingSummaryChapters = selectedChapters.filter(chapter => !chapter.summary.trim());
     const characterNameById = new Map((book.characters).map(character => [character.id, character.name]));
     const selectedCharacterIds = new Set(mentionedCharacters.map(character => character.id));
     const relatedRelationships = relationships.filter(item => (
-        selectedCharacterIds.has(item.source) && selectedCharacterIds.has(item.target)
+        selectedCharacterIds.has(item.sourceCharacterId) && selectedCharacterIds.has(item.targetCharacterId)
     ));
 
     return {
+        bookId: book.id,
         bookTitle: book.title,
         storySummary: planning.storySummary,
         storyBackground: planning.storyBackground,
+        sourceVersions: source ? {
+            bookId: source.bookId,
+            workspaceDatabaseVersion: source.workspaceDatabaseVersion,
+            planningDatabaseVersion: source.planningDatabaseVersion,
+            graphDatabaseVersion: source.graphDatabaseVersion,
+        } : undefined,
         selectedChapters: selectedChapters.map(chapter => ({
             id: chapter.id,
             title: chapter.title,
             volumeTitle: chapter.volumeTitle,
             summary: chapter.summary,
             databaseVersion: chapter.databaseVersion,
+            summarySource: chapter.summary.trim() ? 'stored-planning-summary' : 'missing',
+            boundedChapterText: chapter.summary.trim() ? undefined : boundedChapterText(chapter.content, 2000),
         })),
         missingSummaryChapterTitles: missingSummaryChapters.map(chapter => chapter.title),
         appearingCharacters: mentionedCharacters.map(character => ({
@@ -134,8 +230,12 @@ export function buildContextSnapshot(book: Book, planning: StoryPlanning, select
             biographyAndNotes: character.description,
         })),
         relationships: relatedRelationships.map(item => ({
-            source: characterNameById.get(item.source) || item.source,
-            target: characterNameById.get(item.target) || item.target,
+            source: characterNameById.get(item.sourceCharacterId) || item.sourceCharacterId,
+            target: characterNameById.get(item.targetCharacterId) || item.targetCharacterId,
+            sourceNodeKey: item.sourceNodeKey,
+            targetNodeKey: item.targetNodeKey,
+            sourceCharacterId: item.sourceCharacterId,
+            targetCharacterId: item.targetCharacterId,
             label: item.label,
         })),
         outputGoal: 'Give three moderately detailed alternative next-plot directions with conflict hook, character motivation, potential consequences, and an editable development plan.',

@@ -1,4 +1,4 @@
-import type { BrainstormWorkspace } from '../types';
+import type { BrainstormGenerationMetadata, BrainstormWorkspace } from '../types';
 import type { BrainstormDto } from './dto';
 import { asRecord, parseJsonSafe } from '../utils/serialization';
 
@@ -7,24 +7,53 @@ export const createEmptyBrainstorm = (): BrainstormWorkspace => ({
 });
 const text = (value: unknown) => typeof value === 'string' ? value : '';
 
+export function parseBrainstormGenerationMetadata(value: unknown): BrainstormGenerationMetadata | undefined {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+    const metadata = value as Record<string, unknown>;
+    const source = metadata.source;
+    if (typeof metadata.configId !== 'string' || typeof metadata.modelId !== 'string'
+        || typeof metadata.generatedAt !== 'number' || typeof metadata.promptVersion !== 'string'
+        || !source || typeof source !== 'object' || Array.isArray(source)) return undefined;
+    const sourceValue = source as Record<string, unknown>;
+    const chapters = sourceValue.selectedChapters;
+    if (typeof sourceValue.bookId !== 'string'
+        || !Number.isSafeInteger(sourceValue.workspaceDatabaseVersion)
+        || !Number.isSafeInteger(sourceValue.planningDatabaseVersion)
+        || !Number.isSafeInteger(sourceValue.graphDatabaseVersion)
+        || !Array.isArray(chapters)
+        || chapters.some(chapter => !chapter || typeof chapter !== 'object'
+            || typeof (chapter as Record<string, unknown>).chapterId !== 'string'
+            || !Number.isSafeInteger((chapter as Record<string, unknown>).databaseVersion))) return undefined;
+    return metadata as unknown as BrainstormGenerationMetadata;
+}
+
 export function mapBrainstormResponse(data: BrainstormDto): BrainstormWorkspace {
     if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid brainstorm response');
     const chapterIds = parseJsonSafe(data.selectedChapterIds, []);
     const options = parseJsonSafe(data.generatedOptions, []);
     const updatedAt = data.updatedAt ? new Date(data.updatedAt).getTime() : undefined;
+    const contextSnapshot = asRecord(parseJsonSafe(data.contextSnapshot, {}));
+    const generationMetadata = parseBrainstormGenerationMetadata(contextSnapshot.generationMetadata);
     return {
         selectedChapterIds: Array.isArray(chapterIds) ? chapterIds.filter(id => typeof id === 'string' || typeof id === 'number').map(String) : [],
-        contextSnapshot: asRecord(parseJsonSafe(data.contextSnapshot, {})),
+        contextSnapshot,
         generatedOptions: Array.isArray(options) ? options.map(asRecord).filter(option => option.id).map(option => ({
             id: String(option.id), title: text(option.title), conflict: text(option.conflict), motivation: text(option.motivation),
             consequences: text(option.consequences), development: text(option.development),
         })) : [],
+        generationMetadata,
         selectedOptionId: data.selectedOptionId || null, finalContent: data.finalContent || '',
         updatedAt: Number.isFinite(updatedAt) ? updatedAt : undefined,
     };
 }
 
-export const toBrainstormPayload = (workspace: BrainstormWorkspace) => ({
-    selectedChapterIds: JSON.stringify(workspace.selectedChapterIds), contextSnapshot: JSON.stringify(workspace.contextSnapshot),
-    generatedOptions: JSON.stringify(workspace.generatedOptions), selectedOptionId: workspace.selectedOptionId || null, finalContent: workspace.finalContent,
-});
+export const toBrainstormPayload = (workspace: BrainstormWorkspace) => {
+    const contextSnapshot = { ...workspace.contextSnapshot };
+    const metadata = workspace.generationMetadata ?? parseBrainstormGenerationMetadata(contextSnapshot.generationMetadata);
+    if (metadata) contextSnapshot.generationMetadata = metadata;
+    else delete contextSnapshot.generationMetadata;
+    return {
+        selectedChapterIds: JSON.stringify(workspace.selectedChapterIds), contextSnapshot: JSON.stringify(contextSnapshot),
+        generatedOptions: JSON.stringify(workspace.generatedOptions), selectedOptionId: workspace.selectedOptionId || null, finalContent: workspace.finalContent,
+    };
+};

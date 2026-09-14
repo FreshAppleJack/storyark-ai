@@ -45,15 +45,17 @@ and credential references; saved keys must never be returned to the WebView.
 | ai_start_generation | GenerateRequest and caller-scoped output channel | accepted requestId (not saved content) |
 | ai_cancel_generation | CancelRequest | requestId and cancelled/alreadyFinished/notFound outcome |
 
-The context preparer is separate from generation. In unit 3 it validates the
-bounded, typed sections supplied by the caller, binds them to the book/session/
-draft revision, and stores an opaque Rust-owned snapshot. The future context
-loader must assemble and verify chapter, workspace, planning, and source versions
-with SQLite before calling this boundary; the current transport does not pretend
-that a caller-supplied section list is RAG. Generation resolves the snapshot and
-saved config by ID. It accepts neither arbitrary URLs/headers nor a client-supplied
-prompt labeled trusted. Snapshots are consumed once and expire after the in-memory
-retention window; request IDs cannot be reused for a second active task.
+The context preparer is separate from generation. It validates the bounded,
+typed sections supplied by the caller, binds them to the book/session/draft
+revision and target, and stores an opaque Rust-owned snapshot. The local
+brainstorm caller freezes workspace, planning, graph and selected chapter
+versions; the SQLite boundary verifies ownership and exact versions before the
+snapshot is accepted and again before network work starts. The current transport
+does not pretend that a caller-supplied section list is RAG. Generation resolves
+the snapshot and saved config by ID. It accepts neither arbitrary URLs/headers
+nor a client-supplied prompt labeled trusted. Snapshots are consumed once and
+expire after the in-memory retention window; request IDs cannot be reused for a
+second active task.
 
 ## Events and adoption
 
@@ -66,7 +68,7 @@ An accepted request only means task registration, not network success.
 The caller window owns the task and snapshot. Cancellation must validate both
 owner and session. Switching config cannot retarget an already running request.
 Chapter targets carry chapter databaseVersion; brainstorm targets carry the
-workspace, planning and selected source chapter versions. Book ID identifies
+workspace, planning, graph and selected source chapter versions. Book ID identifies
 its single brainstorm workspace. Session/revision remain frontend draft guards,
 not replacements for SQLite optimistic concurrency. At adoption, recheck the
 current draft/anchor/lock; continuation and brainstorming keep separate adoption
@@ -237,3 +239,24 @@ navigation and native-close save guards. Frontend tests cover the candidate
 lifecycle, stale revisions/anchors, read-only adoption, terminal failure
 states, structured insertion and undo. Real provider and packaged desktop
 acceptance remain separate evidence items.
+
+## Work unit 5 implementation: brainstorm candidate boundary
+
+The local brainstorm page reuses its chapter picker, character and relationship
+context, candidate cards and editable final-content area, but generation now
+uses the configured-model IPC path. The prompt requests exactly three minimal
+structured options (`title`, `conflict`, `motivation`, `consequences` and
+`development`) as JSON. The frontend validates field types and bounded lengths;
+invalid or incomplete JSON remains a safe, session-only raw candidate and never
+becomes a saved option. No automatic repair request is sent.
+
+Streaming deltas remain in the candidate buffer. Generation, candidate choice
+and workspace/database save are separate states. Choosing a valid direction
+copies it into the existing workspace, preserves manual `finalContent`, records
+only non-secret metadata (config ID, model ID, time, prompt version and source
+versions), and reuses the existing revisioned save queue. Regeneration or a
+changed source cannot replace the working draft. Missing summaries are labeled;
+the context may contain only a bounded excerpt of the currently loaded chapter
+text and never triggers a hidden model call. Relationship edges retain their
+source and target node instance keys, so duplicate nodes for one character are
+not merged.

@@ -105,21 +105,36 @@ export interface StoryPlanning {
 }
 
 export interface BrainstormOption {
-  id: string;
-  title: string;
-  conflict: string;
-  motivation: string;
-  consequences: string;
-  development: string;
+    id: string;
+    title: string;
+    conflict: string;
+    motivation: string;
+    consequences: string;
+    development: string;
+}
+
+export interface BrainstormGenerationMetadata {
+    configId: string;
+    modelId: string;
+    generatedAt: number;
+    promptVersion: string;
+    source: {
+        bookId: string;
+        workspaceDatabaseVersion: number;
+        planningDatabaseVersion: number;
+        graphDatabaseVersion: number;
+        selectedChapters: Array<{ chapterId: string; databaseVersion: number }>;
+    };
 }
 
 export interface BrainstormWorkspace {
-  selectedChapterIds: string[];
-  contextSnapshot: Record<string, unknown>;
-  generatedOptions: BrainstormOption[];
-  selectedOptionId?: string | null;
-  finalContent: string;
-  updatedAt?: number;
+    selectedChapterIds: string[];
+    contextSnapshot: Record<string, unknown>;
+    generatedOptions: BrainstormOption[];
+    selectedOptionId?: string | null;
+    finalContent: string;
+    generationMetadata?: BrainstormGenerationMetadata;
+    updatedAt?: number;
 }
 
 // � HandleConfig in types.ts to prevent circular dependencies
@@ -164,11 +179,12 @@ export interface Volume {
 export type BookStatus = 'serializing' | 'completed';
 
 export interface Book {
-  id: string;
-  title: string;
-  author: string;
-  status: BookStatus;
-  coverColor?: string;
+    id: string;
+    title: string;
+    author: string;
+    status: BookStatus;
+    isReadOnly?: boolean;
+    coverColor?: string;
   lastModified: number;
   volumes: Volume[];
   characters: Character[];

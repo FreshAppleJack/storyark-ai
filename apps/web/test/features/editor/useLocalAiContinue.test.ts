@@ -98,6 +98,7 @@ describe('useLocalAiContinue', () => {
             sessionId: 'chapter-session:1',
             draftRevision: 3,
             maxChars: 20,
+            target: { kind: 'continue', chapterId: 'chapter-1', databaseVersion: 7 },
             sections: [{ kind: 'currentDraft', label: 'Current in-memory draft', text: 'in-memory draft text' }],
         });
         expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({

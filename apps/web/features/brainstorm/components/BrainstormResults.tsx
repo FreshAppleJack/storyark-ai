@@ -1,9 +1,12 @@
 import React from 'react';
 import { BrainCircuit, CheckCircle2, Loader2, Sparkles, Wand2 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
+import type { BrainstormCandidate } from '../brainstormCandidate';
 import type { BrainstormEditor } from '../hooks/useBrainstormWorkspace';
-type Props = Pick<BrainstormEditor, 'isGenerating' | 'isSaving' | 'handleGenerate' | 'generationAvailable' | 'selectedChapterIds' | 'missingSummaryChapters' | 'isSnapshotStale' | 'errorMessage' | 'visibleOptions' | 'workspace' | 'chooseOption' | 'showAllOptions' | 'updateFinalContent'>;
-export function BrainstormResults({ isGenerating, isSaving, handleGenerate, generationAvailable, selectedChapterIds, missingSummaryChapters, isSnapshotStale, errorMessage, visibleOptions, workspace, chooseOption, showAllOptions, updateFinalContent }: Props) {
+type Props = Pick<BrainstormEditor, 'isGenerating' | 'isSaving' | 'handleGenerate' | 'regenerate' | 'stopGeneration' | 'discardCandidate' | 'generationAvailable' | 'selectedChapterIds' | 'missingSummaryChapters' | 'isSnapshotStale' | 'errorMessage' | 'visibleOptions' | 'workspace' | 'chooseOption' | 'showAllOptions' | 'updateFinalContent' | 'candidate' | 'isReadOnly'>;
+export function BrainstormResults({ isGenerating, isSaving, handleGenerate, regenerate, stopGeneration, discardCandidate, generationAvailable, selectedChapterIds, missingSummaryChapters, isSnapshotStale, errorMessage, visibleOptions, workspace, chooseOption, showAllOptions, updateFinalContent, candidate, isReadOnly }: Props) {
+    const hasCandidate = candidate.status !== 'idle';
+    const candidateAction = hasCandidate ? regenerate : handleGenerate;
     return (
         <main className="min-h-0 overflow-y-auto p-6">
             <div className="mx-auto max-w-4xl space-y-5">
@@ -19,9 +22,9 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, gene
                                 Generate options from the story outline, background, selected chapter summaries, appearing characters, and relationships.
                             </p>
                         </div>
-                        <Button onClick={handleGenerate} disabled={!generationAvailable || isGenerating || isSaving || selectedChapterIds.length === 0}
+                        <Button onClick={candidateAction} disabled={!generationAvailable || isGenerating || isSaving || selectedChapterIds.length === 0}
                             title={generationAvailable ? undefined : 'Model integration is not available yet'} icon={isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}>
-                            {isGenerating ? 'Generating...' : 'AI Brainstorm'}
+                            {isGenerating ? 'Generating...' : hasCandidate ? 'Regenerate' : 'AI Brainstorm'}
                         </Button>
                     </div>
 
@@ -52,6 +55,17 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, gene
                     )}
                 </section>
 
+                {hasCandidate && (
+                    <CandidatePanel
+                        candidate={candidate}
+                        isGenerating={isGenerating}
+                        isSaving={isSaving}
+                        stopGeneration={stopGeneration}
+                        regenerate={regenerate}
+                        discardCandidate={discardCandidate}
+                    />
+                )}
+
                 {visibleOptions.length === 0 ? (
                     <section className="rounded-xl border border-dashed border-slate-300 bg-white py-16 text-center dark:border-slate-700 dark:bg-slate-900">
                         <BrainCircuit size={34} className="mx-auto mb-4 text-slate-300 dark:text-slate-600" />
@@ -73,7 +87,7 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, gene
                                         )}
                                     </div>
                                     {!workspace.selectedOptionId ? (
-                                        <Button size="sm" onClick={() => chooseOption(option)}>Choose Direction</Button>
+                                        <Button size="sm" onClick={() => chooseOption(option)} disabled={isReadOnly} title={isReadOnly ? 'This workspace is read-only' : undefined}>Choose Direction</Button>
                                     ) : (
                                         <Button variant="secondary" size="sm" onClick={showAllOptions}>Show All Options</Button>
                                     )}
@@ -91,8 +105,7 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, gene
                     </div>
                 )}
 
-                {(workspace.selectedOptionId || !generationAvailable) && (
-                    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white">Editable Result</h3>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                             {workspace.selectedOptionId
@@ -102,12 +115,64 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, gene
                         <textarea
                             value={workspace.finalContent}
                             onChange={(event) => updateFinalContent(event.target.value)}
+                            disabled={isReadOnly}
                             className="mt-4 min-h-80 w-full resize-y rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-700 outline-none transition focus:border-brand-400 focus:bg-white dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-brand-500 dark:focus:bg-slate-950"
                         />
-                    </section>
-                )}
+                </section>
             </div>
         </main>
+    );
+}
+
+function CandidatePanel({
+    candidate,
+    isGenerating,
+    isSaving,
+    stopGeneration,
+    regenerate,
+    discardCandidate,
+}: {
+    candidate: BrainstormCandidate;
+    isGenerating: boolean;
+    isSaving: boolean;
+    stopGeneration: () => void;
+    regenerate: () => Promise<void>;
+    discardCandidate: () => void;
+}) {
+    const status = candidate.status === 'starting'
+        ? 'Preparing the frozen chapter, planning, and relationship context...'
+        : candidate.status === 'streaming'
+            ? 'Streaming into a temporary candidate. The saved workspace is unchanged.'
+            : candidate.status === 'completed'
+                ? 'Candidate ready. Choose a direction to add it to the editable workspace.'
+                : candidate.status === 'adopted'
+                    ? 'Candidate directions were added to the editable workspace. Save to persist them.'
+                    : candidate.status === 'invalid'
+                        ? 'The model response was kept for review, but it is not a valid brainstorm candidate.'
+                        : candidate.errorMessage || 'The candidate was not adopted.';
+    return (
+        <section className="rounded-xl border border-brand-200 bg-brand-50/60 p-5 shadow-sm dark:border-brand-900/70 dark:bg-brand-950/20">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                    <h3 className="text-lg font-bold text-slate-900 dark:text-white">New AI candidate</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">{status}</p>
+                    {candidate.errorMessage && candidate.status !== 'invalid' && (
+                        <p className="mt-2 text-sm text-rose-700 dark:text-rose-200">{candidate.errorMessage}</p>
+                    )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                    {isGenerating ? (
+                        <Button variant="secondary" size="sm" onClick={stopGeneration}>Stop</Button>
+                    ) : (
+                        <Button variant="secondary" size="sm" onClick={() => { void regenerate(); }} disabled={isSaving}>Regenerate</Button>
+                    )}
+                    <Button variant="secondary" size="sm" onClick={discardCandidate} disabled={isGenerating || isSaving}>Discard candidate</Button>
+                </div>
+            </div>
+            {candidate.rawText && (
+                <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-brand-100 bg-white px-4 py-3 text-xs leading-5 text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">{candidate.rawText}</pre>
+            )}
+        </section>
     );
 }
 

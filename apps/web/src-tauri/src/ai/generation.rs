@@ -1,14 +1,14 @@
 use super::{config::ConfigVersion, error::AiError};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SourceVersion {
     pub chapter_id: String,
     pub database_version: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum GenerationTarget {
     Continue {
@@ -22,6 +22,8 @@ pub enum GenerationTarget {
         workspace_database_version: u64,
         #[serde(rename = "planningDatabaseVersion")]
         planning_database_version: u64,
+        #[serde(rename = "graphDatabaseVersion")]
+        graph_database_version: u64,
         sources: Vec<SourceVersion>,
     },
 }
@@ -130,7 +132,7 @@ pub struct CancelledRequest {
     pub outcome: CancelOutcome,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContextSection {
     pub kind: ContextKind,
@@ -138,7 +140,7 @@ pub struct ContextSection {
     pub text: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum ContextKind {
     CurrentDraft,
@@ -148,13 +150,14 @@ pub enum ContextKind {
     FuturePlan,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ContextInput {
     pub book_id: String,
     pub session_id: String,
     pub draft_revision: u64,
     pub max_chars: u32,
+    pub target: GenerationTarget,
     pub sections: Vec<ContextSection>,
 }
 
@@ -165,6 +168,7 @@ pub struct ContextSnapshot {
     pub book_id: String,
     pub session_id: String,
     pub draft_revision: u64,
+    pub target: GenerationTarget,
     pub sections: Vec<ContextSection>,
     pub char_count: u32,
 }

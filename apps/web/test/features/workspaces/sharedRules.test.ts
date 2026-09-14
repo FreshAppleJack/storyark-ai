@@ -18,7 +18,10 @@ describe('shared workspace rules', () => {
         };
         const graph = toRelationshipGraph(raw, [alice, bob]);
         expect(graph.nodes[0]).toMatchObject({ id: 'alice-copy', data: { id: '4' }, position: { x: 1, y: 2 } });
-        expect(buildRelationships(raw, [alice, bob])).toEqual([{ source: '4', target: '9', label: 'friend' }]);
+        expect(buildRelationships(raw, [alice, bob])).toEqual([{
+            source: '4', target: '9', sourceNodeKey: 'alice-copy', targetNodeKey: 'bob-copy',
+            sourceCharacterId: '4', targetCharacterId: '9', label: 'friend',
+        }]);
         const unrelated = { id: 'other', source: 'third-copy', target: 'bob-copy' };
         expect(filterEdgesForHandles([...graph.edges, unrelated], 'alice-copy', { top: 'target', right: 'none', bottom: 'source', left: 'target' })).toEqual([unrelated]);
         expect(() => toRelationshipGraph(null, [alice])).toThrow('unavailable');

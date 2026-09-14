@@ -1,4 +1,5 @@
 use super::*;
+use crate::ai::generation::{GenerationTarget, SourceVersion};
 use crate::storage::SaveBrainstorm;
 
 fn input(chapter: &SaveChapter, version: i64) -> SaveBrainstorm {
@@ -157,4 +158,48 @@ fn brainstorm_commands_use_registered_ipc() {
         json!({"bookId":chapter.book_id}),
     );
     assert_eq!(read["value"], saved["value"]["workspace"]);
+}
+
+#[test]
+fn ai_brainstorm_target_freezes_owned_source_versions() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let chapter = fixture(&mut db);
+    db.save_chapter(chapter.clone()).unwrap();
+    let target = GenerationTarget::Brainstorm {
+        workspace_database_version: 0,
+        planning_database_version: 0,
+        graph_database_version: 0,
+        sources: vec![SourceVersion {
+            chapter_id: chapter.chapter_id.clone(),
+            database_version: 2,
+        }],
+    };
+    assert!(db
+        .validate_ai_generation_target(&chapter.book_id, &target)
+        .is_ok());
+
+    let mut stale = target.clone();
+    if let GenerationTarget::Brainstorm { sources, .. } = &mut stale {
+        sources[0].database_version = 3;
+    }
+    assert_eq!(
+        db.validate_ai_generation_target(&chapter.book_id, &stale)
+            .unwrap_err()
+            .code,
+        "CONTEXT_CHANGED"
+    );
+
+    let foreign = fixture(&mut db);
+    db.save_chapter(foreign.clone()).unwrap();
+    let mut wrong_book = target;
+    if let GenerationTarget::Brainstorm { sources, .. } = &mut wrong_book {
+        sources[0].chapter_id = foreign.chapter_id;
+    }
+    assert_eq!(
+        db.validate_ai_generation_target(&chapter.book_id, &wrong_book)
+            .unwrap_err()
+            .code,
+        "OWNERSHIP_MISMATCH"
+    );
 }

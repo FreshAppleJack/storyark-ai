@@ -310,6 +310,11 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
                 sessionId: current.sessionId,
                 draftRevision: current.draftRevision,
                 maxChars: current.contextChars,
+                target: {
+                    kind: 'continue',
+                    chapterId: current.chapterId,
+                    databaseVersion: current.databaseVersion,
+                },
                 sections: [{
                     kind: 'currentDraft',
                     label: 'Current in-memory draft',

@@ -398,11 +398,11 @@ schema version, so no upgrade migration exists yet — this is recorded
 honestly, and any future upgrade must add a failing-migration rollback test
 alongside the existing initialization checks.
 
-## Remaining legacy-backend dependencies (checked 2026-09-13)
+## Remaining legacy-backend dependencies (checked 2026-09-14)
 
-Every work surface is local now. Only brainstorm generation remains disabled;
-the model-backed editor path uses configured providers through Tauri IPC and
-the app does not call the legacy HTTP API at runtime:
+Every work surface is local now. Model-backed editor and brainstorm generation
+use configured providers through Tauri IPC, and the app does not call the
+legacy HTTP API at runtime:
 
 | Area | Local status | Legacy dependency |
 | --- | --- | --- |
@@ -412,9 +412,9 @@ the app does not call the legacy HTTP API at runtime:
 | Foreshadowing board (cross-chapter) | Local SQLite aggregation and versioned note patches (weeks 11–12 unit 4) | No legacy calls |
 | Story planning / plot settings | Local SQLite aggregate, guarded drafts and source versions (weeks 11–12 unit 4) | No legacy calls |
 | Preferences remote sync | Local SQLite single row (weeks 11–12 unit 5); localStorage is only a launch cache | No legacy calls |
-| AI brainstorm workspace | Local SQLite aggregate with guarded drafts (weeks 11–12 unit 5); generation stays disabled | No legacy calls |
+| AI brainstorm workspace | Local SQLite aggregate with guarded drafts and session-only AI candidates (weeks 11–12 unit 5) | No legacy calls |
 | AI continue | Local configured-model generation through repository/IPC; candidate adoption uses the normal draft save queue | No legacy calls |
-| Brainstorm generation | Explicitly disabled until user-configured models arrive | `AiBrainstormController` generate endpoint |
+| Brainstorm generation | Configured-model Tauri IPC; validated JSON candidates require explicit choice before workspace save | No legacy calls |
 | DOCX/PDF export | Works locally (pure frontend, input is the local chapter) | none |
 | Style library | Works locally (localStorage; not covered by SQLite backups) | none |
 | Auth pages (login/register) | Redirected to the shelf; source kept, never mounted | `AuthController` |

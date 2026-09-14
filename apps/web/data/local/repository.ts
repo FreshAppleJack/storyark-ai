@@ -80,6 +80,7 @@ export function projectCharacter(record: LocalCharacter): Character {
 export function projectBook(book: LocalBook, detail?: LocalBookDetail, characters?: Character[]): Book {
     return {
         id: book.id, title: book.title, author: book.author, status: book.status,
+        isReadOnly: book.isReadOnly,
         coverColor: book.coverColor || undefined,
         lastModified: Math.max(book.updatedAt, ...(detail?.chapters.map(ch => ch.updatedAt) ?? [])),
         characters: characters ?? NO_CHARACTERS,

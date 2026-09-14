@@ -7,19 +7,29 @@ import { createEmptyPlanning } from '../../../domain/storyPlanning';
 import { createEmptyBrainstorm } from '../../../data/brainstormMapping';
 import { brainstormApi } from '../../../data/brainstormApi';
 import {
+    EMPTY_BRAINSTORM_CANDIDATE,
+    candidateFromOptions,
+    type BrainstormCandidate,
+} from '../brainstormCandidate';
+import { buildBrainstormGenerationContext } from '../brainstormGeneration';
+import { useLocalBrainstormGeneration } from './useLocalBrainstormGeneration';
+import {
     buildContextSnapshot, buildRelationships, formatOptionAsEditableText, getBrainstormChapters,
-    getMentionedCharacterIds, isContextSnapshotStale, type BrainstormRelationship
+    getMentionedCharacterIds, isContextSnapshotStale, type BrainstormRelationship, type BrainstormSourceVersions,
 } from '../brainstormContext';
 
-/** Local persistence adapter; generation is intentionally absent (no model). */
+/** Persistence stays independent from the optional configured-model generator. */
 export interface BrainstormPersistence {
     load: () => Promise<BrainstormWorkspace>;
     save: (workspace: BrainstormWorkspace, revision: number) => Promise<boolean>;
+    getDatabaseVersion?: () => number;
 }
+export type BrainstormGenerationSource = BrainstormSourceVersions | (() => BrainstormSourceVersions);
 export interface BrainstormSources {
     planning: StoryPlanning;
     relationships: BrainstormRelationship[];
     persistence: BrainstormPersistence;
+    generation?: BrainstormGenerationSource;
 }
 
 /** The selected chapters and final result are an editable page draft. */
@@ -38,6 +48,7 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
     const [isSaving, setIsSaving] = useState(false);
     const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saved'>('idle');
     const [errorMessage, setErrorMessage] = useState('');
+    const [remoteCandidate, setRemoteCandidate] = useState<BrainstormCandidate>(EMPTY_BRAINSTORM_CANDIDATE);
     const mounted = useRef(false);
     const pendingOperation = useRef(false);
     const revision = useRef(0);
@@ -105,11 +116,42 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
         return characters.filter(character => ids.has(character.id));
     }, [book, selectedChapters, autoHighlightSettings.disabledRoles]);
     const missingSummaryChapters = selectedChapters.filter(chapter => !chapter.summary.trim());
-    const visibleOptions = workspace.selectedOptionId
-        ? workspace.generatedOptions.filter(option => option.id === workspace.selectedOptionId) : workspace.generatedOptions;
     const isSnapshotStale = useMemo(() => (
         Object.keys(workspace.contextSnapshot).length > 0 && isContextSnapshotStale(workspace.contextSnapshot, chapterOptions)
     ), [workspace.contextSnapshot, chapterOptions]);
+
+    const getGenerationContext = useCallback(() => {
+        const configuredSource = loaders.current.sources?.generation;
+        const generationSource = typeof configuredSource === 'function' ? configuredSource() : configuredSource;
+        if (!book || !generationSource) throw new Error('The local brainstorm source is not ready.');
+        if (!selectedChapterIds.length) throw new Error('Select at least one chapter before brainstorming.');
+        return buildBrainstormGenerationContext(
+            book,
+            planning,
+            selectedChapters,
+            mentionedCharacters,
+            relationships,
+            generationSource,
+            revision.current,
+        );
+    }, [book, mentionedCharacters, planning, relationships, selectedChapterIds.length, selectedChapters]);
+    const localGeneration = useLocalBrainstormGeneration({
+        enabled: !!sources?.generation,
+        bookId,
+        isReadOnly: !!book?.isReadOnly,
+        getContext: getGenerationContext,
+    });
+    const candidate = sources?.generation ? localGeneration.candidate : remoteCandidate;
+    const candidateIsUsable = (candidate.status === 'completed' || candidate.status === 'adopted') && candidate.options.length > 0;
+    const displayedOptions = candidateIsUsable
+        ? candidate.status === 'adopted'
+            ? [...candidate.options, ...workspace.generatedOptions.filter(option => !candidate.options.some(item => item.id === option.id))]
+            : candidate.options
+        : workspace.generatedOptions;
+    const hasSelectedDisplayedOption = !!workspace.selectedOptionId
+        && displayedOptions.some(option => option.id === workspace.selectedOptionId);
+    const visibleOptions = hasSelectedDisplayedOption
+        ? displayedOptions.filter(option => option.id === workspace.selectedOptionId) : displayedOptions;
     const edit = (update: (previous: BrainstormWorkspace) => BrainstormWorkspace) => {
         revision.current++;
         setWorkspace(update);
@@ -119,15 +161,53 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
         ...prev, selectedChapterIds: prev.selectedChapterIds.includes(id)
             ? prev.selectedChapterIds.filter(chapterId => chapterId !== id) : [...prev.selectedChapterIds, id]
     }));
-    const chooseOption = (option: BrainstormOption) => edit(prev => ({ ...prev, selectedOptionId: option.id, finalContent: formatOptionAsEditableText(option) }));
+    const chooseOption = (option: BrainstormOption) => {
+        if (book?.isReadOnly) {
+            setErrorMessage('This brainstorm workspace is read-only. The candidate is still available for review.');
+            return;
+        }
+        const isCandidateOption = candidate.options.some(item => item.id === option.id);
+        if (isCandidateOption) {
+            const accepted = sources?.generation
+                ? localGeneration.acceptOption(option.id)
+                : candidate.sourceFingerprint === JSON.stringify({ bookId, draftRevision: revision.current, selectedChapterIds })
+                    ? true
+                    : false;
+            if (!accepted) {
+                if (!sources?.generation) setRemoteCandidate(previous => ({ ...previous, status: 'stale', errorMessage: 'The selected context changed. Regenerate before choosing this candidate.' }));
+                return;
+            }
+        }
+        edit(prev => {
+            const generatedOptions = isCandidateOption
+                ? [...prev.generatedOptions, ...candidate.options.filter(item => !prev.generatedOptions.some(existing => existing.id === item.id))]
+                : prev.generatedOptions;
+            return {
+                ...prev,
+                generatedOptions,
+                selectedOptionId: option.id,
+                finalContent: formatOptionAsEditableText(option),
+                generationMetadata: isCandidateOption ? candidate.metadata ?? prev.generationMetadata : prev.generationMetadata,
+            };
+        });
+        if (isCandidateOption && !sources?.generation) setRemoteCandidate(previous => ({ ...previous, status: 'adopted', errorMessage: null }));
+    };
     const showAllOptions = () => edit(prev => ({ ...prev, selectedOptionId: null }));
-    const updateFinalContent = (value: string) => edit(prev => ({ ...prev, finalContent: value }));
+    const updateFinalContent = (value: string) => {
+        if (book?.isReadOnly) {
+            setErrorMessage('This brainstorm workspace is read-only.');
+            return;
+        }
+        edit(prev => ({ ...prev, finalContent: value }));
+    };
 
-    // Legacy only: local mode has no model, so the button stays disabled and
-    // this path is never offered there.
     const handleGenerate = async () => {
-        if (!book || isLoading || loadError || pendingOperation.current || loaders.current.sources) return;
+        if (!book || isLoading || loadError || isSaving || pendingOperation.current) return;
         if (!selectedChapterIds.length) { setErrorMessage('Select at least one chapter before brainstorming.'); return; }
+        if (sources) {
+            if (sources.generation) await localGeneration.generate();
+            return;
+        }
         pendingOperation.current = true;
         setIsGenerating(true);
         setErrorMessage('');
@@ -140,8 +220,16 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
                 setErrorMessage('Your draft changed during generation. Regenerate to use the latest context.');
                 return;
             }
-            setWorkspace(generated);
-            setSaveState('saved');
+            if (!generated.generatedOptions.length) {
+                setErrorMessage('The AI response did not contain usable brainstorm options. Existing work is unchanged.');
+                return;
+            }
+            setRemoteCandidate(candidateFromOptions(
+                generated.generatedOptions,
+                null,
+                JSON.stringify({ bookId, draftRevision: snapshotRevision, selectedChapterIds }),
+                snapshotRevision,
+            ));
         } catch {
             if (mounted.current) setErrorMessage('AI brainstorm failed. Please try again.');
         } finally {
@@ -169,8 +257,17 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
                     // sources as of this save, so "stale" always compares the
                     // last save with current chapters and summaries.
                     const snapshot = {
-                        ...draft, contextSnapshot: buildContextSnapshot(
-                            loaders.current.book!, planning, selectedChapters, mentionedCharacters, relationships)
+                        ...draft,
+                        contextSnapshot: {
+                            ...buildContextSnapshot(
+                                loaders.current.book!, planning, selectedChapters, mentionedCharacters, relationships,
+                                (() => {
+                                    const configuredSource = loaders.current.sources?.generation;
+                                    return typeof configuredSource === 'function' ? configuredSource() : configuredSource;
+                                })(),
+                            ),
+                            generationMetadata: draft.generationMetadata ?? null,
+                        },
                     };
                     const ok = await persistence.save(snapshot, snapshotRevision);
                     if (!mounted.current) return false;
@@ -224,8 +321,15 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
     return {
         workspace, selectedChapterIds, chapterOptions, mentionedCharacters, missingSummaryChapters, visibleOptions,
         isSnapshotStale, isLoading, loadError, retry: () => setLoadAttempt(attempt => attempt + 1),
-        isGenerating, isSaving, saveState, isDirty, errorMessage, flush,
-        generationAvailable: !sources,
+        isGenerating: sources?.generation ? localGeneration.isGenerating : isGenerating,
+        isSaving, saveState, isDirty, errorMessage: candidate.errorMessage || errorMessage, flush,
+        candidate,
+        isReadOnly: !!book?.isReadOnly,
+        generationAvailable: !sources || !!sources.generation,
+        stopGeneration: sources?.generation ? localGeneration.stop : () => undefined,
+        regenerate: sources?.generation ? localGeneration.regenerate : handleGenerate,
+        discardCandidate: sources?.generation ? localGeneration.discardCandidate : () => setRemoteCandidate(EMPTY_BRAINSTORM_CANDIDATE),
+        closeCandidate: sources?.generation ? localGeneration.closeCandidate : () => setRemoteCandidate(EMPTY_BRAINSTORM_CANDIDATE),
         toggleChapter, chooseOption, showAllOptions, updateFinalContent, handleGenerate, handleSave
     };
 }

@@ -3,13 +3,19 @@ import { call } from './repository';
 
 export type GenerationTarget =
     | { kind: 'continue'; chapterId: string; databaseVersion: number }
-    | { kind: 'brainstorm'; workspaceDatabaseVersion: number; planningDatabaseVersion: number; sources: SourceVersion[] };
+    | {
+        kind: 'brainstorm';
+        workspaceDatabaseVersion: number;
+        planningDatabaseVersion: number;
+        graphDatabaseVersion: number;
+        sources: SourceVersion[];
+    };
 
 export interface SourceVersion { chapterId: string; databaseVersion: number }
 export type ContextKind = 'currentDraft' | 'writtenFact' | 'authorSetting' | 'manualSummary' | 'futurePlan';
 export interface ContextSection { kind: ContextKind; label: string; text: string }
 export interface ContextInput {
-    bookId: string; sessionId: string; draftRevision: number; maxChars: number; sections: ContextSection[];
+    bookId: string; sessionId: string; draftRevision: number; maxChars: number; target: GenerationTarget; sections: ContextSection[];
 }
 export interface ContextSnapshot extends ContextInput {
     contextSnapshotId: string; charCount: number;
