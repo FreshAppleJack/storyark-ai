@@ -485,9 +485,24 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 return false;
             }
 
+            const currentAttrs = editor.getAttributes('textStyle');
+            const start = editor.state.selection.from;
             const content: JSONContent[] = buildAiContinueContent(candidate);
             if (content.length === 0) return false;
-            return editor.commands.insertContent(content);
+            if (!editor.commands.insertContent(content)) return false;
+
+            const end = editor.state.selection.from;
+            const stylesToApply: Record<string, unknown> = {};
+            if (currentAttrs.fontFamily) stylesToApply.fontFamily = currentAttrs.fontFamily;
+            if (currentAttrs.fontSize) stylesToApply.fontSize = currentAttrs.fontSize;
+            if (end > start && Object.keys(stylesToApply).length > 0) {
+                editor.chain()
+                    .setTextSelection({ from: start, to: end })
+                    .setMark('textStyle', stylesToApply)
+                    .setTextSelection(end)
+                    .run();
+            }
+            return true;
         },
         editor: editor,
         // Fix: Add getHTML method implementation to avoid error in parent component call

@@ -111,6 +111,36 @@ describe('TiptapEditor', () => {
         expect(editor.getText()).toBe('已有正文');
     });
 
+    it('applies the current font family and size to every generated paragraph', () => {
+        const ref = React.createRef<TiptapEditorRef>();
+        const onUpdate = vi.fn();
+        render(<TiptapEditor ref={ref} contentId="chapter-1" content={chapter('已有正文')} characters={characters} onUpdate={onUpdate} />);
+
+        const editor = ref.current!.editor!;
+        editor.commands.selectAll();
+        editor.commands.setFontFamily('Georgia');
+        editor.commands.setFontSize('18px');
+        editor.commands.setTextSelection(2);
+        const anchor = ref.current!.captureSelection();
+        expect(anchor).not.toBeNull();
+
+        act(() => {
+            expect(ref.current!.insertAiCandidateAtAnchor('first line\nsecond line', anchor!)).toBe(true);
+        });
+
+        const generatedNodes = editor.getJSON().content
+            ?.filter(node => node.type === 'paragraph')
+            .flatMap(node => node.content ?? [])
+            .filter(node => node.text === '\u3000\u3000first line' || node.text === '\u3000\u3000second line');
+        expect(generatedNodes).toHaveLength(2);
+        generatedNodes?.forEach(node => {
+            expect(node.marks).toContainEqual({
+                type: 'textStyle',
+                attrs: { fontFamily: 'Georgia', fontSize: '18px' },
+            });
+        });
+    });
+
   it('blocks typing while read-only and accepts input again after unlocking', async () => {
     const user = userEvent.setup();
     const { surface, rerender, props, onUpdate } = renderEditor();

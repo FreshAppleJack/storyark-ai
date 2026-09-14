@@ -56,7 +56,7 @@ describe('AiModels', () => {
         expect(outputLimit).toHaveValue('');
 
         await user.type(outputLimit, '4096');
-        expect(outputLimit).toHaveValue('100000');
+        expect(outputLimit).toHaveValue('4096');
         expect(settings.change).toHaveBeenLastCalledWith({ maxOutputTokens: 4096 });
     });
 
@@ -70,7 +70,7 @@ describe('AiModels', () => {
         await user.clear(outputLimit);
         await user.tab();
 
-        expect(outputLimit).toHaveValue('4096');
+        expect(outputLimit).toHaveValue('100000');
         expect(settings.change).not.toHaveBeenCalled();
     });
 
