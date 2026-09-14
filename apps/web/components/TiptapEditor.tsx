@@ -175,7 +175,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
         extensions: extensions,
         editorProps: {
             attributes: {
-                style: `font-family: "Songti SC", "SimSun", serif; font-size: 20px; line-height: ${normalizedEditorLineHeight}; padding-left: ${normalizedEditorMarginPx}px; padding-right: ${normalizedEditorMarginPx}px; padding-bottom: 96px;`,
+                style: `font-family: "Songti SC", "SimSun", serif; font-synthesis: weight style; font-size: 20px; line-height: ${normalizedEditorLineHeight}; padding-left: ${normalizedEditorMarginPx}px; padding-right: ${normalizedEditorMarginPx}px; padding-bottom: 96px;`,
                 class: `prose prose-slate max-w-none focus:outline-none min-h-[500px] outline-none ${className || ''}`,
             },
             handleKeyDown: (view, event) => {

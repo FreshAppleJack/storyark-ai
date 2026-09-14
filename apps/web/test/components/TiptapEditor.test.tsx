@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, waitFor } from '@testing-library/react';
+import { act, render, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import TiptapEditor, { TiptapEditorRef } from '../../components/TiptapEditor';
@@ -65,6 +65,23 @@ describe('TiptapEditor', () => {
       type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '已有正文 hello' }] }],
     });
     expect(wordCount).toBe(5);
+  });
+
+  it('serializes bold and italic marks from the mounted toolbar', async () => {
+    const user = userEvent.setup();
+    const ref = React.createRef<TiptapEditorRef>();
+    const onUpdate = vi.fn();
+    const result = render(<TiptapEditor ref={ref} contentId="chapter-1" content={chapter('已有正文')} characters={characters} onUpdate={onUpdate} />);
+    const editor = ref.current!.editor!;
+    const surface = result.container.querySelector<HTMLElement>('.tiptap');
+    expect(surface?.style.fontSynthesis).toBe('weight style');
+
+    editor.commands.selectAll();
+    await user.click(within(result.container).getByTitle('Bold'));
+    await user.click(within(result.container).getByTitle('Italic'));
+
+    const textNode = editor.getJSON().content?.[0]?.content?.[0];
+    expect(textNode?.marks).toEqual([{ type: 'bold' }, { type: 'italic' }]);
   });
 
   it('replaces the previous chapter on contentId change without emitting an edit', () => {
