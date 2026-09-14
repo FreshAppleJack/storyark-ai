@@ -8,6 +8,7 @@ import { localBookOptions, localCharactersOptions } from '../data/local/reposito
 import type { Character } from '../types';
 import { CharacterList } from '../features/characters/components/CharacterList';
 import { CharacterForm } from '../features/characters/components/CharacterForm';
+import { CharacterSaveGuard } from '../features/characters/components/CharacterSaveGuard';
 import { useCharacterEditor } from '../features/characters/hooks/useCharacterEditor';
 import { SaveStatusIndicator } from '../components/ui/SaveStatusIndicator';
 
@@ -30,8 +31,9 @@ function CharacterSettingsContent({ bookId }: { bookId: string }) {
         if (targetCharacter && targetCharacter.id !== selectedCharId) selectCharacter(targetCharacter);
     }, [targetCharacter, selectedCharId, selectCharacter]);
     const handleSelect = (character: Character) => {
-        selectCharacter(character);
-        navigate(`/books/${bookId}/settings?charId=${character.id}`, { replace: true });
+        void editor.switchCharacter(character).then(ok => {
+            if (ok) navigate(`/books/${bookId}/settings?charId=${character.id}`, { replace: true });
+        });
     };
     const confirmDelete = async () => {
         if (await editor.deleteSelected()) navigate(`/books/${bookId}/settings`, { replace: true });
@@ -52,6 +54,7 @@ function CharacterSettingsContent({ bookId }: { bookId: string }) {
     if (!book) return <div>Book not found</div>;
     return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950 relative transition-colors duration-300">
+            <CharacterSaveGuard isDirty={editor.isDirty} flush={editor.flush} />
             <header className="h-14 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center px-4 justify-between flex-shrink-0">
                 <div className="flex items-center gap-4">
                     <button onClick={() => navigate(`/editor/${bookId}`)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-500 dark:text-slate-400">

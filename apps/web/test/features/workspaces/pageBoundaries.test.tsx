@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactFlowProvider } from '@xyflow/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -34,14 +34,24 @@ function deferred<T>() {
     return { promise, resolve };
 }
 const character: Character = { id: '4', bookId: '1', name: 'Alice', aliases: ['Al'], role: 'protagonist', tags: [], description: '', color: '#fff' };
+const secondCharacter: Character = { id: '5', bookId: '1', name: 'Bob', aliases: [], role: 'supporting', tags: [], description: '', color: '#000' };
 const makeBook = (): Book => ({
-    id: '1', title: 'Book', author: 'Author', status: 'serializing', lastModified: 1, characters: [{ ...character }],
+    id: '1', title: 'Book', author: 'Author', status: 'serializing', lastModified: 1, characters: [{ ...character }, { ...secondCharacter }],
     volumes: [{ id: '2', title: 'Volume', chapters: [{ id: '3', title: 'Chapter', content: 'Alice', wordCount: 1,
         status: 'draft', isEditable: true, foreshadowings: [] }] }],
 });
 function renderPage(page: React.ReactNode, route: string) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    return render(<QueryClientProvider client={client}><MemoryRouter initialEntries={[route]}><Routes><Route path="/books/:bookId/*" element={page} /></Routes></MemoryRouter></QueryClientProvider>);
+    const router = createMemoryRouter([{ path: '/books/:bookId/*', element: page }], { initialEntries: [route] });
+    return render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
+}
+function renderCharacterRoutes(route: string) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createMemoryRouter([
+        { path: '/books/:bookId/settings', element: <CharacterSettings /> },
+        { path: '/books/:bookId/story-outline', element: <div>Story Outline destination</div> },
+    ], { initialEntries: [route] });
+    return render(<QueryClientProvider client={client}><RouterProvider router={router} /></QueryClientProvider>);
 }
 function GraphWrapper({ children }: { children: React.ReactNode }) { return <ReactFlowProvider>{children}</ReactFlowProvider>; }
 beforeEach(() => {
@@ -58,6 +68,26 @@ beforeEach(() => {
 });
 
 describe('page draft and persistence boundaries', () => {
+    it('saves the current character before switching cards', async () => {
+        renderPage(<CharacterSettings />, '/books/1/settings?charId=4');
+        const name = await screen.findByDisplayValue('Alice');
+        fireEvent.change(name, { target: { value: 'Alice Revised' } });
+        fireEvent.click(screen.getByText('Bob'));
+
+        await waitFor(() => expect(mocks.updateCharacter).toHaveBeenCalledWith('1', '4', expect.objectContaining({ name: 'Alice Revised' })));
+        expect(await screen.findByDisplayValue('Bob')).toBeInTheDocument();
+    });
+
+    it('saves the current character before navigating to another page', async () => {
+        renderCharacterRoutes('/books/1/settings?charId=4');
+        const name = await screen.findByDisplayValue('Alice');
+        fireEvent.change(name, { target: { value: 'Alice Revised' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Story Outline & Plot Setting' }));
+
+        await waitFor(() => expect(mocks.updateCharacter).toHaveBeenCalledWith('1', '4', expect.objectContaining({ name: 'Alice Revised' })));
+        expect(await screen.findByText('Story Outline destination')).toBeInTheDocument();
+    });
+
     it('keeps a failed character draft and reports success only after a successful retry', async () => {
         mocks.updateCharacter.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
         renderPage(<CharacterSettings />, '/books/1/settings?charId=4');
