@@ -3,8 +3,8 @@ import { BrainCircuit, CheckCircle2, Loader2, Sparkles, Wand2 } from 'lucide-rea
 import { Button } from '../../../components/ui/Button';
 import type { BrainstormCandidate } from '../brainstormCandidate';
 import type { BrainstormEditor } from '../hooks/useBrainstormWorkspace';
-type Props = Pick<BrainstormEditor, 'isGenerating' | 'isSaving' | 'handleGenerate' | 'regenerate' | 'stopGeneration' | 'discardCandidate' | 'generationAvailable' | 'selectedChapterIds' | 'missingSummaryChapters' | 'isSnapshotStale' | 'errorMessage' | 'visibleOptions' | 'workspace' | 'chooseOption' | 'showAllOptions' | 'updateFinalContent' | 'candidate' | 'isReadOnly'>;
-export function BrainstormResults({ isGenerating, isSaving, handleGenerate, regenerate, stopGeneration, discardCandidate, generationAvailable, selectedChapterIds, missingSummaryChapters, isSnapshotStale, errorMessage, visibleOptions, workspace, chooseOption, showAllOptions, updateFinalContent, candidate, isReadOnly }: Props) {
+type Props = Pick<BrainstormEditor, 'isGenerating' | 'isSaving' | 'handleGenerate' | 'regenerate' | 'stopGeneration' | 'discardCandidate' | 'generationAvailable' | 'selectedChapterIds' | 'missingSummaryChapters' | 'isSnapshotStale' | 'errorMessage' | 'visibleOptions' | 'hasSelectedOption' | 'workspace' | 'chooseOption' | 'showAllOptions' | 'updateFinalContent' | 'candidate' | 'isReadOnly'>;
+export function BrainstormResults({ isGenerating, isSaving, handleGenerate, regenerate, stopGeneration, discardCandidate, generationAvailable, selectedChapterIds, missingSummaryChapters, isSnapshotStale, errorMessage, visibleOptions, hasSelectedOption, workspace, chooseOption, showAllOptions, updateFinalContent, candidate, isReadOnly }: Props) {
     const hasCandidate = candidate.status !== 'idle';
     const candidateAction = hasCandidate ? regenerate : handleGenerate;
     return (
@@ -79,17 +79,17 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, rege
                                 <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                                     <div>
                                         <h3 className="text-lg font-bold text-slate-900 dark:text-white">{option.title}</h3>
-                                        {workspace.selectedOptionId === option.id && (
+                                        {hasSelectedOption && workspace.selectedOptionId === option.id && (
                                             <span className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
                                                 <CheckCircle2 size={13} />
                                                 Selected
                                             </span>
                                         )}
                                     </div>
-                                    {!workspace.selectedOptionId ? (
-                                        <Button size="sm" onClick={() => chooseOption(option)} disabled={isReadOnly} title={isReadOnly ? 'This workspace is read-only' : undefined}>Choose Direction</Button>
+                                    {!hasSelectedOption ? (
+                                        <Button size="sm" onClick={() => chooseOption(option)} disabled={isReadOnly || isGenerating} title={isReadOnly ? 'This workspace is read-only' : undefined}>Choose Direction</Button>
                                     ) : (
-                                        <Button variant="secondary" size="sm" onClick={showAllOptions}>Show All Options</Button>
+                                        <Button variant="secondary" size="sm" onClick={showAllOptions} disabled={isGenerating}>Show All Options</Button>
                                     )}
                                 </div>
                                 <div className="mt-4 grid gap-3 md:grid-cols-3">

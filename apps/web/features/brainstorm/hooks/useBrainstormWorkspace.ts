@@ -192,7 +192,10 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
         });
         if (isCandidateOption && !sources?.generation) setRemoteCandidate(previous => ({ ...previous, status: 'adopted', errorMessage: null }));
     };
-    const showAllOptions = () => edit(prev => ({ ...prev, selectedOptionId: null }));
+    const showAllOptions = () => {
+        if (!hasSelectedDisplayedOption) return;
+        edit(prev => ({ ...prev, selectedOptionId: null }));
+    };
     const updateFinalContent = (value: string) => {
         if (book?.isReadOnly) {
             setErrorMessage('This brainstorm workspace is read-only.');
@@ -320,6 +323,7 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
     const handleSave = async () => { if (loaders.current.sources) await flush(); else await handleLegacySave(); };
     return {
         workspace, selectedChapterIds, chapterOptions, mentionedCharacters, missingSummaryChapters, visibleOptions,
+        hasSelectedOption: hasSelectedDisplayedOption,
         isSnapshotStale, isLoading, loadError, retry: () => setLoadAttempt(attempt => attempt + 1),
         isGenerating: sources?.generation ? localGeneration.isGenerating : isGenerating,
         isSaving, saveState, isDirty, errorMessage: candidate.errorMessage || errorMessage, flush,

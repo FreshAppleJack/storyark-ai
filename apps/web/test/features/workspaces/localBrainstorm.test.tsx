@@ -4,6 +4,8 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import type { Book } from '../../../types';
 import type { LocalBrainstorm } from '../../../data/local/brainstormRepository';
 import { brainstormRepository } from '../../../data/local/brainstormRepository';
+import { createEmptyBrainstorm } from '../../../data/brainstormMapping';
+import { brainstormApi } from '../../../data/brainstormApi';
 import { useBrainstormWorkspace, type BrainstormSources } from '../../../features/brainstorm/hooks/useBrainstormWorkspace';
 import { useLocalBrainstormPersistence } from '../../../features/brainstorm/hooks/useLocalBrainstormPersistence';
 import { isContextSnapshotStale } from '../../../features/brainstorm/brainstormContext';
@@ -120,4 +122,46 @@ it('builds the snapshot on first save with chapter source versions', async () =>
     const snapshot = input.contextSnapshot as { selectedChapters: Array<{ id: string; databaseVersion?: number }> };
     expect(snapshot.selectedChapters[0]).toMatchObject({ id: 'chapter-1', databaseVersion: 3 });
     expect(result.current.isSnapshotStale).toBe(false);
+});
+
+it('does not reuse the previous selection state when a new brainstorm candidate replaces it', async () => {
+    const nextBook: Book = {
+        ...book,
+        volumes: [{
+            ...book.volumes[0],
+            chapters: [
+                ...book.volumes[0].chapters,
+                { id: '4', title: 'Next chapter', content: 'Alice continues', wordCount: 2, status: 'draft', isEditable: true, foreshadowings: [] },
+            ],
+        }],
+    };
+    const option = (id: string, title: string) => ({
+        id, title, conflict: `${title} conflict`, motivation: `${title} motivation`,
+        consequences: `${title} consequences`, development: `${title} development`,
+    });
+    const previousOptions = [option('old-1', 'Previous one'), option('old-2', 'Previous two'), option('old-3', 'Previous three')];
+    const nextOptions = [option('new-1', 'New one'), option('new-2', 'New two'), option('new-3', 'New three')];
+    legacy.planning.mockResolvedValue(planning);
+    legacy.graph.mockResolvedValue({ nodes: [], edges: [] });
+    api.get.mockResolvedValue(createEmptyBrainstorm());
+    vi.spyOn(brainstormApi, 'generate')
+        .mockResolvedValueOnce({ ...createEmptyBrainstorm(), generatedOptions: previousOptions } as never)
+        .mockResolvedValueOnce({ ...createEmptyBrainstorm(), generatedOptions: nextOptions } as never);
+
+    const { result } = renderHook(() => useBrainstormWorkspace('book', nextBook, null));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    act(() => result.current.toggleChapter('3'));
+    await act(async () => { await result.current.handleGenerate(); });
+    act(() => result.current.chooseOption(previousOptions[0]));
+    expect(result.current.workspace.selectedOptionId).toBe('old-1');
+    expect(result.current.workspace.finalContent).toContain('Previous one');
+
+    act(() => result.current.toggleChapter('4'));
+    await act(async () => { await result.current.handleGenerate(); });
+
+    expect(result.current.visibleOptions.map(item => item.id)).toEqual(['new-1', 'new-2', 'new-3']);
+    expect(result.current.hasSelectedOption).toBe(false);
+    act(() => result.current.chooseOption(nextOptions[0]));
+    expect(result.current.workspace.selectedOptionId).toBe('new-1');
+    expect(result.current.workspace.finalContent).toContain('New one');
 });
