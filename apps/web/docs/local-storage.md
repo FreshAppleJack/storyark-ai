@@ -74,8 +74,10 @@ explicit lock prevents writes. Book/volume locks also protect descendants.
   each successful mutation. It is returned to callers and survives restarts.
 - `contentVersion = 1`: StoryArk's supported Tiptap JSON document contract, not
   the installed Tiptap npm version. Legacy content uses version 0.
-- Future export `schemaVersion`: the whole-book interchange envelope. No export
-  envelope or complete import protocol is introduced here.
+- Export `schemaVersion = 1`: the whole-book interchange envelope defined in
+  [`storyark-work-exchange.md`](./storyark-work-exchange.md). The P0-A contract
+  and runtime validator exist; the user-facing whole-work export/import flow is
+  still a later P0 stage.
 
 Frontend `revision` and `sessionKey` are independent, transient draft identifiers.
 They must remain in the save lifecycle; they are not persisted record versions.

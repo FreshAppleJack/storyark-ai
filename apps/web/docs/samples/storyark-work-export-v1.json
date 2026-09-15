@@ -1,0 +1,230 @@
+{
+  "schemaVersion": 1,
+  "exportId": "00000000-0000-4000-8000-000000000001",
+  "exportedAt": "2026-09-15T00:00:00.000Z",
+  "producer": {
+    "appVersion": "0.1.0",
+    "platform": "windows"
+  },
+  "snapshot": {
+    "databaseVersion": 5,
+    "contentVersion": 1
+  },
+  "book": {
+    "id": "00000000-0000-4000-8000-000000000010",
+    "title": "The Clock Room",
+    "author": "StoryArk Author",
+    "status": "serializing",
+    "position": 0,
+    "isReadOnly": false,
+    "coverColor": "bg-blue-600",
+    "databaseVersion": 3,
+    "createdAt": 1700000000000,
+    "updatedAt": 1700000001000
+  },
+  "volumes": [
+    {
+      "id": "00000000-0000-4000-8000-000000000020",
+      "bookId": "00000000-0000-4000-8000-000000000010",
+      "title": "Opening",
+      "status": "draft",
+      "position": 0,
+      "isReadOnly": false,
+      "databaseVersion": 2,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000001000
+    }
+  ],
+  "chapters": [
+    {
+      "id": "00000000-0000-4000-8000-000000000030",
+      "bookId": "00000000-0000-4000-8000-000000000010",
+      "volumeId": "00000000-0000-4000-8000-000000000020",
+      "title": "The Last Minute",
+      "status": "draft",
+      "position": 0,
+      "isReadOnly": false,
+      "wordCount": 5,
+      "body": {
+        "format": "tiptap-json",
+        "version": 1,
+        "contentState": "editable",
+        "content": {
+          "type": "doc",
+          "content": [
+            {
+              "type": "paragraph",
+              "content": [
+                {
+                  "type": "text",
+                  "text": "The clock stopped.",
+                  "marks": [
+                    {
+                      "type": "bold"
+                    },
+                    {
+                      "type": "foreshadowing",
+                      "attrs": {
+                        "id": "00000000-0000-4000-8000-000000000050"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "type": "text",
+                  "text": " Lin舟 looked at it.",
+                  "marks": [
+                    {
+                      "type": "italic"
+                    }
+                  ]
+                },
+                {
+                  "type": "mention",
+                  "attrs": {
+                    "id": "00000000-0000-4000-8000-000000000040",
+                    "label": "Lin舟"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "foreshadowingIds": [
+        "00000000-0000-4000-8000-000000000050"
+      ],
+      "databaseVersion": 4,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000001000
+    }
+  ],
+  "characters": [
+    {
+      "id": "00000000-0000-4000-8000-000000000040",
+      "bookId": "00000000-0000-4000-8000-000000000010",
+      "name": "Lin舟",
+      "aliases": ["舟舟"],
+      "role": "protagonist",
+      "description": "A careful investigator.",
+      "color": "#3b82f6",
+      "tags": ["investigator"],
+      "avatar": null,
+      "handleConfig": null,
+      "isArchived": false,
+      "position": 0,
+      "databaseVersion": 2,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000001000
+    }
+  ],
+  "graphs": [
+    {
+      "bookId": "00000000-0000-4000-8000-000000000010",
+      "databaseVersion": 1,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000001000,
+      "nodes": [
+        {
+          "nodeKey": "00000000-0000-4000-8000-000000000060",
+          "characterId": "00000000-0000-4000-8000-000000000040",
+          "positionX": 0,
+          "positionY": 0,
+          "handleConfig": null
+        },
+        {
+          "nodeKey": "00000000-0000-4000-8000-000000000061",
+          "characterId": "00000000-0000-4000-8000-000000000040",
+          "positionX": 320,
+          "positionY": 0,
+          "handleConfig": null
+        }
+      ],
+      "edges": [
+        {
+          "id": "00000000-0000-4000-8000-000000000062",
+          "sourceNodeKey": "00000000-0000-4000-8000-000000000060",
+          "targetNodeKey": "00000000-0000-4000-8000-000000000061",
+          "sourceHandle": "right-source",
+          "targetHandle": "left-target",
+          "label": "echo"
+        }
+      ]
+    }
+  ],
+  "foreshadowings": [
+    {
+      "id": "00000000-0000-4000-8000-000000000050",
+      "chapterId": "00000000-0000-4000-8000-000000000030",
+      "excerpt": "The clock stopped.",
+      "note": "The stopped time returns later.",
+      "isRecovered": false,
+      "databaseVersion": 1,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000001000,
+      "extensions": {
+        "futureNoteField": {
+          "keep": true
+        }
+      }
+    }
+  ],
+  "planning": {
+    "bookId": "00000000-0000-4000-8000-000000000010",
+    "databaseVersion": 1,
+    "storySummary": "A mystery around a stopped clock.",
+    "storyBackground": "The clock room is sealed after midnight.",
+    "chapterSummaries": [
+      {
+        "chapterId": "00000000-0000-4000-8000-000000000030",
+        "summary": "Lin舟 finds the stopped clock.",
+        "sourceChapterVersion": 4,
+        "updatedAt": 1700000001000
+      }
+    ],
+    "plotSettings": [
+      {
+        "id": "plot-opening",
+        "title": "Open the sealed room",
+        "details": "The stopped minute points to the next clue.",
+        "chapterIds": [
+          "00000000-0000-4000-8000-000000000030"
+        ],
+        "createdAt": 1700000000000,
+        "updatedAt": 1700000001000
+      }
+    ],
+    "updatedAt": 1700000001000
+  },
+  "brainstormWorkspaces": [
+    {
+      "bookId": "00000000-0000-4000-8000-000000000010",
+      "databaseVersion": 1,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000001000,
+      "selectedChapterIds": [
+        "00000000-0000-4000-8000-000000000030"
+      ],
+      "contextSnapshot": {
+        "bookId": "00000000-0000-4000-8000-000000000010",
+        "source": "saved-context"
+      },
+      "generatedOptions": [
+        {
+          "id": "brainstorm-option-1",
+          "title": "The hidden minute",
+          "conflict": "The clock hides a second mechanism.",
+          "motivation": "Lin舟 wants to test the room's story.",
+          "consequences": "Opening the room alerts someone outside.",
+          "development": "The next chapter follows the sound behind the wall."
+        }
+      ],
+      "selectedOptionId": "brainstorm-option-1",
+      "finalContent": "The sound behind the wall became the next clue."
+    }
+  ],
+  "assets": [],
+  "extensions": {
+    "sample": true
+  }
+}
