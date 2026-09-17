@@ -10,6 +10,7 @@ mod characters;
 mod content;
 mod database;
 mod error;
+mod export;
 mod foreshadowing;
 mod graph;
 mod graph_types;

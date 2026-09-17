@@ -25,6 +25,7 @@ fn main() {
             "ai_cancel_generation",
             "local_list_books",
             "local_read_book",
+            "local_read_work_export_snapshot",
             "local_create_book",
             "local_create_volume",
             "local_create_chapter",

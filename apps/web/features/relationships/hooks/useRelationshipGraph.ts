@@ -14,6 +14,7 @@ import {
     createCharacterNode, filterEdgesForHandles, normalizeHandleConfig, relationshipEdgeStyle,
     toRelationshipGraph, type RelationshipNode
 } from '../graphModel';
+import { registerWorkDraftFlush } from '../../../services/workDraftFlushRegistry';
 
 export interface GraphPersistence {
     load: () => Promise<{ nodes: RelationshipNode[]; edges: Edge[] }>;
@@ -134,6 +135,7 @@ export function useRelationshipGraph(bookId: string, book: Book | undefined, per
         pendingSave.current = operation();
         return pendingSave.current;
     }, [bookId, isGraphLoaded, saveGraphData]);
+    useEffect(() => registerWorkDraftFlush(bookId, 'graph', flush), [bookId, flush]);
     const handleSave = async () => { await flush(true); };
     const onNodeContextMenu: NodeMouseHandler<RelationshipNode> = useCallback((event, node) => {
         event.preventDefault();

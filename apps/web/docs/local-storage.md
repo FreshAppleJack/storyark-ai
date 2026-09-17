@@ -36,9 +36,9 @@ facade or adding unused abstractions.
 > weeks 11–12 moved every remaining work surface — characters, the
 > relationship graph, foreshadowing/planning, preferences and the brainstorm
 > workspace — onto the same storage (see `local-content.md`). AI Continue now
-> uses the configured-model Tauri generation boundary; what is still **not**
-> local is brainstorm generation, RAG, whole-book JSON interchange and
-> platform features.
+> uses the configured-model Tauri generation boundary; RAG, JSON import/restore
+> and platform-specific features remain future work. Whole-work JSON export is
+> now a local Tauri/SQLite flow described in `storyark-work-exchange.md`.
 
 ## Identity and schema
 
@@ -76,8 +76,8 @@ explicit lock prevents writes. Book/volume locks also protect descendants.
   the installed Tiptap npm version. Legacy content uses version 0.
 - Export `schemaVersion = 1`: the whole-book interchange envelope defined in
   [`storyark-work-exchange.md`](./storyark-work-exchange.md). The P0-A contract
-  and runtime validator exist; the user-facing whole-work export/import flow is
-  still a later P0 stage.
+  and P0-B user-facing export flow exist; import/restore is still a later P0
+  stage.
 
 Frontend `revision` and `sessionKey` are independent, transient draft identifiers.
 They must remain in the save lifecycle; they are not persisted record versions.

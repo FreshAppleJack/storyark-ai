@@ -279,7 +279,12 @@ export class ValidationContext {
             this.add(path, 'LIMIT_EXCEEDED', `The export contains more than ${EXCHANGE_LIMITS.maxJsonObjects} JSON objects.`);
             return;
         }
-        Object.entries(value).forEach(([key, child]) => this.validateJson(child, fieldPath(path, key), depth + 1, maxStringChars));
+        Object.entries(value).forEach(([key, child]) => {
+            if (SENSITIVE_EXTENSION_KEYS.has(normalizeSensitiveKey(key))) {
+                this.add(fieldPath(path, key), 'FORBIDDEN_FIELD', 'Secrets and credential references are not allowed in a work export.');
+            }
+            this.validateJson(child, fieldPath(path, key), depth + 1, maxStringChars);
+        });
     }
 
     requiredStringArray(parent: AnyRecord | undefined, key: string, path: string, maxItems: number, maxChars: number, minChars = 0): string[] | undefined {

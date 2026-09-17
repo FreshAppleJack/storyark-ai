@@ -17,6 +17,7 @@ import {
     buildContextSnapshot, buildRelationships, formatOptionAsEditableText, getBrainstormChapters,
     getMentionedCharacterIds, isContextSnapshotStale, type BrainstormRelationship, type BrainstormSourceVersions,
 } from '../brainstormContext';
+import { registerWorkDraftFlush } from '../../../services/workDraftFlushRegistry';
 
 /** Persistence stays independent from the optional configured-model generator. */
 export interface BrainstormPersistence {
@@ -295,6 +296,10 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
         pendingSave.current = operation();
         return pendingSave.current;
     }, [isLoading, loadError, planning, mentionedCharacters, relationships, selectedChapters]);
+    useEffect(() => {
+        if (!sources) return undefined;
+        return registerWorkDraftFlush(bookId, 'brainstorm', flush);
+    }, [bookId, flush, sources]);
     const isDirty = saveState === 'dirty';
 
     // Legacy save path (HTTP), kept for the unreachable legacy provider mode.

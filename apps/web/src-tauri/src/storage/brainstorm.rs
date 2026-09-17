@@ -20,7 +20,7 @@ pub struct SaveBrainstorm {
     pub revision: i64,
 }
 
-fn validate(db: &Connection, book_id: &str, input: &SaveBrainstorm) -> Result<()> {
+pub(super) fn validate(db: &Connection, book_id: &str, input: &SaveBrainstorm) -> Result<()> {
     if input.session_key.is_empty()
         || input.session_key.len() > 4096
         || !(0..=MAX_INTEGER).contains(&input.revision)
@@ -80,10 +80,10 @@ fn validate(db: &Connection, book_id: &str, input: &SaveBrainstorm) -> Result<()
     Ok(())
 }
 
-fn read(db: &Connection, book_id: &str) -> Result<Value> {
+pub(super) fn read(db: &Connection, book_id: &str) -> Result<Value> {
     let row = db
         .query_row(
-            "SELECT selected_chapter_ids_json,context_snapshot_json,generated_options_json,selected_option_id,final_content,database_version,updated_at FROM brainstorm_workspaces WHERE book_id=?",
+            "SELECT selected_chapter_ids_json,context_snapshot_json,generated_options_json,selected_option_id,final_content,database_version,created_at,updated_at FROM brainstorm_workspaces WHERE book_id=?",
             [book_id],
             |row| {
                 Ok((
@@ -94,11 +94,21 @@ fn read(db: &Connection, book_id: &str) -> Result<Value> {
                     row.get::<_, String>(4)?,
                     row.get::<_, i64>(5)?,
                     row.get::<_, i64>(6)?,
+                    row.get::<_, i64>(7)?,
                 ))
             },
         )
         .optional()?;
-    let Some((selected, snapshot, options, selected_option, final_content, version, time)) = row
+    let Some((
+        selected,
+        snapshot,
+        options,
+        selected_option,
+        final_content,
+        version,
+        created_at,
+        time,
+    )) = row
     else {
         // An empty aggregate with version 0 only when the row genuinely does
         // not exist; first save expects 0. Errors stay errors.
@@ -124,6 +134,7 @@ fn read(db: &Connection, book_id: &str) -> Result<Value> {
         "generatedOptions": parse(&options)?,
         "selectedOptionId": selected_option,
         "finalContent": final_content,
+        "createdAt": created_at,
         "updatedAt": time,
     }))
 }

@@ -4,6 +4,7 @@ import type { Character } from '../../../types';
 import { useBooks } from '../../../InteractionContent/BooksContext';
 import { showSaveSuccessToast } from '../../../components/ui/saveToast';
 import { COLORS, emptyCharacterForm, toCharacterForm, toCharacterPatch, type CharacterFormData } from '../characterForm';
+import { registerWorkDraftFlush } from '../../../services/workDraftFlushRegistry';
 
 export type CharacterSaveState = 'idle' | 'dirty' | 'saving' | 'saved';
 
@@ -101,6 +102,7 @@ export function useCharacterEditor(bookId: string) {
         pendingSave.current = operation;
         return operation;
     }, [bookId, updateCharacter]);
+    useEffect(() => registerWorkDraftFlush(bookId, 'characters', flush), [bookId, flush]);
 
     const switchCharacter = useCallback(async (character: Character) => {
         if (selectedCharIdRef.current === character.id) return true;

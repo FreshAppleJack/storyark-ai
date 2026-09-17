@@ -136,6 +136,17 @@ describe('ExportMenu', () => {
         expect(props.onExportPdf).toHaveBeenCalledTimes(1);
     });
 
+    it('offers the whole-work JSON export only in local mode', async () => {
+        const user = userEvent.setup();
+        const onExportWorkJson = vi.fn();
+        render(<EditorHeader {...createProps({ localMode: true, onExportWorkJson })} />);
+
+        await user.click(screen.getByText('Export'));
+        await user.click(screen.getByText('StoryArk work'));
+
+        expect(onExportWorkJson).toHaveBeenCalledTimes(1);
+    });
+
     it('closes the dropdown on outside click', async () => {
         const user = userEvent.setup();
         render(<EditorHeader {...createProps()} />);

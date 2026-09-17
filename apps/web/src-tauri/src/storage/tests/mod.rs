@@ -7,6 +7,7 @@ use uuid::Uuid;
 mod backup;
 mod brainstorm;
 mod characters;
+mod export;
 mod graph;
 mod ipc;
 mod library;

@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
-import { Download, FileText, FileType, Loader2 } from 'lucide-react';
+import { Download, FileJson, FileText, FileType, Loader2 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 
 interface ExportMenuProps {
     isExporting: boolean;
     onExportWord: (event: React.MouseEvent) => void;
     onExportPdf: (event: React.MouseEvent) => void;
+    onExportWorkJson?: (event: React.MouseEvent) => void;
+    canExportWorkJson?: boolean;
 }
 
 /**
@@ -13,7 +15,7 @@ interface ExportMenuProps {
  * handlers (they need the editor instance and chapter title); this component
  * only manages open/close, including close-on-outside-click.
  */
-export function ExportMenu({ isExporting, onExportWord, onExportPdf }: ExportMenuProps): React.ReactElement {
+export function ExportMenu({ isExporting, onExportWord, onExportPdf, onExportWorkJson, canExportWorkJson = false }: ExportMenuProps): React.ReactElement {
     const [isOpen, setIsOpen] = useState(false);
 
     useEffect(() => {
@@ -32,6 +34,12 @@ export function ExportMenu({ isExporting, onExportWord, onExportPdf }: ExportMen
         if (isExporting) return;
         setIsOpen(false);
         onExportPdf(event);
+    };
+
+    const handleExportWorkJson = (event: React.MouseEvent) => {
+        if (isExporting) return;
+        setIsOpen(false);
+        onExportWorkJson?.(event);
     };
 
     return (
@@ -78,6 +86,22 @@ export function ExportMenu({ isExporting, onExportWord, onExportPdf }: ExportMen
                             <div className="text-[10px] text-slate-400">High quality print</div>
                         </div>
                     </button>
+                    {canExportWorkJson && onExportWorkJson && <>
+                        <div className="h-px bg-slate-100 dark:bg-slate-800 w-full"></div>
+                        <button
+                            disabled={isExporting}
+                            onClick={handleExportWorkJson}
+                            className="w-full text-left px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-brand-50 dark:hover:bg-brand-950/40 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-3 transition-colors"
+                        >
+                            <div className="p-1.5 bg-emerald-100 text-emerald-600 rounded">
+                                <FileJson size={16} />
+                            </div>
+                            <div>
+                                <div className="font-medium">StoryArk work</div>
+                                <div className="text-[10px] text-slate-400">.storyark.json</div>
+                            </div>
+                        </button>
+                    </>}
                 </div>
             )}
         </div>

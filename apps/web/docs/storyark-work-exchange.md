@@ -1,9 +1,9 @@
 # StoryArk work exchange format
 
 This document defines the version 1 whole-work JSON envelope. It is the
-contract for the P0-A exchange stage. It does not yet add a JSON item to the
-Word/PDF export menu or implement import. Those stages must consume this
-contract instead of serializing the SQLite rows directly.
+contract for the P0-A exchange stage and the P0-B local export flow. Import and
+restore are not implemented yet; those stages must consume this contract
+instead of serializing SQLite rows directly.
 
 ## Version boundaries
 
@@ -289,9 +289,45 @@ Use `validateStoryArkWorkExport` for already parsed data,
 such as `$.chapters[0].body.content` and cross-reference errors without
 returning secrets or network payloads.
 
+## P0-B runtime export
+
+Local mode exposes `StoryArk work (.storyark.json)` in the existing editor
+Export menu. The export operation has two boundaries:
+
+1. Before reading, the frontend flushes the active chapter, characters,
+   planning, relationship graph and brainstorm page drafts that are still
+   mounted. Existing route guards flush drafts before those pages unmount; the
+   editor also supplies a direct chapter fallback for the registration window.
+   Flushes run in a stable order and any false result or thrown save error
+   stops the operation while the draft remains visible.
+2. `local_read_work_export_snapshot` reads the requested book through one
+   SQLite read transaction. It loads the book, volumes, chapters, characters,
+   graph node instances and edges, planning aggregate, and saved brainstorm
+   workspace from that boundary. It rechecks ownership, chapter/body
+   compatibility, note marks, mentions, graph endpoints and planning/
+   brainstorm references before returning the snapshot. The frontend does not
+   assemble the file from TanStack Query caches.
+
+The frontend maps that result to this envelope, serializes and validates it,
+then shows a preview with the book name, object counts, schema version,
+generation time, supported asset count, exclusions and the rebuildable derived
+index policy. Preferences, model configurations, credentials, keys, session
+candidates, active requests, absolute paths and retrieval indexes are not
+read by the snapshot command and cannot enter the output. Version 1 currently
+has no embedded file assets; unsupported attachments or local-path assets are
+reported as excluded and require a later explicit preflight policy.
+
+After preview confirmation, desktop Save As supplies the destination. The
+export is first written to a unique sibling temporary file. The file is read
+back and checked for UTF-8 decoding, byte length, SHA-256 and envelope
+validation before the temporary file is renamed over the selected destination.
+Cancellation is a normal result and does not show success; failed writes keep
+the preview available and never claim that a file was saved. The browser-only
+fallback remains for non-desktop tests/previews and is not the persistence
+authority.
+
 The minimal preservation sample is kept in
 `apps/web/docs/samples/storyark-work-export-v1.json`. It includes a Mention,
 bold/italic text, a foreshadowing mark and note, aliases, duplicate graph node
 instances for one character, planning references and a saved brainstorm
 workspace.
-

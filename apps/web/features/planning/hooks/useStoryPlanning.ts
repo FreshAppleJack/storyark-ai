@@ -5,6 +5,7 @@ import type { Book, PlotSetting, StoryPlanning } from '../../../types';
 import { useBooks } from '../../../InteractionContent/BooksContext';
 import { createEmptyPlanning, createPlotSetting, sanitizePlanning } from '../../../domain/storyPlanning';
 import { getPlanningChapters } from '../planningSelectors';
+import { registerWorkDraftFlush } from '../../../services/workDraftFlushRegistry';
 
 export interface PlanningPersistence {
     load: () => Promise<StoryPlanning>;
@@ -137,6 +138,10 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
         pendingSave.current = operation();
         return pendingSave.current;
     }, [book, bookId, isLoading, loadError, chapterOptions, saveStoryPlanning]);
+    useEffect(() => {
+        if (!persistence) return undefined;
+        return registerWorkDraftFlush(bookId, 'planning', flush);
+    }, [bookId, flush, persistence]);
     const handleSave = async () => { await flush(true); };
     return {
         flush, saveError, isDirty: saveState === 'dirty', planning, selectedPlotId, setSelectedPlotId, selectedPlot, chapterOptions,

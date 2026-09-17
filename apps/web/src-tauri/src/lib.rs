@@ -34,6 +34,7 @@ fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri
         ai_commands::ai_cancel_generation,
         commands::local_list_books,
         commands::local_read_book,
+        commands::local_read_work_export_snapshot,
         commands::local_create_book,
         commands::local_create_volume,
         commands::local_create_chapter,

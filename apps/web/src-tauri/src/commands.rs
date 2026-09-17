@@ -32,6 +32,16 @@ pub async fn local_read_book(
     Ok(storage.run(move |db| db.read_book(&book_id)).await.into())
 }
 #[tauri::command]
+pub async fn local_read_work_export_snapshot(
+    storage: tauri::State<'_, Storage>,
+    book_id: String,
+) -> Result<Reply, ()> {
+    Ok(storage
+        .run(move |db| db.read_work_export_snapshot(&book_id))
+        .await
+        .into())
+}
+#[tauri::command]
 pub async fn local_create_book(
     storage: tauri::State<'_, Storage>,
     input: CreateBook,

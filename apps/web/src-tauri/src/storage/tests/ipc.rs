@@ -75,6 +75,18 @@ fn tauri_ipc_creates_saves_and_reads_after_reopening_the_database() {
         .unwrap();
     let loaded = ipc(&window, "local_read_book", json!({"bookId":book_id}));
     assert_eq!(loaded["value"]["chapters"][0], saved["value"]["chapter"]);
+    let export = ipc(
+        &window,
+        "local_read_work_export_snapshot",
+        json!({"bookId":book_id}),
+    );
+    assert_eq!(export["ok"], true);
+    assert_eq!(export["value"]["databaseVersion"], 5);
+    assert_eq!(export["value"]["book"]["id"], book_id);
+    assert_eq!(
+        export["value"]["chapters"][0]["id"],
+        saved["value"]["chapter"]["id"]
+    );
     let other = tauri::WebviewWindowBuilder::new(&reopened, "untrusted", Default::default())
         .build()
         .unwrap();

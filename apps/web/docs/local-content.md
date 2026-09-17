@@ -73,8 +73,10 @@ selectedOptionId, finalContent, plus `databaseVersion`/timestamps. Generated
 options arrive through the configured-model Tauri IPC as a session-only
 candidate; only a chosen option and its normal workspace save become durable.
 
-Deferred (not in 0002): vector indexes, AI task tables, whole-book JSON
-schemaVersion, legacy-ID mapping tables (designed, not yet built).
+The 0002 migration does not create vector indexes, AI task tables or
+legacy-ID mapping tables. The versioned whole-work JSON schema and local export
+flow are implemented separately; JSON import and legacy-ID migration remain
+future work.
 
 ## IPC contract (names fixed at implementation time)
 
@@ -268,7 +270,8 @@ and live plot links, retaining plot text and adding `missingChapterIds` for
 inline missing-link feedback. Existing brainstorm live selections are cleaned;
 opaque historical snapshots survive with `deletedChapterIds` annotations.
 Changed planning/workspace versions advance atomically with deletion. A failed
-step rolls back all of these changes. Full JSON interchange remains deferred.
+step rolls back all of these changes. Whole-work JSON export is implemented at
+the P0-B boundary; JSON import and restore remain deferred.
 
 ### Verification record (2026-09-12, unit 4)
 
@@ -366,10 +369,20 @@ clean. Full user-acceptance walkthroughs (long manual flows) are performed
 by the maintainer by decision; probe-level checks above ran on a throwaway
 `STORYARK_DATA_DIR`, never the real database.
 
-## Preparing whole-book JSON interchange (next stage, not started)
+## Whole-book JSON interchange (P0-A contract and P0-B export)
 
-This list is a design inventory only — **JSON round-trip is NOT implemented
-or verified in this stage**, and nothing below may be claimed as working.
+The v1 contract and local export path are implemented and verified separately
+from the SQL migration. Import, restore, ID remapping and round-trip editing
+are not implemented yet, so this section remains the design boundary for those
+future stages.
+
+The editor's local Export menu flushes mounted work-surface drafts, obtains a
+single Rust/SQLite snapshot, validates the complete reference graph, presents a
+preview, and writes only after the author chooses a destination. A unique
+temporary sibling is read back and checked for UTF-8, size, hash and envelope
+validity before it replaces the selected destination. See
+[`storyark-work-exchange.md`](./storyark-work-exchange.md) for the detailed
+P0-B sequence and excluded state.
 
 Snapshot entity set (one document per book, `schemaVersion` stamped):
 book record (title/author/status/cover color/position/lock), volumes with

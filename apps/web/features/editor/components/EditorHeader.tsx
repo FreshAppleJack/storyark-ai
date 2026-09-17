@@ -29,6 +29,7 @@ interface EditorHeaderProps {
     onNavigateSettings: () => void;
     onExportWord: (event: React.MouseEvent) => void;
     onExportPdf: (event: React.MouseEvent) => void;
+    onExportWorkJson?: (event: React.MouseEvent) => void;
 }
 
 /**
@@ -57,6 +58,7 @@ export function EditorHeader({
     onNavigateSettings,
     onExportWord,
     onExportPdf,
+    onExportWorkJson,
 }: EditorHeaderProps): React.ReactElement {
     return (
         <header className="h-14 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-6 flex-shrink-0">
@@ -148,7 +150,7 @@ export function EditorHeader({
                     <Settings className="block w-4 h-4" />
                 </Button>
 
-                <ExportMenu isExporting={isExporting} onExportWord={onExportWord} onExportPdf={onExportPdf} />
+                <ExportMenu isExporting={isExporting} onExportWord={onExportWord} onExportPdf={onExportPdf} onExportWorkJson={onExportWorkJson} canExportWorkJson={localMode} />
             </div>
         </header>
     );

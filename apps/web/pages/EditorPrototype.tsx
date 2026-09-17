@@ -22,6 +22,9 @@ import { useChapterAutosave } from '../features/editor/hooks/useChapterAutosave'
 import { useWindowCloseGuard } from '../features/editor/hooks/useWindowCloseGuard';
 import { useLocalAiContinue } from '../features/editor/hooks/useLocalAiContinue';
 import { useChapterExport } from '../features/editor/export/useChapterExport';
+import { useWorkExport } from '../features/editor/export/useWorkExport';
+import { WorkExportPreview } from '../features/editor/components/WorkExportPreview';
+import { registerWorkDraftFlush } from '../services/workDraftFlushRegistry';
 
 function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?: LocalPlanning }): React.ReactElement {
     const { bookId } = useParams<{ bookId: string }>();
@@ -87,6 +90,17 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
 
     const blocker = useBlocker(chapterDraft.isDirty);
     const { flush } = autosave;
+    useEffect(() => registerWorkDraftFlush(bookId ?? '', 'chapter', flush), [bookId, flush]);
+    const workExport = useWorkExport({
+        bookId: book?.id ?? bookId ?? '',
+        enabled: isLocal && !!book,
+        currentDraftFlush: flush,
+        onError: (error) => {
+            console.error('Work export failed:', error);
+            toast.error(error instanceof Error ? error.message : 'Work export failed. Your draft remains available.');
+        },
+        onSaved: () => toast.success('StoryArk work export saved and verified.'),
+    });
     useEffect(() => {
         if (blocker.state !== 'blocked') return;
         let cancelled = false;
@@ -425,6 +439,11 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         void runExport('pdf');
     };
 
+    const handleExportWorkJson = (event: React.MouseEvent) => {
+        event.stopPropagation();
+        void workExport.prepare();
+    };
+
     if (!book) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-400">Loading Book Data...</div>;
 
     return (
@@ -459,7 +478,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     isReadOnly={chapterDraft.isReadOnly || chapterLock.isChangingLock}
                     isContextPanelOpen={isForeshadowingPanelOpen}
                     contextPanelItemCount={contextPanelItemCount}
-                    isExporting={isExporting}
+                    isExporting={isExporting || workExport.isExporting}
                     onNavigateForeshadowingBoard={() => void navigateAfterSave(`/books/${bookId}/foreshadowing`)}
                     onNavigateWorldBuilding={() => void navigateAfterSave(`/books/${bookId}/settings`)}
                     onAIContinue={aiContinue.continueWriting}
@@ -469,6 +488,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     onNavigateSettings={() => void navigateAfterSave('/settings', { state: { returnTo: `/editor/${bookId}` } })}
                     onExportWord={handleExportWord}
                     onExportPdf={handleExportPDF}
+                    onExportWorkJson={handleExportWorkJson}
                 />
 
                 <AiContinueCandidate
@@ -556,6 +576,15 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     <div><span>{isLocal ? 'Local storage · AI uses the configured desktop model' : 'StoryArk Sprint 5'}</span></div>
                 </footer>
             </main>
+
+            {workExport.preview && (
+                <WorkExportPreview
+                    preview={workExport.preview}
+                    isExporting={workExport.isExporting}
+                    onConfirm={() => void workExport.confirm()}
+                    onClose={workExport.close}
+                />
+            )}
 
             {closePrompt && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-6" role="dialog" aria-modal="true" aria-labelledby="close-prompt-title">
