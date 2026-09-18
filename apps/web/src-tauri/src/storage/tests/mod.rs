@@ -9,6 +9,7 @@ mod brainstorm;
 mod characters;
 mod export;
 mod graph;
+mod import;
 mod ipc;
 mod library;
 mod migrations;

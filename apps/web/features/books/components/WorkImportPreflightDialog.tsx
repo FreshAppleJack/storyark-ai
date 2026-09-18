@@ -2,10 +2,17 @@ import React from 'react';
 import { AlertTriangle, CheckCircle2, FileJson, X } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import type { WorkImportPreflightReport } from '../../../data/export/importPreflight';
+import type { WorkImportPreparation, WorkImportStats } from '../../../data/export/importRepository';
 
 interface WorkImportPreflightDialogProps {
     report: WorkImportPreflightReport;
+    preparation: WorkImportPreparation | null;
+    importError: string | null;
+    isExecuting: boolean;
     onClose: () => void;
+    onImport: () => void;
+    onReplace: () => void;
+    onCreateCopy: () => void;
 }
 
 function formatBytes(bytes: number): string {
@@ -23,8 +30,40 @@ function countItems(items: Array<[string, number]>) {
     ));
 }
 
-export function WorkImportPreflightDialog({ report, onClose }: WorkImportPreflightDialogProps): React.ReactElement {
+function formatTime(timestamp: number): string {
+    return new Date(timestamp).toLocaleString();
+}
+
+function statsText(stats: WorkImportStats): string {
+    const planningItems = stats.planningSummaries + stats.plotSettings;
+    return `${stats.volumes} volumes · ${stats.chapters} chapters · ${stats.characters} characters · ${stats.foreshadowings} notes · ${stats.graphNodes} graph nodes · ${stats.graphEdges} graph edges · ${planningItems} planning items · ${stats.brainstormWorkspaces} brainstorm workspaces`;
+}
+
+function VersionSummary({ label, version, updatedAt, stats }: { label: string; version: number; updatedAt: number; stats: WorkImportStats }): React.ReactElement {
+    return (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</div>
+            <div className="mt-2 text-sm text-slate-700 dark:text-slate-200">Version {version}</div>
+            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">Updated {formatTime(updatedAt)}</div>
+            <div className="mt-2 text-xs text-slate-600 dark:text-slate-300">{statsText(stats)}</div>
+        </div>
+    );
+}
+
+export function WorkImportPreflightDialog({
+    report,
+    preparation,
+    importError,
+    isExecuting,
+    onClose,
+    onImport,
+    onReplace,
+    onCreateCopy,
+}: WorkImportPreflightDialogProps): React.ReactElement {
     const valid = report.status === 'valid';
+    const targetConflict = preparation?.status === 'conflict' && preparation.target;
+    const nameConflict = preparation?.nameConflict === true;
+    const canExecute = valid && preparation !== null && !isExecuting;
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 p-6" role="presentation">
             <section
@@ -73,8 +112,56 @@ export function WorkImportPreflightDialog({ report, onClose }: WorkImportPreflig
                         </div>
                         <div className="mt-6 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-200">
                             <p className="font-semibold">No database changes were made.</p>
-                            <p className="mt-1">The file passed the in-memory structure and reference checks. Import execution will be handled by the later conflict and recovery step.</p>
+                            <p className="mt-1">The file passed the in-memory structure and reference checks. The existing workspace remains untouched until you choose an import action.</p>
                         </div>
+                        {!preparation && !importError && (
+                            <p className="mt-5 text-sm text-slate-600 dark:text-slate-300">Checking the local workspace for ID and name conflicts...</p>
+                        )}
+                        {preparation && (
+                            <div className="mt-5 space-y-4">
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    <VersionSummary
+                                        label="Import version"
+                                        version={preparation.importVersion}
+                                        updatedAt={preparation.importUpdatedAt}
+                                        stats={preparation.importStats}
+                                    />
+                                    {targetConflict ? (
+                                        <VersionSummary
+                                            label="Current local version"
+                                            version={targetConflict.databaseVersion}
+                                            updatedAt={targetConflict.updatedAt}
+                                            stats={targetConflict.stats}
+                                        />
+                                    ) : (
+                                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                                            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Target</div>
+                                            <div className="mt-2 text-sm text-slate-700 dark:text-slate-200">No work with this ID exists</div>
+                                            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">The import will create a new local work.</div>
+                                        </div>
+                                    )}
+                                </div>
+                                {targetConflict && (
+                                    <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
+                                        This export has the same work ID as the local work. Choose Replace, Create copy, or Cancel; StoryArk will not merge the two versions.
+                                    </p>
+                                )}
+                                {!targetConflict && nameConflict && (
+                                    <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
+                                        Another local work already uses this title, but it has a different ID. Create copy will use <strong>{preparation.copyTitle}</strong> and preserve the author text.
+                                    </p>
+                                )}
+                                {targetConflict && (
+                                    <p className="text-sm text-slate-600 dark:text-slate-300">Create copy will use <strong>{preparation.copyTitle}</strong> and allocate new IDs for every internal reference.</p>
+                                )}
+                            </div>
+                        )}
+                        {importError && (
+                            <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-200" role="alert">
+                                <p className="font-semibold">Import was not completed.</p>
+                                <p className="mt-1">{importError}</p>
+                            </div>
+                        )}
                         {report.warnings.length > 0 && (
                             <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-900/70 dark:bg-amber-950/30">
                                 <h3 className="font-semibold text-amber-900 dark:text-amber-200">Content requiring safe handling</h3>
@@ -101,8 +188,20 @@ export function WorkImportPreflightDialog({ report, onClose }: WorkImportPreflig
                     </>
                 )}
 
-                <div className="mt-6 flex justify-end">
-                    <Button variant="secondary" onClick={onClose}>Close</Button>
+                <div className="mt-6 flex flex-wrap justify-end gap-3">
+                    <Button variant="secondary" onClick={onClose}>{targetConflict || nameConflict ? 'Cancel' : 'Close'}</Button>
+                    {valid && preparation && (
+                        targetConflict ? (
+                            <>
+                                <Button variant="secondary" onClick={onCreateCopy} disabled={!canExecute}>Create copy</Button>
+                                <Button onClick={onReplace} disabled={!canExecute}>Replace</Button>
+                            </>
+                        ) : nameConflict ? (
+                            <Button onClick={onCreateCopy} disabled={!canExecute}>Create copy</Button>
+                        ) : (
+                            <Button onClick={onImport} disabled={!canExecute}>{isExecuting ? 'Importing...' : 'Import'}</Button>
+                        )
+                    )}
                 </div>
             </section>
         </div>

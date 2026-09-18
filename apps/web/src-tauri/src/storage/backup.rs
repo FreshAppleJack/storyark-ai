@@ -23,6 +23,7 @@ pub(super) fn backup_database(connection: &Connection, directory: &Path) -> Resu
     // SQLite's online backup includes committed WAL pages; never copy the live file.
     let outcome = (|| -> Result<()> {
         let mut destination = Connection::open(&partial)?;
+        destination.pragma_update(None, "foreign_keys", true)?;
         let backup = rusqlite::backup::Backup::new(connection, &mut destination)?;
         backup.run_to_completion(128, Duration::from_millis(5), None)?;
         drop(backup);
@@ -31,6 +32,15 @@ pub(super) fn backup_database(connection: &Connection, directory: &Path) -> Resu
             return Err(StorageError::new(
                 "STORAGE_FAILURE",
                 "Backup integrity check failed",
+            ));
+        }
+        if destination
+            .prepare("PRAGMA foreign_key_check")?
+            .exists([])?
+        {
+            return Err(StorageError::new(
+                "STORAGE_FAILURE",
+                "Backup foreign-key integrity check failed",
             ));
         }
         drop(destination);

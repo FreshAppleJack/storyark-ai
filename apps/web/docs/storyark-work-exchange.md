@@ -1,16 +1,15 @@
 # StoryArk work exchange format
 
 This document defines the version 1 whole-work JSON envelope. It is the
-contract for the P0-A exchange stage and the P0-B local export flow. Import
-preflight is implemented as an in-memory validation boundary; import and
-restore must still consume this contract instead of serializing SQLite rows
-directly.
+contract for the P0-A exchange stage, the P0-B local export flow and the P0-C
+plus P0-D import flow. Import preflight, conflict handling and transactional
+ID remapping consume this contract instead of serializing SQLite rows directly.
 
 ## Import preflight boundary
 
 The Dashboard's **Import** action selects a `.storyark.json` file and runs the
-file through `apps/web/data/export/importPreflight.ts` before any import command
-can be added. Native selection checks the file size with `stat` before reading
+file through `apps/web/data/export/importPreflight.ts` before the import IPC
+command runs. Native selection checks the file size with `stat` before reading
 the bytes. Browser fallback checks `File.size` before reading the file. Both
 paths require strict UTF-8, then use the exchange validator for JSON depth,
 object count, string and asset limits, allowed runtime state, Tiptap safety,
@@ -18,11 +17,37 @@ deterministic ordering, duplicate IDs and same-work references.
 
 The report distinguishes validation errors from preservation warnings for
 legacy or read-only chapter bodies and shows field paths such as
-`chapters[2].body.content`. A successful preflight is not an import success:
-it holds the validated value in memory only, makes no SQLite change, and waits
-for the later conflict, ID mapping and transaction recovery stage. A failed
-preflight, file read failure or user cancellation cannot create an empty book or
-partial related records.
+`chapters[2].body.content`. A successful preflight holds the validated value in
+memory only and makes no SQLite change. The Rust preparation command then
+reports target and imported versions, timestamps, content statistics, same-ID
+conflicts and same-title conflicts. A failed preflight, file read failure or
+user cancellation cannot create an empty book or partial related records.
+
+## Conflict and recovery policy (P0-D)
+
+When the imported `book.id` already exists, the dialog offers **Replace**,
+**Create copy** and **Cancel**. Replace never merges records. It rechecks the
+target book's `databaseVersion` inside the write boundary, creates a verified
+SQLite online backup with a `quick_check` and foreign-key check, and only then
+replaces the complete book cascade in one immediate transaction. A backup
+failure, version conflict, lock, validation error or SQLite failure leaves the
+target readable; SQLite rollback also removes any uncommitted rows.
+
+Create copy allocates a new UUID for every book, volume, chapter, character,
+graph node instance, graph edge, note, plot entry and brainstorm option. The
+mapping rewrites chapter/character/book references, Tiptap Mention IDs,
+foreshadowing marks, graph endpoints, planning links and saved brainstorm
+references. `nodeKey` and `characterId` are mapped independently. The book
+author text and body prose are preserved; only the display title receives a
+deterministic `Book (1)`, `Book (2)` suffix when needed. Same-title books with
+different IDs are therefore name conflicts, not replacement targets.
+
+Version `1` has no imported asset table. Non-empty embedded assets are rejected
+before the transaction with an explicit unsupported-asset error, so an asset
+write cannot leave a partial work. Recovery is never automatic over a live
+database: the verified backup is retained for a controlled restore after all
+StoryArk instances have stopped, or for an explicitly controlled external
+SQLite restore procedure.
 
 ## Version boundaries
 

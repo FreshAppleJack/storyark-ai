@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useCallback, useRef, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSession } from '../InteractionContent/SessionContext';
 import { useBooks } from '../InteractionContent/BooksContext';
@@ -30,7 +30,19 @@ const Dashboard: React.FC = () => {
     const [bookSearchQuery, setBookSearchQuery] = useState('');
     const actions = useBookshelfActions();
     const importInputRef = useRef<HTMLInputElement>(null);
-    const { report: importReport, isChecking: isCheckingImport, nativeFilePickerAvailable, inspectBrowserFile, openNativeImport, closeReport } = useWorkImport();
+    const refreshAfterImport = useCallback(async () => { await refreshBooks?.(); }, [refreshBooks]);
+    const {
+        report: importReport,
+        preparation: importPreparation,
+        importError,
+        isChecking: isCheckingImport,
+        isExecuting: isExecutingImport,
+        nativeFilePickerAvailable,
+        inspectBrowserFile,
+        openNativeImport,
+        executeImport,
+        closeReport,
+    } = useWorkImport({ onImported: refreshAfterImport });
     const bookSearchResults = useMemo<BookSearchResult[]>(() => {
         const query = bookSearchQuery.trim();
         if (!query) {
@@ -201,7 +213,16 @@ const Dashboard: React.FC = () => {
             </main>
 
             <BookActionsMenu {...actions} />
-            {importReport && <WorkImportPreflightDialog report={importReport} onClose={closeReport} />}
+            {importReport && <WorkImportPreflightDialog
+                report={importReport}
+                preparation={importPreparation}
+                importError={importError}
+                isExecuting={isExecutingImport}
+                onClose={closeReport}
+                onImport={() => void executeImport('import')}
+                onReplace={() => void executeImport('replace')}
+                onCreateCopy={() => void executeImport('copy')}
+            />}
         </div>
     );
 };

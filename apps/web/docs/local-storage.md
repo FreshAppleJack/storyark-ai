@@ -23,6 +23,9 @@ SQL migrations and transaction boundaries remain unchanged.
 | `validation.rs` | Shared identity, version, lock and input checks |
 | `records.rs` | Query rows, map stored fields and advance parent versions |
 | `content.rs` | Validate supported rich content and foreshadowing notes |
+| `import/validation.rs` | Validate the whole-work envelope before any write |
+| `import/mapping.rs` | Allocate copy IDs and rewrite internal references |
+| `import/persistence.rs` | Resolve conflicts, verify backups and insert the work transactionally |
 | `tests/` | Regression tests grouped by feature, with shared fixtures in `mod.rs` |
 
 Each business module implements methods on the same `Database`; splitting files
@@ -36,9 +39,9 @@ facade or adding unused abstractions.
 > weeks 11–12 moved every remaining work surface — characters, the
 > relationship graph, foreshadowing/planning, preferences and the brainstorm
 > workspace — onto the same storage (see `local-content.md`). AI Continue now
-> uses the configured-model Tauri generation boundary; RAG, JSON import/restore
-> and platform-specific features remain future work. Whole-work JSON export is
-> now a local Tauri/SQLite flow described in `storyark-work-exchange.md`.
+> uses the configured-model Tauri generation boundary; RAG and platform-specific
+> features remain future work. Whole-work JSON export and conflict-aware import
+> are local Tauri/SQLite flows described in `storyark-work-exchange.md`.
 
 ## Identity and schema
 
@@ -69,15 +72,18 @@ explicit lock prevents writes. Book/volume locks also protect descendants.
 
 ## Four independent versions
 
-- SQLite `PRAGMA user_version = 1`: migration/physical table structure version.
+- SQLite `PRAGMA user_version = 5`: migration/physical table structure version
+  currently installed by the numbered migrations. This is independent of the
+  exchange `schemaVersion` and per-record `databaseVersion`.
 - `databaseVersion`: per-record optimistic concurrency version, incremented by
   each successful mutation. It is returned to callers and survives restarts.
 - `contentVersion = 1`: StoryArk's supported Tiptap JSON document contract, not
   the installed Tiptap npm version. Legacy content uses version 0.
 - Export `schemaVersion = 1`: the whole-book interchange envelope defined in
-  [`storyark-work-exchange.md`](./storyark-work-exchange.md). The P0-A contract
-  and P0-B user-facing export flow exist; import/restore is still a later P0
-  stage.
+  [`storyark-work-exchange.md`](./storyark-work-exchange.md). The P0-A contract,
+  P0-B export, P0-C preflight and P0-D conflict-aware import are separate from
+  the SQLite migration version. Restore remains controlled and must not replace
+  a database while another StoryArk instance is running.
 
 Frontend `revision` and `sessionKey` are independent, transient draft identifiers.
 They must remain in the save lifecycle; they are not persisted record versions.
@@ -242,13 +248,14 @@ editor compatibility fixtures are required when wiring the UI. No legacy records
 or users are automatically migrated from the server.
 
 `local_backup` uses the SQLite online backup API while holding the connection
-owner. It includes committed WAL data, validates the destination, and renames a
-unique `.partial` file only on success. Callers cannot supply paths. A backup is a
-consistent database snapshot, not a JSON export. Retention and a restore UI are
-not implemented. Before future schema upgrades, create a verified backup with this
-mechanism; version 1 has no upgrade from an existing supported schema yet. Never
-restore over a running database: stop all instances and validate the backup in a
-separate directory first. Tests demonstrate that separate-directory restore.
+owner. It includes committed WAL data, validates the destination with
+`quick_check` and `foreign_key_check`, and renames a unique `.partial` file only
+on success. Replace imports use the same verified backup boundary before their
+transaction. Callers cannot supply paths. A backup is a consistent database
+snapshot, not a JSON export. There is no automatic live restore: stop all
+instances and validate a backup in a separate directory before a controlled
+restore. Tests demonstrate separate-directory backup reopening and import
+rollback behavior.
 
 ```powershell
 cd apps/web/src-tauri

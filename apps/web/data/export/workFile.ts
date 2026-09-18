@@ -79,6 +79,6 @@ export async function saveWorkExport(raw: string, filename: string): Promise<Wor
         return { status: 'saved', byteLength: result.byteLength, sha256: expectedHash };
     } catch (error) {
         if (error instanceof Error) throw error;
-        throw new Error('The selected export destination could not be written. Check that it is writable and not locked.');
+        throw new Error('The selected export destination could not be written. Check that it is writable and not locked.', { cause: error });
     }
 }

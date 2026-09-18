@@ -1,7 +1,7 @@
 use crate::storage::{
-    ArchiveCharacter, CreateBook, CreateChapter, CreateCharacter, CreateVolume, Delete, Rename,
-    Reorder, ReorderCharacters, SaveChapter, SetReadOnly, Storage, StorageError, UpdateBook,
-    UpdateCharacter,
+    ArchiveCharacter, CreateBook, CreateChapter, CreateCharacter, CreateVolume, Delete, ImportWork,
+    PrepareWorkImport, Rename, Reorder, ReorderCharacters, SaveChapter, SetReadOnly, Storage,
+    StorageError, UpdateBook, UpdateCharacter,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -40,6 +40,23 @@ pub async fn local_read_work_export_snapshot(
         .run(move |db| db.read_work_export_snapshot(&book_id))
         .await
         .into())
+}
+#[tauri::command]
+pub async fn local_prepare_work_import(
+    storage: tauri::State<'_, Storage>,
+    input: PrepareWorkImport,
+) -> Result<Reply, ()> {
+    Ok(storage
+        .run(move |db| db.prepare_work_import(input.work))
+        .await
+        .into())
+}
+#[tauri::command]
+pub async fn local_import_work(
+    storage: tauri::State<'_, Storage>,
+    input: ImportWork,
+) -> Result<Reply, ()> {
+    Ok(storage.run(move |db| db.import_work(input)).await.into())
 }
 #[tauri::command]
 pub async fn local_create_book(

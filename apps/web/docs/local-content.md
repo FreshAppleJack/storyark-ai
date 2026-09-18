@@ -75,8 +75,8 @@ candidate; only a chosen option and its normal workspace save become durable.
 
 The 0002 migration does not create vector indexes, AI task tables or
 legacy-ID mapping tables. The versioned whole-work JSON schema and local export
-flow are implemented separately; JSON import and legacy-ID migration remain
-future work.
+flow are implemented separately. Import ID mappings are transient transaction
+state; they are not a database table and are never reused across imports.
 
 ## IPC contract (names fixed at implementation time)
 
@@ -271,7 +271,9 @@ inline missing-link feedback. Existing brainstorm live selections are cleaned;
 opaque historical snapshots survive with `deletedChapterIds` annotations.
 Changed planning/workspace versions advance atomically with deletion. A failed
 step rolls back all of these changes. Whole-work JSON export is implemented at
-the P0-B boundary; JSON import and restore remain deferred.
+the P0-B boundary. P0-C preflight and P0-D conflict-aware import now consume
+the same envelope; restore remains a controlled backup operation after all
+running instances have stopped.
 
 ### Verification record (2026-09-12, unit 4)
 
@@ -372,9 +374,9 @@ by the maintainer by decision; probe-level checks above ran on a throwaway
 ## Whole-book JSON interchange (P0-A contract and P0-B export)
 
 The v1 contract and local export path are implemented and verified separately
-from the SQL migration. Import, restore, ID remapping and round-trip editing
-are not implemented yet, so this section remains the design boundary for those
-future stages.
+from the SQL migration. P0-C preflight and P0-D conflict-aware import now use
+the same contract; restore remains a controlled backup operation and is never
+performed over a running database.
 
 The editor's local Export menu flushes mounted work-surface drafts, obtains a
 single Rust/SQLite snapshot, validates the complete reference graph, presents a
@@ -407,8 +409,16 @@ document; machine-local file paths are never required and never written into
 the snapshot. The style library stays outside (localStorage today).
 
 ID rewriting when adding a copy: every entity ID (book/volume/chapter/
-character/nodeKey/edge/note/plot entry) is re-allocated on import so the
-copy can never collide with the original; every reference above is rewritten
-through the same mapping in one transaction, and content strings that embed
-IDs (mentions, foreshadowing marks) are rewritten with documented coverage
-— unknown content formats keep their original text untouched.
+character/nodeKey/edge/note/plot entry and saved brainstorm option) is
+re-allocated on import so the copy can never collide with the original; every
+reference above is rewritten through the same mapping in one transaction, and
+content strings that embed IDs (mentions, foreshadowing marks) are rewritten
+with documented coverage — unknown content formats keep their original text
+untouched. Replace first creates and verifies an online backup, then replaces
+the whole cascade in one transaction after a second target-version check.
+
+The implementation is split into `storage/import/validation.rs` (defensive
+contract and reference checks), `mapping.rs` (copy ID allocation and content
+reference rewriting), and `persistence.rs` (conflict statistics and ordered
+SQLite insertion). `local_prepare_work_import` is read-only; `local_import_work`
+is the only command that mutates a work.
