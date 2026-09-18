@@ -37,7 +37,11 @@ export function normalizeStoryPlanning(value: unknown, now: number): StoryPlanni
         storySummary: text(data.storySummary),
         storyBackground: text(data.storyBackground),
         chapterSummaries: list(data.chapterSummaries).map(asRecord).filter(item => item.chapterId).map(item => ({
-            chapterId: String(item.chapterId), summary: text(item.summary), updatedAt: timestamp(item.updatedAt, now),
+            chapterId: String(item.chapterId), summary: text(item.summary),
+            ...(Number.isSafeInteger(item.sourceChapterVersion) && Number(item.sourceChapterVersion) >= 1
+                ? { sourceChapterVersion: Number(item.sourceChapterVersion) }
+                : {}),
+            updatedAt: timestamp(item.updatedAt, now),
         })),
         plotSettings: list(data.plotSettings).map(asRecord).filter(item => item.id).map(item => ({
             id: String(item.id), title: text(item.title) || 'Untitled Plot', details: text(item.details),

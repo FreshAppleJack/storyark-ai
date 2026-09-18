@@ -48,6 +48,32 @@ it('saves newer planning edits in order and keeps the chapter source version', a
     expect(legacy.save).not.toHaveBeenCalled();
 });
 
+it('clears stale chapter summary prompts after a successful planning save', async () => {
+    const currentChapter = { ...chapter, databaseVersion: 2 };
+    const currentDetail: LocalBookDetail = { ...detail, chapters: [currentChapter, { ...chapter, id: 'other-chapter' }] };
+    const currentBook = projectBook(book, currentDetail);
+    const stalePlanning: LocalPlanning = {
+        ...initial,
+        databaseVersion: 1,
+        chapterSummaries: [{ chapterId: currentChapter.id, summary: 'Review acknowledged', sourceChapterVersion: 1, updatedAt: 1 }],
+    };
+    const save = vi.spyOn(planningRepository, 'save').mockImplementation(async input => ({
+        planning: { ...stalePlanning, ...input, databaseVersion: 2 },
+        sessionKey: input.sessionKey,
+        revision: input.revision,
+    }));
+    const { result } = renderHook(() => useStoryPlanning(book.id, currentBook, useLocalPlanningPersistence(stalePlanning)), wrapper());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.chapterOptions[0].sourceChanged).toBe(true);
+
+    await act(async () => { await result.current.handleSave(); });
+
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({
+        chapterSummaries: [expect.objectContaining({ sourceChapterVersion: 2 })],
+    }));
+    expect(result.current.chapterOptions[0].sourceChanged).toBe(false);
+});
+
 it('retains planning on conflict and does not advance the expected version', async () => {
     const save = vi.spyOn(planningRepository, 'save').mockRejectedValue(new Error('VERSION_CONFLICT'));
     const { result } = renderHook(() => useStoryPlanning(book.id, projected, useLocalPlanningPersistence(initial)), wrapper());

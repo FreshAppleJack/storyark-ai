@@ -12,6 +12,24 @@ export interface PlanningPersistence {
     save: (planning: StoryPlanning, revision: number) => Promise<boolean>;
 }
 
+function acknowledgeChapterVersions(planning: StoryPlanning, book: Book | undefined): StoryPlanning {
+    if (!book) return planning;
+    const chapterVersions = new Map(book.volumes.flatMap(volume => volume.chapters)
+        .filter(chapter => chapter.databaseVersion !== undefined)
+        .map(chapter => [chapter.id, chapter.databaseVersion as number]));
+    if (chapterVersions.size === 0) return planning;
+
+    return {
+        ...planning,
+        chapterSummaries: planning.chapterSummaries.map(summary => {
+            const currentVersion = chapterVersions.get(summary.chapterId);
+            return currentVersion === undefined || currentVersion === summary.sourceChapterVersion
+                ? summary
+                : { ...summary, sourceChapterVersion: currentVersion };
+        }),
+    };
+}
+
 /** Owns a page draft, not a second server cache. Key the page by bookId. */
 export function useStoryPlanning(bookId: string, book: Book | undefined, persistence?: PlanningPersistence) {
     const { fetchStoryPlanning, saveStoryPlanning } = useBooks();
@@ -107,14 +125,18 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
             try {
                 do {
                     const snapshotRevision = revision.current;
-                    const snapshot = adapter.current ? latest.current
+                    const rawSnapshot = adapter.current ? latest.current
                         : sanitizePlanning(latest.current, new Set(chapterOptions.map(chapter => chapter.id)));
+                    const snapshot = acknowledgeChapterVersions(rawSnapshot, book);
                     const ok = adapter.current ? await adapter.current.save(snapshot, snapshotRevision)
                         : await saveStoryPlanning(bookId, snapshot);
                     if (!mounted.current) return false;
                     if (!ok) throw new Error('Failed to save planning. Your draft is still available.');
                     savedRevision.current = snapshotRevision;
                     if (revision.current === snapshotRevision) {
+                        const acknowledged = acknowledgeChapterVersions(latest.current, book);
+                        latest.current = acknowledged;
+                        setPlanning(acknowledged);
                         // The indicator persists like the editor's: it only
                         // leaves when the next edit marks the page dirty.
                         setSaveState('saved');
