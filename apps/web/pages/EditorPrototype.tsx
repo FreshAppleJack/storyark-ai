@@ -95,6 +95,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         bookId: book?.id ?? bookId ?? '',
         enabled: isLocal && !!book,
         currentDraftFlush: flush,
+        currentDraftReadOnly: chapterDraft.isReadOnly,
         onError: (error) => {
             console.error('Work export failed:', error);
             toast.error(error instanceof Error ? error.message : 'Work export failed. Your draft remains available.');

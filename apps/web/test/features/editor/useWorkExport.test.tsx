@@ -61,4 +61,26 @@ describe('useWorkExport', () => {
         expect(result.current.preview?.value).toEqual({ book: { title: 'Book' } });
         expect(onError).not.toHaveBeenCalled();
     });
+
+    it('reads the committed snapshot without flushing a read-only current chapter', async () => {
+        const currentDraftFlush = vi.fn().mockResolvedValue(false);
+        const { result } = renderHook(() => useWorkExport({
+            bookId: 'book-1',
+            enabled: true,
+            currentDraftFlush,
+            currentDraftReadOnly: true,
+            onError: vi.fn(),
+            onSaved: vi.fn(),
+        }));
+
+        await act(async () => { await result.current.prepare(); });
+
+        expect(dependencies.flushWorkDrafts).toHaveBeenCalledWith(
+            'book-1',
+            [],
+            { skipKinds: ['chapter'] },
+        );
+        expect(currentDraftFlush).not.toHaveBeenCalled();
+        expect(result.current.preview).not.toBeNull();
+    });
 });

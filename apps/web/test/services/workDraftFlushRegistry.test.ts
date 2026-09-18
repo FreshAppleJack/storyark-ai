@@ -50,4 +50,23 @@ describe('work draft flush registry', () => {
         ]);
         expect(seen).toEqual(['registered', 'fallback']);
     });
+
+    it('skips a locked chapter while flushing other mounted surfaces', async () => {
+        const seen: WorkDraftKind[] = [];
+        cleanups.push(registerWorkDraftFlush('book-4', 'chapter', async () => {
+            seen.push('chapter');
+            return false;
+        }));
+        cleanups.push(registerWorkDraftFlush('book-4', 'planning', async () => {
+            seen.push('planning');
+            return true;
+        }));
+
+        await expect(flushWorkDrafts(
+            'book-4',
+            [{ kind: 'chapter', flush: async () => { seen.push('fallback'); return false; } }],
+            { skipKinds: ['chapter'] },
+        )).resolves.toBe(true);
+        expect(seen).toEqual(['planning']);
+    });
 });

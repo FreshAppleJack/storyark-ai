@@ -20,12 +20,20 @@ interface UseWorkExportOptions {
     bookId: string;
     enabled: boolean;
     currentDraftFlush: () => Promise<boolean>;
+    currentDraftReadOnly?: boolean;
     onError: (error: unknown) => void;
     onSaved: (result: Extract<WorkExportSaveResult, { status: 'saved' }>) => void;
 }
 
 /** Coordinates local draft flushing, snapshot construction, preview and save. */
-export function useWorkExport({ bookId, enabled, currentDraftFlush, onError, onSaved }: UseWorkExportOptions) {
+export function useWorkExport({
+    bookId,
+    enabled,
+    currentDraftFlush,
+    currentDraftReadOnly = false,
+    onError,
+    onSaved,
+}: UseWorkExportOptions) {
     const [isExporting, setIsExporting] = useState(false);
     const [preview, setPreview] = useState<WorkExportPreviewModel | null>(null);
     const pending = useRef(false);
@@ -41,7 +49,11 @@ export function useWorkExport({ bookId, enabled, currentDraftFlush, onError, onS
         pending.current = true;
         setIsExporting(true);
         try {
-            const flushed = await flushWorkDrafts(bookId, [{ kind: 'chapter', flush: currentDraftFlush }]);
+            const flushed = await flushWorkDrafts(
+                bookId,
+                currentDraftReadOnly ? [] : [{ kind: 'chapter', flush: currentDraftFlush }],
+                currentDraftReadOnly ? { skipKinds: ['chapter'] } : undefined,
+            );
             if (!flushed) throw new Error('A work draft could not be saved. Export stopped; the draft remains available.');
             const snapshot = await localExportRepository.readSnapshot(bookId);
             const value = buildStoryArkWorkExport(snapshot);
@@ -55,7 +67,7 @@ export function useWorkExport({ bookId, enabled, currentDraftFlush, onError, onS
             pending.current = false;
             if (mounted.current) setIsExporting(false);
         }
-    }, [bookId, currentDraftFlush, enabled, onError]);
+    }, [bookId, currentDraftFlush, currentDraftReadOnly, enabled, onError]);
 
     const confirm = useCallback(async () => {
         if (!preview || pending.current) return;

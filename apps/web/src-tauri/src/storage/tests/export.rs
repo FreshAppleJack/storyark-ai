@@ -114,3 +114,23 @@ fn work_export_snapshot_rejects_a_dangling_foreshadowing_mark() {
         "CONTENT_INCOMPATIBLE"
     );
 }
+
+#[test]
+fn work_export_snapshot_reads_locked_work_without_attempting_a_write() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let chapter = fixture(&mut db);
+    db.save_chapter(chapter.clone()).unwrap();
+    db.connection
+        .execute(
+            "UPDATE chapters SET is_read_only=1 WHERE id=?",
+            [&chapter.chapter_id],
+        )
+        .unwrap();
+
+    let snapshot = db.read_work_export_snapshot(&chapter.book_id).unwrap();
+    assert_eq!(snapshot["book"]["id"], chapter.book_id);
+    assert_eq!(snapshot["chapters"][0]["id"], chapter.chapter_id);
+    assert_eq!(snapshot["chapters"][0]["isReadOnly"], true);
+    assert_eq!(snapshot["chapters"][0]["body"]["format"], "tiptap-json");
+}
