@@ -14,22 +14,13 @@ import type { LocalWorkExportSnapshot } from '../../../data/local/exportReposito
 
 const native = vi.hoisted(() => ({
     isTauri: vi.fn(),
+    invoke: vi.fn(),
     save: vi.fn(),
-    writeFile: vi.fn(),
-    readFile: vi.fn(),
-    rename: vi.fn(),
-    remove: vi.fn(),
     saveAs: vi.fn(),
 }));
 
-vi.mock('@tauri-apps/api/core', () => ({ isTauri: native.isTauri }));
+vi.mock('@tauri-apps/api/core', () => ({ isTauri: native.isTauri, invoke: native.invoke }));
 vi.mock('@tauri-apps/plugin-dialog', () => ({ save: native.save }));
-vi.mock('@tauri-apps/plugin-fs', () => ({
-    writeFile: native.writeFile,
-    readFile: native.readFile,
-    rename: native.rename,
-    remove: native.remove,
-}));
 vi.mock('file-saver', () => ({ saveAs: native.saveAs }));
 
 const bookId = '00000000-0000-4000-8000-000000000010';
@@ -250,42 +241,35 @@ describe('whole-work export file boundary', () => {
     beforeEach(() => {
         vi.resetAllMocks();
         native.isTauri.mockReturnValue(true);
-        native.writeFile.mockResolvedValue(undefined);
-        native.rename.mockResolvedValue(undefined);
-        native.remove.mockResolvedValue(undefined);
+        native.invoke.mockResolvedValue({ byteLength: new TextEncoder().encode(sampleExport).byteLength });
     });
 
-    it('writes a verified temporary file and atomically renames it to the selected destination', async () => {
+    it('delegates verified replacement to the native writer for the selected destination', async () => {
         native.save.mockResolvedValue('C:/selected/Book.storyark.json');
-        native.readFile.mockResolvedValue(new TextEncoder().encode(sampleExport));
 
         const result = await saveWorkExport(sampleExport, workExportFilename('Book'));
 
         expect(result.status).toBe('saved');
-        expect(native.writeFile).toHaveBeenCalledTimes(1);
-        const temporaryPath = native.writeFile.mock.calls[0][0] as string;
-        expect(temporaryPath).toMatch(/^C:\/selected\/Book\.storyark\.json\.storyark-[0-9a-f-]+\.tmp$/);
-        expect(native.writeFile.mock.calls[0][1]).toEqual(new TextEncoder().encode(sampleExport));
-        expect(native.rename).toHaveBeenCalledWith(temporaryPath, 'C:/selected/Book.storyark.json');
-        expect(native.remove).not.toHaveBeenCalled();
+        expect(native.invoke).toHaveBeenCalledWith('local_save_work_export', {
+            input: {
+                path: 'C:/selected/Book.storyark.json',
+                content: sampleExport,
+            },
+        });
     });
 
     it('treats Save As cancellation as a normal result without writing', async () => {
         native.save.mockResolvedValue(null);
 
         await expect(saveWorkExport(sampleExport, 'Book.storyark.json')).resolves.toEqual({ status: 'cancelled' });
-        expect(native.writeFile).not.toHaveBeenCalled();
-        expect(native.rename).not.toHaveBeenCalled();
+        expect(native.invoke).not.toHaveBeenCalled();
     });
 
-    it('removes the temporary file when read-back verification fails', async () => {
+    it('surfaces a safe error when the native writer rejects the destination', async () => {
         native.save.mockResolvedValue('C:/selected/Book.storyark.json');
-        native.readFile.mockResolvedValue(new Uint8Array([1, 2, 3]));
+        native.invoke.mockRejectedValue({ code: 'path-forbidden' });
 
-        await expect(saveWorkExport(sampleExport, 'Book.storyark.json')).rejects.toThrow('size could not be verified');
-        const temporaryPath = native.writeFile.mock.calls[0][0] as string;
-        expect(native.remove).toHaveBeenCalledWith(temporaryPath);
-        expect(native.rename).not.toHaveBeenCalled();
+        await expect(saveWorkExport(sampleExport, 'Book.storyark.json')).rejects.toThrow('selected export destination could not be written');
     });
 
     it('keeps the browser fallback separate from the native file path boundary', async () => {
@@ -295,7 +279,7 @@ describe('whole-work export file boundary', () => {
 
         expect(native.saveAs).toHaveBeenCalledTimes(1);
         expect(native.save).not.toHaveBeenCalled();
-        expect(native.writeFile).not.toHaveBeenCalled();
+        expect(native.invoke).not.toHaveBeenCalled();
     });
 });
 

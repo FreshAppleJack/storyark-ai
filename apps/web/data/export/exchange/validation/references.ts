@@ -73,11 +73,12 @@ export function validateReferences(
 
     graphs.forEach((graph, graphIndex) => {
         const nodes = new Map(graph.nodes.map(node => [node.nodeKey, node]));
-        graph.nodes.forEach(node => {
-            if (!characterById.has(node.characterId)) context.add(`$.graphs[${graphIndex}].nodes`, 'REFERENCE_NOT_FOUND', `Graph node ${node.nodeKey} references a missing character.`);
+        graph.nodes.forEach((node, nodeIndex) => {
+            if (!characterById.has(node.characterId)) context.add(`$.graphs[${graphIndex}].nodes[${nodeIndex}].characterId`, 'REFERENCE_NOT_FOUND', `Graph node ${node.nodeKey} references a missing character.`);
         });
-        graph.edges.forEach(edge => {
-            if (!nodes.has(edge.sourceNodeKey) || !nodes.has(edge.targetNodeKey)) context.add(`$.graphs[${graphIndex}].edges`, 'REFERENCE_NOT_FOUND', `Graph edge ${edge.id} references a missing node instance.`);
+        graph.edges.forEach((edge, edgeIndex) => {
+            if (!nodes.has(edge.sourceNodeKey)) context.add(`$.graphs[${graphIndex}].edges[${edgeIndex}].sourceNodeKey`, 'REFERENCE_NOT_FOUND', `Graph edge ${edge.id} references a missing source node instance.`);
+            if (!nodes.has(edge.targetNodeKey)) context.add(`$.graphs[${graphIndex}].edges[${edgeIndex}].targetNodeKey`, 'REFERENCE_NOT_FOUND', `Graph edge ${edge.id} references a missing target node instance.`);
         });
     });
 
@@ -120,4 +121,3 @@ export function validateReferences(
         }
     });
 }
-

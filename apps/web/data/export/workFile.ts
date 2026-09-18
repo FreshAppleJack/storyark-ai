@@ -1,4 +1,4 @@
-import { isTauri } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import {
     parseStoryArkWorkExport,
     type StoryArkWorkExportValidationResult,
@@ -7,6 +7,10 @@ import {
 export type WorkExportSaveResult =
     | { status: 'saved'; byteLength: number; sha256: string }
     | { status: 'cancelled' };
+
+interface NativeWorkExportSaveResult {
+    byteLength: number;
+}
 
 function validationMessage(result: StoryArkWorkExportValidationResult): string {
     if (result.valid) return '';
@@ -39,8 +43,9 @@ export function workExportFilename(title: string): string {
 }
 
 /**
- * Write a validated work export. Desktop writes go to a verified temporary
- * file and are renamed only after read-back, parse, size and hash checks.
+ * Write a validated work export. The desktop command performs the verified
+ * temporary-file replacement because Save As destinations are outside the
+ * application's private fs scope.
  */
 export async function saveWorkExport(raw: string, filename: string): Promise<WorkExportSaveResult> {
     verifyJson(raw);
@@ -61,25 +66,19 @@ export async function saveWorkExport(raw: string, filename: string): Promise<Wor
     if (path === null) return { status: 'cancelled' };
     if (!path.trim()) throw new Error('The selected export path is empty.');
 
-    const temporaryPath = `${path}.storyark-${globalThis.crypto.randomUUID()}.tmp`;
-    const { writeFile, readFile, rename, remove } = await import('@tauri-apps/plugin-fs');
-    let temporaryFileExists = true;
     try {
-        await writeFile(temporaryPath, bytes);
-        const writtenBytes = await readFile(temporaryPath);
-        if (writtenBytes.byteLength !== bytes.byteLength) {
+        const result = await invoke<NativeWorkExportSaveResult>('local_save_work_export', {
+            input: {
+                path,
+                content: raw,
+            },
+        });
+        if (result.byteLength !== bytes.byteLength) {
             throw new Error('The export size could not be verified. The destination was not replaced.');
         }
-        const writtenHash = await sha256(writtenBytes);
-        if (writtenHash !== expectedHash) {
-            throw new Error('The export hash could not be verified. The destination was not replaced.');
-        }
-        const writtenText = new TextDecoder('utf-8', { fatal: true }).decode(writtenBytes);
-        verifyJson(writtenText);
-        await rename(temporaryPath, path);
-        temporaryFileExists = false;
-        return { status: 'saved', byteLength: writtenBytes.byteLength, sha256: writtenHash };
-    } finally {
-        if (temporaryFileExists) await remove(temporaryPath).catch(() => undefined);
+        return { status: 'saved', byteLength: result.byteLength, sha256: expectedHash };
+    } catch (error) {
+        if (error instanceof Error) throw error;
+        throw new Error('The selected export destination could not be written. Check that it is writable and not locked.');
     }
 }

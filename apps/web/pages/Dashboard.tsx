@@ -1,12 +1,14 @@
-import React, { useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useSession } from '../InteractionContent/SessionContext';
 import { useBooks } from '../InteractionContent/BooksContext';
 import { useBookshelfActions } from '../features/books/hooks/useBookshelfActions';
 import { BookCard } from '../features/books/components/BookCard';
 import { BookActionsMenu } from '../features/books/components/BookActionsMenu';
+import { WorkImportPreflightDialog } from '../features/books/components/WorkImportPreflightDialog';
+import { useWorkImport } from '../features/books/hooks/useWorkImport';
 import { Button } from '../components/ui/Button';
-import { Plus, LogOut, Settings, Search, X } from 'lucide-react';
+import { FileUp, Plus, LogOut, Settings, Search, X } from 'lucide-react';
 import { Book } from '../types';
 import { getFuzzyScore } from '../utils/search';
 
@@ -27,6 +29,8 @@ const Dashboard: React.FC = () => {
 
     const [bookSearchQuery, setBookSearchQuery] = useState('');
     const actions = useBookshelfActions();
+    const importInputRef = useRef<HTMLInputElement>(null);
+    const { report: importReport, isChecking: isCheckingImport, nativeFilePickerAvailable, inspectBrowserFile, openNativeImport, closeReport } = useWorkImport();
     const bookSearchResults = useMemo<BookSearchResult[]>(() => {
         const query = bookSearchQuery.trim();
         if (!query) {
@@ -61,6 +65,13 @@ const Dashboard: React.FC = () => {
     const isSearchingBooks = bookSearchQuery.trim().length > 0;
 
     const handleCreate = async () => { setBookSearchQuery(''); if (isLocal) setShowCreate(true); else await actions.handleCreate(); };
+    const handleImport = async () => {
+        if (nativeFilePickerAvailable) {
+            await openNativeImport();
+            return;
+        }
+        importInputRef.current?.click();
+    };
     const submitCreate = async (event: React.FormEvent) => {
         event.preventDefault();
         if (creating || !newTitle.trim()) return;
@@ -127,7 +138,22 @@ const Dashboard: React.FC = () => {
                                 </p>
                             )}
                         </div>
-                        {/* Call handleCreate, no need for isCreating state now */}
+                        {isLocal && <>
+                            <input
+                                ref={importInputRef}
+                                type="file"
+                                accept=".storyark.json,.json,application/json"
+                                className="hidden"
+                                onChange={(event) => {
+                                    const file = event.currentTarget.files?.[0];
+                                    event.currentTarget.value = '';
+                                    if (file) void inspectBrowserFile(file);
+                                }}
+                            />
+                            <Button variant="secondary" onClick={() => void handleImport()} disabled={!!booksLoading || !!booksError || isCheckingImport} icon={<FileUp size={16} />}>
+                                {isCheckingImport ? 'Checking...' : 'Import'}
+                            </Button>
+                        </>}
                         <Button onClick={handleCreate} disabled={!!booksLoading || !!booksError} icon={<Plus size={16} />}>
                             New Book
                         </Button>
@@ -175,6 +201,7 @@ const Dashboard: React.FC = () => {
             </main>
 
             <BookActionsMenu {...actions} />
+            {importReport && <WorkImportPreflightDialog report={importReport} onClose={closeReport} />}
         </div>
     );
 };

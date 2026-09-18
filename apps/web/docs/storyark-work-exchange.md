@@ -1,9 +1,28 @@
 # StoryArk work exchange format
 
 This document defines the version 1 whole-work JSON envelope. It is the
-contract for the P0-A exchange stage and the P0-B local export flow. Import and
-restore are not implemented yet; those stages must consume this contract
-instead of serializing SQLite rows directly.
+contract for the P0-A exchange stage and the P0-B local export flow. Import
+preflight is implemented as an in-memory validation boundary; import and
+restore must still consume this contract instead of serializing SQLite rows
+directly.
+
+## Import preflight boundary
+
+The Dashboard's **Import** action selects a `.storyark.json` file and runs the
+file through `apps/web/data/export/importPreflight.ts` before any import command
+can be added. Native selection checks the file size with `stat` before reading
+the bytes. Browser fallback checks `File.size` before reading the file. Both
+paths require strict UTF-8, then use the exchange validator for JSON depth,
+object count, string and asset limits, allowed runtime state, Tiptap safety,
+deterministic ordering, duplicate IDs and same-work references.
+
+The report distinguishes validation errors from preservation warnings for
+legacy or read-only chapter bodies and shows field paths such as
+`chapters[2].body.content`. A successful preflight is not an import success:
+it holds the validated value in memory only, makes no SQLite change, and waits
+for the later conflict, ID mapping and transaction recovery stage. A failed
+preflight, file read failure or user cancellation cannot create an empty book or
+partial related records.
 
 ## Version boundaries
 

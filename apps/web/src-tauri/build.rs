@@ -26,6 +26,7 @@ fn main() {
             "local_list_books",
             "local_read_book",
             "local_read_work_export_snapshot",
+            "local_save_work_export",
             "local_create_book",
             "local_create_volume",
             "local_create_chapter",
