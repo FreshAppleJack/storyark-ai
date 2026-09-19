@@ -81,7 +81,7 @@ fn tauri_ipc_creates_saves_and_reads_after_reopening_the_database() {
         json!({"bookId":book_id}),
     );
     assert_eq!(export["ok"], true);
-    assert_eq!(export["value"]["databaseVersion"], 5);
+    assert_eq!(export["value"]["databaseVersion"], 6);
     assert_eq!(export["value"]["book"]["id"], book_id);
     assert_eq!(
         export["value"]["chapters"][0]["id"],

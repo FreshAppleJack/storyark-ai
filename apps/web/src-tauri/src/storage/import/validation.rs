@@ -150,7 +150,13 @@ fn validate_body(
         if content_value.to_string().len() > 8 * 1024 * 1024 {
             return Err(import_invalid("A chapter body exceeds the supported size"));
         }
-        content::validate(&content_value.to_string()).map_err(|_| {
+        let content = content_value.to_string();
+        let validation = if state == "editable" {
+            content::validate(&content)
+        } else {
+            content::validate_preserved(&content)
+        };
+        validation.map_err(|_| {
             import_invalid("A chapter contains a Tiptap document that cannot be safely restored")
         })?;
         validate_tiptap_references(content_value, chapter_id, note_ids, character_ids)?;

@@ -56,17 +56,16 @@ fn validate_tiptap_references(
         }
     }
     if object.get("type").and_then(Value::as_str) == Some("mention") {
-        if let Some(character_id) = object
-            .get("attrs")
-            .and_then(Value::as_object)
-            .and_then(|attrs| attrs.get("characterId"))
-            .and_then(Value::as_str)
-        {
-            if !canonical_uuid(character_id) || !character_ids.contains(character_id) {
-                return Err(StorageError::new(
-                    "CONTENT_INCOMPATIBLE",
-                    "A mention references a missing character",
-                ));
+        if let Some(attrs) = object.get("attrs").and_then(Value::as_object) {
+            for key in ["id", "characterId"] {
+                if let Some(character_id) = attrs.get(key).and_then(Value::as_str) {
+                    if canonical_uuid(character_id) && !character_ids.contains(character_id) {
+                        return Err(StorageError::new(
+                            "CONTENT_INCOMPATIBLE",
+                            "A mention references a missing character",
+                        ));
+                    }
+                }
             }
         }
     }
@@ -101,7 +100,16 @@ fn validate_chapter_for_export(chapter: &Value, character_ids: &HashSet<String>)
         let raw = body.get("content").and_then(Value::as_str).ok_or_else(|| {
             StorageError::new("CONTENT_INCOMPATIBLE", "Stored chapter JSON is invalid")
         })?;
-        content::validate(raw)?;
+        match body.get("contentState").and_then(Value::as_str) {
+            Some("editable") => content::validate(raw)?,
+            Some("read-only") | Some("pending-migration") => content::validate_preserved(raw)?,
+            _ => {
+                return Err(StorageError::new(
+                    "CONTENT_INCOMPATIBLE",
+                    "Stored chapter content state is invalid",
+                ))
+            }
+        }
         let document = parse_json(raw, "Stored chapter JSON is invalid")?;
         validate_tiptap_references(&document, &note_ids, character_ids)?;
     } else {

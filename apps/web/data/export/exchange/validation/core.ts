@@ -43,6 +43,7 @@ export type ExchangeValidationCode =
     | 'REFERENCE_NOT_FOUND'
     | 'REFERENCE_MISMATCH'
     | 'UNSAFE_CONTENT'
+    | 'UNSUPPORTED_ASSET'
     | 'FORBIDDEN_FIELD';
 
 export interface ExchangeValidationIssue {

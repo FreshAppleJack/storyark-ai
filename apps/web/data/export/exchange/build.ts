@@ -82,7 +82,7 @@ function buildContentBody(chapter: LocalChapter): ExchangeContentBody {
             format: 'tiptap-json',
             version: STORYARK_EXPORT_CONTENT_VERSION,
             content: readTiptapDocument(stored.content, chapter.id),
-            contentState: 'editable',
+            contentState: stored.contentState ?? 'editable',
             ...(stored.originalContent === null || stored.originalFormat === null ? {} : {
                 originalContent: stored.originalContent,
                 originalFormat: stored.originalFormat,
@@ -101,7 +101,7 @@ function buildContentBody(chapter: LocalChapter): ExchangeContentBody {
         format: stored.format,
         version: 0,
         content: stored.content,
-        contentState: 'pending-migration',
+        contentState: stored.contentState === 'editable' ? 'pending-migration' : (stored.contentState ?? 'pending-migration'),
         originalContent: stored.originalContent,
         originalFormat: stored.originalFormat,
     };

@@ -4,6 +4,7 @@ import { MIME_PATTERN, SHA256_PATTERN, type ValidationContext } from './core';
 
 export function validateAssets(context: ValidationContext, values: unknown[] | undefined, path: string): ExchangeAsset[] | undefined {
     if (!values) return undefined;
+    if (values.length > 0) context.add(path, 'UNSUPPORTED_ASSET', 'Embedded assets are not supported by this importer yet.');
     if (values.length > EXCHANGE_LIMITS.maxAssets) context.add(path, 'LIMIT_EXCEEDED', `An export cannot contain more than ${EXCHANGE_LIMITS.maxAssets} assets.`);
     const result = values.map((value, index) => validateAsset(context, value, `${path}[${index}]`)).filter((value): value is ExchangeAsset => value !== undefined);
     context.unique(result, path, item => item.id);
@@ -47,4 +48,3 @@ function base64Size(value: string): number {
     const padding = value.endsWith('==') ? 2 : value.endsWith('=') ? 1 : 0;
     return (value.length / 4) * 3 - padding;
 }
-

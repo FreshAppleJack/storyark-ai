@@ -59,7 +59,7 @@ fn upgrade_from_v1_preserves_work_data_and_creates_a_prior_backup() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 5);
+    assert_eq!(version, 6);
     let loaded = db.read_book(&book_id).unwrap();
     let chapter = &loaded["chapters"][0];
     // Content, original recovery copy, ids, unknown note fields and the lock
@@ -163,7 +163,7 @@ fn a_fresh_database_initializes_at_the_latest_version_with_all_tables() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 5);
+    assert_eq!(version, 6);
     for table in [
         "books",
         "volumes",

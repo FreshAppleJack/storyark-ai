@@ -219,6 +219,33 @@ describe('whole-work export construction', () => {
         });
     });
 
+    it('exports pending content with unknown marks and attributes for safe preservation', () => {
+        const snapshot = exportSnapshot();
+        snapshot.chapters[0].body.contentState = 'pending-migration';
+        snapshot.chapters[0].body.content = JSON.stringify({
+            type: 'doc',
+            content: [{
+                type: 'paragraph',
+                content: [{
+                    type: 'text',
+                    text: '未来格式',
+                    marks: [{ type: 'futureGlow', attrs: { tone: '琥珀' } }],
+                }, {
+                    type: 'mention',
+                    attrs: { id: characterId, label: 'Author', futureAlias: 'A' },
+                }],
+            }],
+        });
+
+        const value = buildStoryArkWorkExport(snapshot, {
+            exportId: '00000000-0000-4000-8000-000000000001',
+            exportedAt: '2026-09-17T00:00:00.000Z',
+            producer: { appVersion: 'test', platform: 'windows' },
+        });
+        expect(validateExport(value)).toBe(true);
+        expect(value.chapters[0].body).toMatchObject({ contentState: 'pending-migration' });
+    });
+
     it('stops before serialization when a current chapter body is malformed', () => {
         const snapshot = exportSnapshot();
         snapshot.chapters[0].body.content = '{not-json';

@@ -8,7 +8,8 @@ const MIGRATION_0002: &str = include_str!("../../migrations/0002_local_content.s
 const MIGRATION_0003: &str = include_str!("../../migrations/0003_book_cover.sql");
 const MIGRATION_0004: &str = include_str!("../../migrations/0004_ai_model_configs.sql");
 const MIGRATION_0005: &str = include_str!("../../migrations/0005_ai_credentials.sql");
-const LATEST_VERSION: i64 = 5;
+const MIGRATION_0006: &str = include_str!("../../migrations/0006_content_state.sql");
+const LATEST_VERSION: i64 = 6;
 
 impl Database {
     pub fn open(directory: &Path) -> Result<Self> {
@@ -51,6 +52,7 @@ impl Database {
             }
             3 => {}
             4 => {}
+            5 => {}
             v if v == LATEST_VERSION => {}
             _ => {
                 return Err(StorageError::new(
@@ -67,11 +69,15 @@ impl Database {
             tx.execute_batch(MIGRATION_0005)?;
             tx.pragma_update(None, "user_version", 5)?;
         }
+        if version < 6 {
+            tx.execute_batch(MIGRATION_0006)?;
+            tx.pragma_update(None, "user_version", 6)?;
+        }
         tx.prepare("SELECT credential_mode FROM ai_model_configs LIMIT 0")?;
         tx.prepare("SELECT credential_ref FROM ai_credential_cleanup LIMIT 0")?;
         tx.prepare("SELECT c.config_version,s.default_config_id FROM ai_model_configs c,ai_generation_settings s LIMIT 0")?;
         // Catch missing tables/columns even for an allegedly current database.
-        tx.prepare("SELECT b.author,b.cover_color,v.book_id,c.content_version,c.foreshadowings_json FROM books b,volumes v,chapters c LIMIT 0")?;
+        tx.prepare("SELECT b.author,b.cover_color,v.book_id,c.content_version,c.content_state,c.foreshadowings_json FROM books b,volumes v,chapters c LIMIT 0")?;
         tx.prepare("SELECT ch.aliases_json,g.book_id,gn.character_id,ge.label,p.story_summary,ap.dark_mode,bw.final_content FROM characters ch,graphs g,graph_nodes gn,graph_edges ge,planning p,application_preferences ap,brainstorm_workspaces bw LIMIT 0")?;
         let integrity: String = tx.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
         if integrity != "ok" || tx.prepare("PRAGMA foreign_key_check")?.exists([])? {

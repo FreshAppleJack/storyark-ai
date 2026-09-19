@@ -128,4 +128,22 @@ mod tests {
 
         fs::remove_dir_all(directory).expect("remove export test directory");
     }
+
+    #[test]
+    fn refuses_a_destination_with_a_missing_parent_without_leaving_a_temp_file() {
+        let directory = test_directory();
+        let destination = directory.join("missing").join("work.storyark.json");
+
+        assert_eq!(write_verified_export(&destination, br#"{}"#), Err(()));
+        assert!(!directory
+            .read_dir()
+            .expect("read export test directory")
+            .any(|entry| entry
+                .expect("read export test entry")
+                .file_name()
+                .to_string_lossy()
+                .contains(".storyark-export-")));
+
+        fs::remove_dir_all(directory).expect("remove export test directory");
+    }
 }

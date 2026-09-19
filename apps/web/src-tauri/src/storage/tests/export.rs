@@ -76,7 +76,7 @@ fn work_export_snapshot_reads_every_owned_aggregate_in_one_boundary() {
     .unwrap();
 
     let snapshot = db.read_work_export_snapshot(&chapter.book_id).unwrap();
-    assert_eq!(snapshot["databaseVersion"], 5);
+    assert_eq!(snapshot["databaseVersion"], 6);
     assert_eq!(snapshot["book"]["id"], chapter.book_id);
     assert_eq!(snapshot["volumes"].as_array().unwrap().len(), 1);
     assert_eq!(snapshot["chapters"].as_array().unwrap().len(), 1);
@@ -103,6 +103,32 @@ fn work_export_snapshot_rejects_a_dangling_foreshadowing_mark() {
             "UPDATE chapters SET content=? WHERE id=?",
             [
                 r#"{"type":"doc","content":[{"type":"paragraph","content":[{"type":"text","text":"x","marks":[{"type":"foreshadowing","attrs":{"id":"missing"}}]}]}]}"#,
+                &chapter.chapter_id,
+            ],
+        )
+        .unwrap();
+    assert_eq!(
+        db.read_work_export_snapshot(&chapter.book_id)
+            .unwrap_err()
+            .code,
+        "CONTENT_INCOMPATIBLE"
+    );
+}
+
+#[test]
+fn work_export_snapshot_rejects_a_canonical_mention_from_another_book() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let chapter = fixture(&mut db);
+    db.save_chapter(chapter.clone()).unwrap();
+    let foreign_character = uuid::Uuid::new_v4().to_string();
+    db.connection
+        .execute(
+            "UPDATE chapters SET content=? WHERE id=?",
+            [
+                &format!(
+                    r#"{{"type":"doc","content":[{{"type":"paragraph","content":[{{"type":"mention","attrs":{{"id":"{foreign_character}","label":"Foreign"}}}}]}}]}}"#
+                ),
                 &chapter.chapter_id,
             ],
         )

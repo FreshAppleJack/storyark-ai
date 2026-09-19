@@ -4,12 +4,14 @@ import type { CharacterRole } from '../../types';
 export type UUID = string; // Rust validates canonical UUIDs and generates new IDs.
 export type DatabaseVersion = number; // Positive safe integer; not a format version.
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+export type ContentState = 'editable' | 'read-only' | 'pending-migration';
 export interface StoredContent {
     format: 'tiptap-json' | 'legacy-json' | 'legacy-html' | 'unrecognized';
     version: 0 | 1;
     content: string;
     originalContent: string | null;
     originalFormat: 'legacy-json' | 'legacy-html' | 'unrecognized' | null;
+    contentState?: ContentState;
 }
 export interface LocalRecord {
     id: UUID;

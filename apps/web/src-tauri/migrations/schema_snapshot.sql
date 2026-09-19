@@ -2,7 +2,7 @@
 
 -- Full schema snapshot for NEW EMPTY databases only; not an incremental migration.
 
--- Based on the registered Rust migrations through version 5. No application data.
+-- Based on the registered Rust migrations through version 6. No application data.
 
 -- Do not add this file to the runtime migration registry or execute all *.sql files.
 
@@ -59,7 +59,8 @@ CREATE TABLE chapters (
     is_read_only INTEGER NOT NULL DEFAULT 0 CHECK (is_read_only IN (0, 1)),
     database_version INTEGER NOT NULL DEFAULT 1 CHECK (database_version >= 1),
     created_at INTEGER NOT NULL CHECK (created_at >= 0),
-    updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+    updated_at INTEGER NOT NULL CHECK (updated_at >= created_at), content_state TEXT NOT NULL DEFAULT 'read-only'
+    CHECK (content_state IN ('editable', 'read-only', 'pending-migration')),
     FOREIGN KEY (book_id, volume_id) REFERENCES volumes(book_id, id) ON DELETE CASCADE,
     CHECK ((original_content IS NULL) = (original_format IS NULL)),
     CHECK (content_format = 'tiptap-json' OR original_content IS NOT NULL),
@@ -219,7 +220,7 @@ CREATE INDEX graph_nodes_book ON graph_nodes(book_id, node_key);
 
 CREATE INDEX graph_edges_book ON graph_edges(book_id, id);
 
-PRAGMA user_version = 5;
+PRAGMA user_version = 6;
 
 COMMIT;
 

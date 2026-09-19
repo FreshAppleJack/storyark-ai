@@ -88,7 +88,7 @@ impl Database {
         expected(&volume, input.expected_volume_version)?;
         let id = Uuid::new_v4().to_string();
         let now = now()?;
-        tx.execute("INSERT INTO chapters(id,book_id,volume_id,title,position,content_format,content_version,content,created_at,updated_at) VALUES (?,?,?,?,(SELECT coalesce(max(position)+1,0) FROM chapters WHERE volume_id=?),'tiptap-json',1,?,?,?)", params![id,input.book_id,input.volume_id,input.title,input.volume_id,r#"{"type":"doc","content":[{"type":"paragraph"}]}"#,now,now])?;
+        tx.execute("INSERT INTO chapters(id,book_id,volume_id,title,position,content_format,content_version,content,content_state,created_at,updated_at) VALUES (?,?,?,?,(SELECT coalesce(max(position)+1,0) FROM chapters WHERE volume_id=?),'tiptap-json',1,?,'editable',?,?)", params![id,input.book_id,input.volume_id,input.title,input.volume_id,r#"{"type":"doc","content":[{"type":"paragraph"}]}"#,now,now])?;
         bump(
             &tx,
             "volumes",
@@ -128,6 +128,9 @@ impl Database {
         unlocked(&chapter)?;
         expected(&chapter, input.expected_database_version)?;
         if chapter["body"]["format"] != "tiptap-json" || chapter["body"]["version"] != 1 {
+            return Err(content::incompatible());
+        }
+        if chapter["body"]["contentState"] != "editable" {
             return Err(content::incompatible());
         }
         // Validate both sides: a newer client must not overwrite unknown stored marks.

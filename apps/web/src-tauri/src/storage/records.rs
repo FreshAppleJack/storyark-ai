@@ -51,6 +51,7 @@ pub(super) fn rows(
             let key = match name.as_str() {
                 "content_format" => Some("format"),
                 "content_version" => Some("version"),
+                "content_state" => Some("contentState"),
                 "content" => Some("content"),
                 "original_content" => Some("originalContent"),
                 "original_format" => Some("originalFormat"),

@@ -29,10 +29,10 @@ pub(super) fn stats_for_db(db: &Connection, book_id: &str) -> Result<Value> {
         "foreshadowings": count_json_array(db, "SELECT coalesce(sum(json_array_length(foreshadowings_json)),0) FROM chapters WHERE book_id=?", book_id)?,
         "graphNodes": count_json_array(db, "SELECT count(*) FROM graph_nodes WHERE book_id=?", book_id)?,
         "graphEdges": count_json_array(db, "SELECT count(*) FROM graph_edges WHERE book_id=?", book_id)?,
-        "planningSummaries": count_json_array(db, "SELECT coalesce(json_array_length(chapter_summaries_json),0) FROM planning WHERE book_id=?", book_id)?,
-        "plotSettings": count_json_array(db, "SELECT coalesce(json_array_length(plot_settings_json),0) FROM planning WHERE book_id=?", book_id)?,
+        "planningSummaries": count_json_array(db, "SELECT coalesce(sum(json_array_length(chapter_summaries_json)),0) FROM planning WHERE book_id=?", book_id)?,
+        "plotSettings": count_json_array(db, "SELECT coalesce(sum(json_array_length(plot_settings_json)),0) FROM planning WHERE book_id=?", book_id)?,
         "brainstormWorkspaces": count_json_array(db, "SELECT count(*) FROM brainstorm_workspaces WHERE book_id=?", book_id)?,
-        "brainstormOptions": count_json_array(db, "SELECT coalesce(json_array_length(generated_options_json),0) FROM brainstorm_workspaces WHERE book_id=?", book_id)?,
+        "brainstormOptions": count_json_array(db, "SELECT coalesce(sum(json_array_length(generated_options_json)),0) FROM brainstorm_workspaces WHERE book_id=?", book_id)?,
     }))
 }
 
@@ -135,6 +135,7 @@ pub(super) fn insert_work(tx: &Transaction<'_>, work: &Value, copy: bool) -> Res
             .as_object()
             .ok_or_else(|| import_invalid("A chapter body is invalid"))?;
         let format = string(&body_value, "format")?;
+        let content_state = string(&body_value, "contentState")?;
         let content_value = required(&body_value, "content")?;
         let content = if format == "tiptap-json" {
             json_string(content_value)?
@@ -149,7 +150,7 @@ pub(super) fn insert_work(tx: &Transaction<'_>, work: &Value, copy: bool) -> Res
         let chapter_id = uuid_field(chapter, "id")?;
         let notes = notes_by_chapter.remove(&chapter_id).unwrap_or_default();
         tx.execute(
-            "INSERT INTO chapters(id,book_id,volume_id,title,status,position,content_format,content_version,content,original_content,original_format,word_count,foreshadowings_json,is_read_only,database_version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO chapters(id,book_id,volume_id,title,status,position,content_format,content_version,content,content_state,original_content,original_format,word_count,foreshadowings_json,is_read_only,database_version,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             params![
                 chapter_id,
                 uuid_field(chapter, "bookId")?,
@@ -160,6 +161,7 @@ pub(super) fn insert_work(tx: &Transaction<'_>, work: &Value, copy: bool) -> Res
                 format,
                 integer(&body_value, "version")?,
                 content,
+                content_state,
                 original_content,
                 original_format,
                 integer(chapter, "wordCount")?,
