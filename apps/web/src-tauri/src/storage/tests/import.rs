@@ -89,6 +89,16 @@ fn fresh_import_persists_the_complete_work_and_copy_rewrites_instance_ids() {
             |row| row.get(0),
         )
         .unwrap();
+    let copied_planning = db.read_planning(copied_id).unwrap();
+    assert_eq!(copied_planning["bookId"], copied_id);
+    assert_eq!(
+        copied_planning["chapterSummaries"][0]["chapterId"],
+        copied_chapter
+    );
+    assert_eq!(
+        copied_planning["chapterSummaries"][0]["sourceChapterVersion"],
+        1
+    );
     let copied_node_char: String = db
         .connection
         .query_row(
