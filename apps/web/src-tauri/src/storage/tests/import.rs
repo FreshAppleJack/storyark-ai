@@ -1,5 +1,6 @@
 use super::*;
 use crate::storage::ImportWork;
+use std::cell::Cell;
 
 fn sample_work(book_id: &str, title: &str) -> Value {
     let volume_id = Uuid::new_v4().to_string();
@@ -209,4 +210,27 @@ fn invalid_import_is_rejected_before_any_target_mutation() {
         .unwrap_err();
     assert_eq!(error.code, "IMPORT_INVALID");
     assert_eq!(db.list_books().unwrap().as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn cancellation_before_commit_rolls_back_a_replace() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let book_id = Uuid::new_v4().to_string();
+    let original = sample_work(&book_id, "Original");
+    db.import_work(import_request(original, "import", None))
+        .unwrap();
+
+    let replacement = sample_work(&book_id, "Replacement");
+    let checks = Cell::new(0);
+    let error = db
+        .import_work_with_cancel(import_request(replacement, "replace", Some(4)), || {
+            let current = checks.get();
+            checks.set(current + 1);
+            current >= 4
+        })
+        .unwrap_err();
+
+    assert_eq!(error.code, "CANCELLED");
+    assert_eq!(db.read_book(&book_id).unwrap()["book"]["title"], "Original");
 }

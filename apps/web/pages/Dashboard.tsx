@@ -1,5 +1,6 @@
 import React, { useCallback, useRef, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSession } from '../InteractionContent/SessionContext';
 import { useBooks } from '../InteractionContent/BooksContext';
 import { useBookshelfActions } from '../features/books/hooks/useBookshelfActions';
@@ -11,6 +12,11 @@ import { Button } from '../components/ui/Button';
 import { FileUp, Plus, LogOut, Settings, Search, X } from 'lucide-react';
 import { Book } from '../types';
 import { getFuzzyScore } from '../utils/search';
+import { localDerivedIndexKey, localKeys } from '../data/local/repository';
+import { planningKey } from '../data/local/planningRepository';
+import { localGraphKey } from '../data/local/graphRepository';
+import { brainstormKey } from '../data/local/brainstormRepository';
+import type { WorkImportResult } from '../data/export/importRepository';
 
 interface BookSearchResult {
     book: Book;
@@ -30,17 +36,41 @@ const Dashboard: React.FC = () => {
     const [bookSearchQuery, setBookSearchQuery] = useState('');
     const actions = useBookshelfActions();
     const importInputRef = useRef<HTMLInputElement>(null);
-    const refreshAfterImport = useCallback(async () => { await refreshBooks?.(); }, [refreshBooks]);
+    const queryClient = useQueryClient();
+    const refreshAfterImport = useCallback(async (result: WorkImportResult) => {
+        let refreshFailed = false;
+        try {
+            await refreshBooks?.();
+        } catch {
+            refreshFailed = true;
+        }
+        queryClient.setQueryData(localDerivedIndexKey(result.bookId), { status: result.derivedIndexStatus });
+        const refreshResults = await Promise.allSettled([
+            queryClient.invalidateQueries({ queryKey: localKeys.book(result.bookId) }),
+            queryClient.invalidateQueries({ queryKey: localKeys.characters(result.bookId) }),
+            queryClient.invalidateQueries({ queryKey: planningKey(result.bookId) }),
+            queryClient.invalidateQueries({ queryKey: localGraphKey(result.bookId) }),
+            queryClient.invalidateQueries({ queryKey: brainstormKey(result.bookId) }),
+        ]);
+        if (refreshFailed || refreshResults.some(item => item.status === 'rejected')) {
+            throw new Error('Local Query refresh did not complete.');
+        }
+    }, [queryClient, refreshBooks]);
     const {
         report: importReport,
         preparation: importPreparation,
         importError,
+        importErrorCode,
+        phase: importPhase,
+        outcome: importOutcome,
         isChecking: isCheckingImport,
         isExecuting: isExecutingImport,
+        cancelRequested: cancelRequestedImport,
         nativeFilePickerAvailable,
         inspectBrowserFile,
         openNativeImport,
         executeImport,
+        cancelImport,
         closeReport,
     } = useWorkImport({ onImported: refreshAfterImport });
     const bookSearchResults = useMemo<BookSearchResult[]>(() => {
@@ -217,8 +247,12 @@ const Dashboard: React.FC = () => {
                 report={importReport}
                 preparation={importPreparation}
                 importError={importError}
+                importErrorCode={importErrorCode}
+                phase={importPhase}
+                outcome={importOutcome}
                 isExecuting={isExecutingImport}
-                onClose={closeReport}
+                cancelRequested={cancelRequestedImport}
+                onClose={() => { void (isExecutingImport ? cancelImport() : closeReport()); }}
                 onImport={() => void executeImport('import')}
                 onReplace={() => void executeImport('replace')}
                 onCreateCopy={() => void executeImport('copy')}

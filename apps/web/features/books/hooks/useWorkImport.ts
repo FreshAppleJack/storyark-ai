@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { isTauri } from '@tauri-apps/api/core';
 import { EXCHANGE_LIMITS } from '../../../data/export/exchange/limits';
 import {
@@ -15,118 +15,201 @@ import {
     workImportRepository,
     type WorkImportMode,
     type WorkImportPreparation,
+    type WorkImportResult,
 } from '../../../data/export/importRepository';
 import { LocalStorageError } from '../../../data/local/repository';
 
-interface UseWorkImportOptions {
-    onImported?: () => Promise<void> | void;
+export type WorkImportPhase = 'idle' | 'preflight' | 'conflict' | 'executing' | 'result';
+
+export interface WorkImportOutcome {
+    result: WorkImportResult;
+    refreshError: string | null;
 }
 
-function errorMessage(error: unknown): string {
-    if (error instanceof LocalStorageError) return error.message;
-    if (error instanceof Error) return error.message;
-    return 'The local import operation failed. The existing workspace was not changed.';
+interface UseWorkImportOptions {
+    onImported?: (result: WorkImportResult) => Promise<void> | void;
+}
+
+function errorDetails(error: unknown): { message: string; code: string } {
+    if (error instanceof LocalStorageError) return { message: error.message, code: error.code };
+    if (error instanceof Error) return { message: error.message, code: 'UNKNOWN' };
+    return { message: 'The local import operation failed. The existing workspace was not changed.', code: 'UNKNOWN' };
+}
+
+function newRequestId(): string {
+    return globalThis.crypto?.randomUUID?.() ?? `work-import-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function useWorkImport({ onImported }: UseWorkImportOptions = {}) {
     const [report, setReport] = useState<WorkImportPreflightReport | null>(null);
     const [preparation, setPreparation] = useState<WorkImportPreparation | null>(null);
     const [importError, setImportError] = useState<string | null>(null);
+    const [importErrorCode, setImportErrorCode] = useState<string | null>(null);
+    const [phase, setPhase] = useState<WorkImportPhase>('idle');
+    const [outcome, setOutcome] = useState<WorkImportOutcome | null>(null);
     const [isChecking, setIsChecking] = useState(false);
     const [isExecuting, setIsExecuting] = useState(false);
+    const [cancelRequested, setCancelRequested] = useState(false);
+    const flowId = useRef(0);
+    const requestId = useRef<string | null>(null);
     const nativeFilePickerAvailable = isTauri();
 
-    const applyReport = useCallback(async (nextReport: WorkImportPreflightReport) => {
-        setReport(nextReport);
-        setPreparation(null);
-        setImportError(null);
-        if (nextReport.status !== 'valid' || !nativeFilePickerAvailable) return;
-        try {
-            setPreparation(await workImportRepository.prepare(nextReport.value));
-        } catch (error) {
-            setImportError(errorMessage(error));
-        }
-    }, [nativeFilePickerAvailable]);
-
-    const inspectBytes = useCallback(async (fileName: string, bytes: Uint8Array) => {
-        setIsChecking(true);
+    const resetFlow = useCallback(() => {
+        flowId.current += 1;
+        requestId.current = null;
         setReport(null);
         setPreparation(null);
         setImportError(null);
-        await Promise.resolve();
+        setImportErrorCode(null);
+        setPhase('idle');
+        setOutcome(null);
+        setIsChecking(false);
+        setCancelRequested(false);
+    }, []);
+
+    const applyReport = useCallback(async (nextReport: WorkImportPreflightReport, currentFlowId: number) => {
+        if (currentFlowId !== flowId.current) return;
+        setReport(nextReport);
+        setPreparation(null);
+        setImportError(null);
+        setImportErrorCode(null);
+        setOutcome(null);
+        setPhase('preflight');
+        if (nextReport.status !== 'valid' || !nativeFilePickerAvailable) return;
         try {
-            await applyReport(preflightWorkImportBytes(fileName, bytes));
-        } finally {
-            setIsChecking(false);
+            const nextPreparation = await workImportRepository.prepare(nextReport.value);
+            if (currentFlowId !== flowId.current) return;
+            setPreparation(nextPreparation);
+            setPhase(nextPreparation.status === 'conflict' || nextPreparation.nameConflict ? 'conflict' : 'preflight');
+        } catch (error) {
+            if (currentFlowId !== flowId.current) return;
+            const details = errorDetails(error);
+            setImportError(details.message);
+            setImportErrorCode(details.code);
         }
-    }, [applyReport]);
+    }, [nativeFilePickerAvailable]);
 
     const inspectBrowserFile = useCallback(async (file: File) => {
+        const currentFlowId = flowId.current + 1;
+        flowId.current = currentFlowId;
         if (file.size > EXCHANGE_LIMITS.maxExportBytes) {
-            void applyReport(preflightWorkImportSize(file.name, file.size));
+            await applyReport(preflightWorkImportSize(file.name, file.size), currentFlowId);
             return;
         }
         setReport(null);
         try {
             const bytes = new Uint8Array(await file.arrayBuffer());
-            await inspectBytes(file.name, bytes);
+            if (currentFlowId !== flowId.current) return;
+            setIsChecking(true);
+            await applyReport(preflightWorkImportBytes(file.name, bytes), currentFlowId);
         } catch {
-            await applyReport(preflightReadFailure(file.name));
+            await applyReport(preflightReadFailure(file.name), currentFlowId);
+        } finally {
+            if (currentFlowId === flowId.current) setIsChecking(false);
         }
-    }, [applyReport, inspectBytes]);
+    }, [applyReport]);
 
     const openNativeImport = useCallback(async () => {
         if (!nativeFilePickerAvailable) return;
+        const currentFlowId = flowId.current + 1;
+        flowId.current = currentFlowId;
         setIsChecking(true);
         setReport(null);
+        setPreparation(null);
+        setImportError(null);
+        setImportErrorCode(null);
+        setOutcome(null);
+        setPhase('preflight');
         try {
             const selection = await selectAndPreflightWorkImport();
-            if (selection.status !== 'cancelled') await applyReport(selection);
+            if (currentFlowId !== flowId.current) return;
+            if (selection.status !== 'cancelled') await applyReport(selection, currentFlowId);
+            else resetFlow();
         } catch (error) {
             const fileName = error instanceof WorkImportFileReadError ? error.fileName : 'Selected StoryArk work export';
-            await applyReport(preflightReadFailure(fileName));
+            await applyReport(preflightReadFailure(fileName), currentFlowId);
         } finally {
-            setIsChecking(false);
+            if (currentFlowId === flowId.current) setIsChecking(false);
         }
-    }, [applyReport, nativeFilePickerAvailable]);
+    }, [applyReport, nativeFilePickerAvailable, resetFlow]);
 
     const expectedTargetDatabaseVersion = preparation?.target?.databaseVersion;
 
     const executeImport = useCallback(async (mode: WorkImportMode) => {
-        if (report?.status !== 'valid' || !nativeFilePickerAvailable || isExecuting) return false;
+        if (report?.status !== 'valid' || !nativeFilePickerAvailable || isExecuting || outcome) return false;
+        const currentFlowId = flowId.current;
+        const currentRequestId = newRequestId();
+        requestId.current = currentRequestId;
         setIsExecuting(true);
         setImportError(null);
+        setImportErrorCode(null);
+        setCancelRequested(false);
+        setPhase('executing');
         try {
-            await workImportRepository.execute(report.value, mode, expectedTargetDatabaseVersion);
-            await onImported?.();
-            setReport(null);
-            setPreparation(null);
+            const result = await workImportRepository.execute(report.value, mode, expectedTargetDatabaseVersion, currentRequestId);
+            if (currentFlowId !== flowId.current) return false;
+            let refreshError: string | null = null;
+            try {
+                await onImported?.(result);
+            } catch {
+                refreshError = 'The work was imported, but the current views could not be refreshed. Reopen the work or retry the refresh.';
+            }
+            setOutcome({ result, refreshError });
+            setPhase('result');
             return true;
         } catch (error) {
-            setImportError(errorMessage(error));
+            if (currentFlowId !== flowId.current) return false;
+            const details = errorDetails(error);
+            setImportError(details.message);
+            setImportErrorCode(details.code);
+            setPhase('result');
             return false;
         } finally {
-            setIsExecuting(false);
+            if (currentFlowId === flowId.current) {
+                setIsExecuting(false);
+                setCancelRequested(false);
+                requestId.current = null;
+            }
         }
-    }, [expectedTargetDatabaseVersion, isExecuting, nativeFilePickerAvailable, onImported, report]);
+    }, [expectedTargetDatabaseVersion, isExecuting, nativeFilePickerAvailable, onImported, outcome, report]);
+
+    const cancelImport = useCallback(async () => {
+        if (!isExecuting) {
+            resetFlow();
+            return;
+        }
+        const currentRequestId = requestId.current;
+        if (!currentRequestId || cancelRequested) return;
+        setCancelRequested(true);
+        try {
+            await workImportRepository.cancel(currentRequestId);
+        } catch {
+            setCancelRequested(false);
+            setImportError('The cancellation request could not be sent. The import is still running; wait for its result before closing.');
+            setImportErrorCode('STORAGE_FAILURE');
+        }
+    }, [cancelRequested, isExecuting, resetFlow]);
 
     const closeReport = useCallback(() => {
         if (isExecuting) return;
-        setReport(null);
-        setPreparation(null);
-        setImportError(null);
-    }, [isExecuting]);
+        resetFlow();
+    }, [isExecuting, resetFlow]);
 
     return {
         report,
         preparation,
         importError,
+        importErrorCode,
+        phase,
+        outcome,
         isChecking,
         isExecuting,
+        cancelRequested,
         nativeFilePickerAvailable,
         inspectBrowserFile,
         openNativeImport,
         executeImport,
+        cancelImport,
         closeReport,
     };
 }

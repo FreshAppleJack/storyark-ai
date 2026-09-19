@@ -49,6 +49,30 @@ database: the verified backup is retained for a controlled restore after all
 StoryArk instances have stopped, or for an explicitly controlled external
 SQLite restore procedure.
 
+## User flow and derived-index state (P0-E)
+
+The existing bookshelf keeps the import entry beside **New Book**. The editor
+export menu separates document exports (Word/PDF) from the whole-work JSON
+exchange action. Import status is presented as five user-visible stages:
+select file, preflight summary, conflict choice, transactional import progress,
+and result/recovery guidance. File selection or any later cancellation is not
+reported as a saved work.
+
+The import dialog keeps the validated report until the user closes it, so a
+failed write leaves the source summary and recovery guidance available. The
+Rust import task accepts a request ID and checks cancellation before the write
+boundary, before replacing a target, and before commit. Once SQLite commits,
+the result is reported as completed; closing the dialog cannot hide a write
+that is still running. Errors include a next action without logging the
+selected absolute path.
+
+After a successful import, the bookshelf and local book, character, graph,
+planning and brainstorm queries are invalidated for the imported book. Chapter
+content and foreshadowing notes are part of the book detail query. The result
+also marks `derivedIndexStatus` as `pending` and records that state in the
+local Query cache. Version 1 does not import or pretend to build a retrieval
+index; a later P1 indexing task rebuilds it from the committed local work.
+
 ## Version boundaries
 
 The format keeps several independent versions:

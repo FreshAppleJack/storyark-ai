@@ -4,7 +4,7 @@ use crate::storage::{
     StorageError, UpdateBook, UpdateCharacter,
 };
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 #[derive(Serialize)]
 #[serde(untagged)]
@@ -56,7 +56,32 @@ pub async fn local_import_work(
     storage: tauri::State<'_, Storage>,
     input: ImportWork,
 ) -> Result<Reply, ()> {
-    Ok(storage.run(move |db| db.import_work(input)).await.into())
+    let request_id = input.request_id.clone();
+    let cancellation_request_id = request_id.clone();
+    let cancellation = storage.inner().clone();
+    let result = storage
+        .run(move |db| {
+            db.import_work_with_cancel(input, || {
+                cancellation.is_import_cancelled(cancellation_request_id.as_deref())
+            })
+        })
+        .await;
+    if let Some(request_id) = request_id.as_deref() {
+        storage.clear_import_cancel(request_id);
+    }
+    Ok(result.into())
+}
+
+#[tauri::command]
+pub async fn local_cancel_work_import(
+    storage: tauri::State<'_, Storage>,
+    request_id: String,
+) -> Result<Reply, ()> {
+    storage.cancel_import(request_id);
+    Ok(Reply::Success {
+        ok: true,
+        value: json!({ "cancelled": true }),
+    })
 }
 #[tauri::command]
 pub async fn local_create_book(

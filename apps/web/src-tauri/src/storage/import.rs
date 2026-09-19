@@ -37,6 +37,8 @@ pub struct ImportWork {
     pub work: Value,
     pub mode: ImportMode,
     pub expected_target_database_version: Option<i64>,
+    #[serde(default)]
+    pub request_id: Option<String>,
 }
 
 #[derive(Default)]
@@ -108,8 +110,32 @@ impl Database {
         Ok(result)
     }
 
+    #[cfg(test)]
     pub fn import_work(&mut self, input: ImportWork) -> Result<Value> {
+        self.import_work_with_cancel(input, || false)
+    }
+
+    pub fn import_work_with_cancel<F>(
+        &mut self,
+        input: ImportWork,
+        is_cancelled: F,
+    ) -> Result<Value>
+    where
+        F: Fn() -> bool,
+    {
+        if is_cancelled() {
+            return Err(StorageError::new(
+                "CANCELLED",
+                "Import cancelled; no changes were made",
+            ));
+        }
         let counts = validate_work(&input.work)?;
+        if is_cancelled() {
+            return Err(StorageError::new(
+                "CANCELLED",
+                "Import cancelled; no changes were made",
+            ));
+        }
         let source_book_id = uuid_field(required(&input.work, "book")?, "id")?;
         let source_title = string(required(&input.work, "book")?, "title")?;
         let (work, backup_file_name, mode) = match input.mode {
@@ -157,6 +183,12 @@ impl Database {
                 )
             }
         };
+        if is_cancelled() {
+            return Err(StorageError::new(
+                "CANCELLED",
+                "Import cancelled; no changes were made",
+            ));
+        }
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -176,9 +208,21 @@ impl Database {
             if current["isReadOnly"] == true {
                 return Err(StorageError::new("READ_ONLY", "The target work is locked"));
             }
+            if is_cancelled() {
+                return Err(StorageError::new(
+                    "CANCELLED",
+                    "Import cancelled; no changes were made",
+                ));
+            }
             tx.execute("DELETE FROM books WHERE id=?", [source_book_id.as_str()])?;
         }
         let imported_book_id = insert_work(&tx, &work, matches!(mode, ImportMode::Copy))?;
+        if is_cancelled() {
+            return Err(StorageError::new(
+                "CANCELLED",
+                "Import cancelled; no changes were made",
+            ));
+        }
         let imported_book = record(&tx, "books", &imported_book_id)?;
         tx.commit()?;
         Ok(json!({
@@ -187,6 +231,7 @@ impl Database {
             "book": imported_book,
             "stats": import_stats(&counts),
             "backupFileName": backup_file_name,
+            "derivedIndexStatus": "pending",
         }))
     }
 }

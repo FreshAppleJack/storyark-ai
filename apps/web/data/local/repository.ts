@@ -10,6 +10,7 @@ export const localKeys = {
     book: (id: string) => ['local', 'default-workspace', 'book', id] as const,
     characters: (bookId: string) => ['local', 'default-workspace', 'characters', bookId] as const,
 };
+export const localDerivedIndexKey = (bookId: string) => [...localKeys.all, 'derived-index', bookId] as const;
 export class LocalStorageError extends Error {
     constructor(public readonly code: string, message: string) { super(message); }
 }

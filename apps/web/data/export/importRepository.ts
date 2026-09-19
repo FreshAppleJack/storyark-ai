@@ -43,13 +43,16 @@ export interface WorkImportResult {
     book: unknown;
     stats: WorkImportStats;
     backupFileName: string | null;
+    derivedIndexStatus: 'pending';
 }
 
 export const workImportRepository = {
     prepare: (work: StoryArkWorkExport) =>
         call<WorkImportPreparation>('local_prepare_work_import', { input: { work } }),
-    execute: (work: StoryArkWorkExport, mode: WorkImportMode, expectedTargetDatabaseVersion?: number) =>
+    execute: (work: StoryArkWorkExport, mode: WorkImportMode, expectedTargetDatabaseVersion?: number, requestId?: string) =>
         call<WorkImportResult>('local_import_work', {
-            input: { work, mode, expectedTargetDatabaseVersion },
+            input: { work, mode, expectedTargetDatabaseVersion, ...(requestId ? { requestId } : {}) },
         }),
+    cancel: (requestId: string) =>
+        call<{ cancelled: boolean }>('local_cancel_work_import', { requestId }),
 };
