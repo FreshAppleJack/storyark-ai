@@ -66,6 +66,7 @@ fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri
         brainstorm_commands::local_save_brainstorm,
         retrieval_commands::local_sync_retrieval_sources,
         retrieval_commands::local_list_retrieval_sources,
+        retrieval_commands::local_list_retrieval_chunks,
     ])
 }
 mod brainstorm_commands;

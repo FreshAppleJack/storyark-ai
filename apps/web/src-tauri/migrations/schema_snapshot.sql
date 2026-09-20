@@ -2,7 +2,7 @@
 
 -- Full schema snapshot for NEW EMPTY databases only; not an incremental migration.
 
--- Based on the registered Rust migrations through version 7. No application data.
+-- Based on the registered Rust migrations through version 8. No application data.
 
 -- Do not add this file to the runtime migration registry or execute all *.sql files.
 
@@ -231,6 +231,22 @@ CREATE TABLE retrieval_sources (
     UNIQUE(book_id, source_kind, entity_id)
 ) STRICT;
 
+CREATE TABLE retrieval_chunks (
+    chunk_id TEXT PRIMARY KEY NOT NULL CHECK(length(trim(chunk_id)) BETWEEN 1 AND 8192),
+    source_id TEXT NOT NULL REFERENCES retrieval_sources(source_id) ON DELETE CASCADE,
+    book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    source_version INTEGER NOT NULL CHECK(source_version > 0),
+    index_version INTEGER NOT NULL CHECK(index_version > 0),
+    ordinal INTEGER NOT NULL CHECK(ordinal >= 0),
+    source_text TEXT NOT NULL CHECK(length(source_text) <= 8388608),
+    index_text TEXT NOT NULL CHECK(length(index_text) <= 8388608),
+    text_hash TEXT NOT NULL CHECK(length(trim(text_hash)) BETWEEN 1 AND 256),
+    short_quote TEXT NOT NULL CHECK(length(short_quote) <= 4096),
+    locator_json TEXT NOT NULL CHECK(json_valid(locator_json)),
+    created_at INTEGER NOT NULL CHECK(created_at >= 0),
+    UNIQUE(source_id, source_version, index_version, ordinal, text_hash)
+) STRICT;
+
 CREATE INDEX books_order ON books(position, id);
 
 CREATE INDEX volumes_order ON volumes(book_id, position, id);
@@ -247,7 +263,13 @@ CREATE INDEX retrieval_sources_book_kind ON retrieval_sources(book_id, source_ki
 
 CREATE INDEX retrieval_sources_book_status ON retrieval_sources(book_id, source_status, index_status);
 
-PRAGMA user_version = 7;
+CREATE INDEX retrieval_chunks_book_version
+    ON retrieval_chunks(book_id, source_id, source_version, index_version, ordinal);
+
+CREATE INDEX retrieval_chunks_hash
+    ON retrieval_chunks(book_id, text_hash);
+
+PRAGMA user_version = 8;
 
 COMMIT;
 

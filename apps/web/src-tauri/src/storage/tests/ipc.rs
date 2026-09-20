@@ -92,6 +92,25 @@ fn tauri_ipc_creates_saves_and_reads_after_reopening_the_database() {
         .unwrap()
         .iter()
         .all(|item| item["sourceKind"] == "manuscript"));
+    let chunks = ipc(
+        &window,
+        "local_list_retrieval_chunks",
+        json!({"input":{"scope":{
+            "bookId":book_id,
+            "allowedSourceKinds":["manuscript"]
+        }}}),
+    );
+    assert_eq!(chunks["ok"], true);
+    assert!(chunks["value"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|item| item["bookId"] == book_id));
+    assert!(chunks["value"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|item| item["locator"]["chapterId"] == chapter["value"]["chapter"]["id"]));
     drop(window);
     drop(app);
     let reopened = build();
@@ -106,7 +125,7 @@ fn tauri_ipc_creates_saves_and_reads_after_reopening_the_database() {
         json!({"bookId":book_id}),
     );
     assert_eq!(export["ok"], true);
-    assert_eq!(export["value"]["databaseVersion"], 7);
+    assert_eq!(export["value"]["databaseVersion"], 8);
     assert_eq!(export["value"]["book"]["id"], book_id);
     assert_eq!(
         export["value"]["chapters"][0]["id"],

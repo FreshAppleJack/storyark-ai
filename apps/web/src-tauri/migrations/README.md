@@ -2,13 +2,13 @@
 
 These SQL files describe one database, not separate databases.
 
-- `0001_library.sql`, `0002_local_content.sql`, `0003_book_cover.sql`, `0004_ai_model_configs.sql`, `0005_ai_credentials.sql`, `0006_content_state.sql`, and `0007_retrieval_sources.sql` are
+- `0001_library.sql`, `0002_local_content.sql`, `0003_book_cover.sql`, `0004_ai_model_configs.sql`, `0005_ai_credentials.sql`, `0006_content_state.sql`, `0007_retrieval_sources.sql`, and `0008_retrieval_chunks.sql` are
   immutable incremental migrations registered in `src/storage/database.rs`.
   The application applies missing versions automatically and backs up an
   existing versioned database before upgrading it.
 - `schema_snapshot.sql` is a generated, standalone schema for a NEW EMPTY
   database. It is not an incremental migration. Currently
-its `PRAGMA user_version` is 7, matching the application. Do not register it
+its `PRAGMA user_version` is 8, matching the application. Do not register it
   as a migration and do not run every SQL file in this directory as a batch.
   Future upgrades need their own incremental migration; this snapshot continues
   to be regenerated from the registered migrations.

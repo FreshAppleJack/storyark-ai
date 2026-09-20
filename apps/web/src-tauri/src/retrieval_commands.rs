@@ -1,5 +1,5 @@
 use crate::commands::Reply;
-use crate::storage::{ListRetrievalSources, Storage, SyncRetrievalSources};
+use crate::storage::{ListRetrievalChunks, ListRetrievalSources, Storage, SyncRetrievalSources};
 
 #[tauri::command]
 pub async fn local_sync_retrieval_sources(
@@ -19,6 +19,17 @@ pub async fn local_list_retrieval_sources(
 ) -> Result<Reply, ()> {
     Ok(storage
         .run(move |db| db.list_retrieval_sources(input))
+        .await
+        .into())
+}
+
+#[tauri::command]
+pub async fn local_list_retrieval_chunks(
+    storage: tauri::State<'_, Storage>,
+    input: ListRetrievalChunks,
+) -> Result<Reply, ()> {
+    Ok(storage
+        .run(move |db| db.list_retrieval_chunks(input))
         .await
         .into())
 }

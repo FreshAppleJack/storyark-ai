@@ -76,7 +76,7 @@ fn work_export_snapshot_reads_every_owned_aggregate_in_one_boundary() {
     .unwrap();
 
     let snapshot = db.read_work_export_snapshot(&chapter.book_id).unwrap();
-    assert_eq!(snapshot["databaseVersion"], 7);
+    assert_eq!(snapshot["databaseVersion"], 8);
     assert_eq!(snapshot["book"]["id"], chapter.book_id);
     assert_eq!(snapshot["volumes"].as_array().unwrap().len(), 1);
     assert_eq!(snapshot["chapters"].as_array().unwrap().len(), 1);

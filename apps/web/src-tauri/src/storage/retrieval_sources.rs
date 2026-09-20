@@ -1,9 +1,14 @@
 use super::records::record;
 use super::validation::{invalid, valid_id};
 use super::{Database, Result, StorageError};
+use crate::rag::chunking::{
+    chunk_blocks, chunk_id, locator as chunk_locator, stable_text_hash, text_blocks, tiptap_blocks,
+    ChunkBlock, ChunkDraft, CHUNK_INDEX_VERSION,
+};
 use crate::rag::contracts::{
-    RetrievalAuthoringStatus, RetrievalIndexStatus, RetrievalScope, RetrievalSource,
-    RetrievalSourceKind, RetrievalSourceOrigin, RetrievalSourceStatus, RetrievalVisibilityScope,
+    RetrievalAuthoringStatus, RetrievalChunk, RetrievalChunkLocator, RetrievalIndexStatus,
+    RetrievalScope, RetrievalSource, RetrievalSourceKind, RetrievalSourceOrigin,
+    RetrievalSourceStatus, RetrievalVisibilityScope,
 };
 use crate::rag::sources::{normalize_index_text, source_id, source_is_visible, tiptap_text};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
@@ -25,6 +30,12 @@ pub struct ListRetrievalSources {
     pub scope: RetrievalScope,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ListRetrievalChunks {
+    pub scope: RetrievalScope,
+}
+
 struct SourceDraft {
     source_id: String,
     book_id: String,
@@ -43,6 +54,8 @@ struct SourceDraft {
 
 struct ChapterContext {
     id: String,
+    volume_id: String,
+    volume_title: String,
     title: String,
     source_version: i64,
     content_format: String,
@@ -205,18 +218,20 @@ fn chapter_sources(
     drafts: &mut Vec<SourceDraft>,
 ) -> Result<Vec<ChapterContext>> {
     let mut statement = db.prepare(
-        "SELECT c.id,c.title,c.database_version,c.content_format,c.content,c.updated_at
+        "SELECT c.id,c.volume_id,v.title,c.title,c.database_version,c.content_format,c.content,c.updated_at
          FROM chapters c JOIN volumes v ON v.book_id=c.book_id AND v.id=c.volume_id
          WHERE c.book_id=? ORDER BY v.position,v.id,c.position,c.id",
     )?;
     let rows = statement.query_map([book_id], |row| {
         Ok(ChapterContext {
             id: row.get(0)?,
-            title: row.get(1)?,
-            source_version: row.get(2)?,
-            content_format: row.get(3)?,
-            content: row.get(4)?,
-            updated_at: row.get(5)?,
+            volume_id: row.get(1)?,
+            volume_title: row.get(2)?,
+            title: row.get(3)?,
+            source_version: row.get(4)?,
+            content_format: row.get(5)?,
+            content: row.get(6)?,
+            updated_at: row.get(7)?,
             chapter_order: 0,
         })
     })?;
@@ -633,6 +648,101 @@ fn note_sources_from_db(
     Ok(())
 }
 
+fn chapter_for_source<'a>(
+    draft: &SourceDraft,
+    chapters: &'a [ChapterContext],
+) -> Option<&'a ChapterContext> {
+    let chapter_id = match &draft.visibility_scope {
+        RetrievalVisibilityScope::Chapter { chapter_id, .. } => chapter_id,
+        _ => return None,
+    };
+    chapters.iter().find(|chapter| &chapter.id == chapter_id)
+}
+
+fn blocks_for_source(draft: &SourceDraft, chapters: &[ChapterContext]) -> Vec<ChunkBlock> {
+    if draft.source_kind != RetrievalSourceKind::Manuscript {
+        return text_blocks(&draft.source_text);
+    }
+    let Some(chapter) = chapter_for_source(draft, chapters) else {
+        return Vec::new();
+    };
+    if chapter.content_format != "tiptap-json" {
+        return Vec::new();
+    }
+    let Ok(value) = serde_json::from_str::<Value>(&chapter.content) else {
+        return Vec::new();
+    };
+    let Some(mut body_blocks) = tiptap_blocks(&value) else {
+        return Vec::new();
+    };
+    body_blocks.insert(
+        0,
+        ChunkBlock {
+            text: chapter.title.clone(),
+            index_terms: Vec::new(),
+            node_path: Vec::new(),
+            paragraph_ordinal: None,
+            boundary_before: false,
+        },
+    );
+    body_blocks
+}
+
+fn locator_for_source(
+    draft: &SourceDraft,
+    chapters: &[ChapterContext],
+    chunk: &ChunkDraft,
+) -> RetrievalChunkLocator {
+    let chapter = chapter_for_source(draft, chapters);
+    chunk_locator(
+        chunk,
+        chapter.map(|value| value.id.clone()),
+        chapter.map(|value| value.volume_id.clone()),
+        chapter.map(|value| value.title.clone()),
+        chapter.map(|value| value.volume_title.clone()),
+        chapter.map(|value| value.source_version),
+    )
+}
+
+fn sync_book_chunks(
+    db: &Connection,
+    book_id: &str,
+    drafts: &[SourceDraft],
+    chapters: &[ChapterContext],
+) -> Result<()> {
+    for draft in drafts {
+        let chunks = chunk_blocks(&blocks_for_source(draft, chapters));
+        for chunk in chunks {
+            let locator = locator_for_source(draft, chapters, &chunk);
+            let locator_json = serde_json::to_string(&locator).map_err(|_| invalid())?;
+            db.execute(
+                "INSERT OR IGNORE INTO retrieval_chunks(chunk_id,source_id,book_id,source_version,index_version,ordinal,source_text,index_text,text_hash,short_quote,locator_json,created_at)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                params![
+                    chunk_id(
+                        &draft.source_id,
+                        draft.source_version,
+                        chunk.ordinal,
+                        &chunk.text_hash
+                    ),
+                    draft.source_id,
+                    book_id,
+                    draft.source_version,
+                    CHUNK_INDEX_VERSION,
+                    chunk.ordinal,
+                    chunk.source_text,
+                    chunk.index_text,
+                    chunk.text_hash,
+                    chunk.short_quote,
+                    locator_json,
+                    draft.updated_at,
+                ],
+            )?;
+        }
+    }
+    Ok(())
+}
+
 fn sync_book_sources(db: &Connection, book_id: &str) -> Result<()> {
     let mut drafts = Vec::new();
     let chapters = chapter_sources(db, book_id, &mut drafts)?;
@@ -642,7 +752,7 @@ fn sync_book_sources(db: &Connection, book_id: &str) -> Result<()> {
     note_sources_from_db(db, book_id, &chapters, &mut drafts)?;
 
     let mut current_ids = HashSet::new();
-    for draft in drafts {
+    for draft in &drafts {
         current_ids.insert(draft.source_id.clone());
         let existing = db
             .query_row(
@@ -732,6 +842,7 @@ fn sync_book_sources(db: &Connection, book_id: &str) -> Result<()> {
             )?;
         }
     }
+    sync_book_chunks(db, book_id, &drafts, &chapters)?;
     Ok(())
 }
 
@@ -806,6 +917,83 @@ fn read_sources(db: &Connection, book_id: &str) -> Result<Vec<RetrievalSource>> 
         });
     }
     Ok(sources)
+}
+
+fn read_chunks(db: &Connection, scope: &RetrievalScope) -> Result<Vec<RetrievalChunk>> {
+    let visible_sources = read_sources(db, &scope.book_id)?
+        .into_iter()
+        .filter(|source| source_is_visible(source, scope))
+        .map(|source| (source.source_id.clone(), source))
+        .collect::<HashMap<_, _>>();
+    if visible_sources.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut statement = db.prepare(
+        "SELECT c.chunk_id,c.source_id,c.book_id,c.source_version,c.index_version,c.ordinal,
+                c.source_text,c.index_text,c.text_hash,c.short_quote,c.locator_json
+         FROM retrieval_chunks c
+         JOIN retrieval_sources s ON s.source_id=c.source_id AND s.book_id=c.book_id
+         WHERE c.book_id=? AND c.source_version=s.source_version AND c.index_version=?
+         ORDER BY c.source_id,c.ordinal,c.chunk_id",
+    )?;
+    let rows = statement.query_map(params![scope.book_id, CHUNK_INDEX_VERSION], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, i64>(3)?,
+            row.get::<_, i64>(4)?,
+            row.get::<_, i64>(5)?,
+            row.get::<_, String>(6)?,
+            row.get::<_, String>(7)?,
+            row.get::<_, String>(8)?,
+            row.get::<_, String>(9)?,
+            row.get::<_, String>(10)?,
+        ))
+    })?;
+    let mut chunks = Vec::new();
+    for row in rows {
+        let (
+            chunk_id,
+            source_id,
+            book_id,
+            source_version,
+            index_version,
+            ordinal,
+            source_text,
+            index_text,
+            text_hash,
+            short_quote,
+            locator_json,
+        ) = row?;
+        if !visible_sources.contains_key(&source_id) {
+            continue;
+        }
+        let locator: RetrievalChunkLocator = serde_json::from_str(&locator_json)
+            .map_err(|_| registry_error("Invalid retrieval chunk locator"))?;
+        if locator.text_hash != text_hash
+            || locator.chunk_ordinal != ordinal
+            || stable_text_hash(&source_text) != text_hash
+        {
+            return Err(registry_error(
+                "Retrieval chunk locator does not match its row",
+            ));
+        }
+        chunks.push(RetrievalChunk {
+            chunk_id,
+            source_id,
+            book_id,
+            source_version,
+            index_version,
+            ordinal,
+            source_text,
+            index_text,
+            text_hash,
+            short_quote,
+            locator,
+        });
+    }
+    Ok(chunks)
 }
 
 fn resolve_scope(db: &Connection, mut scope: RetrievalScope) -> Result<RetrievalScope> {
@@ -888,6 +1076,17 @@ impl Database {
             .collect::<Vec<_>>();
         tx.commit()?;
         Ok(json!(sources))
+    }
+
+    pub fn list_retrieval_chunks(&mut self, input: ListRetrievalChunks) -> Result<Value> {
+        let tx = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let scope = resolve_scope(&tx, input.scope)?;
+        sync_book_sources(&tx, &scope.book_id)?;
+        let chunks = read_chunks(&tx, &scope)?;
+        tx.commit()?;
+        Ok(json!(chunks))
     }
 }
 

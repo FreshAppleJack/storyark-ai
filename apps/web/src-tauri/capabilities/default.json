@@ -21,7 +21,7 @@
     "allow-local-read-graph", "allow-local-initialize-graph", "allow-local-save-graph",
     "allow-local-read-preferences", "allow-local-save-preferences",
     "allow-local-read-brainstorm", "allow-local-save-brainstorm",
-    "allow-local-sync-retrieval-sources", "allow-local-list-retrieval-sources",
+    "allow-local-sync-retrieval-sources", "allow-local-list-retrieval-sources", "allow-local-list-retrieval-chunks",
     "core:event:allow-listen",
     "allow-local-update-note", "allow-local-read-planning", "allow-local-save-planning",
     "core:event:allow-unlisten",

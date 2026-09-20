@@ -54,6 +54,41 @@ export interface RetrievalSource {
     entityMetadata: Record<string, unknown>;
 }
 
+export interface RetrievalParagraphSpan {
+    paragraphOrdinal: number;
+    nodePath: number[];
+    startOffset: number;
+    endOffset: number;
+}
+
+export interface RetrievalChunkLocator {
+    chapterId: string | null;
+    volumeId: string | null;
+    chapterTitleSnapshot: string | null;
+    volumeTitleSnapshot: string | null;
+    chapterSourceVersion: number | null;
+    chunkOrdinal: number;
+    paragraphOrdinals: number[];
+    tiptapNodePaths: number[][];
+    paragraphSpans: RetrievalParagraphSpan[];
+    textHash: string;
+    shortQuote: string;
+}
+
+export interface RetrievalChunk {
+    chunkId: string;
+    sourceId: string;
+    bookId: string;
+    sourceVersion: number;
+    indexVersion: number;
+    ordinal: number;
+    sourceText: string;
+    indexText: string;
+    textHash: string;
+    shortQuote: string;
+    locator: RetrievalChunkLocator;
+}
+
 export const continueRetrievalScope = (bookId: string, beforeAnchor: RetrievalAnchor): RetrievalScope => ({
     bookId,
     allowedSourceKinds: [

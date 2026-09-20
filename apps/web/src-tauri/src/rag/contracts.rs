@@ -250,3 +250,44 @@ pub struct RetrievalSource {
     pub embedding_fingerprint: Option<String>,
     pub entity_metadata: Value,
 }
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievalParagraphSpan {
+    pub paragraph_ordinal: i64,
+    pub node_path: Vec<usize>,
+    pub start_offset: i64,
+    pub end_offset: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievalChunkLocator {
+    pub chapter_id: Option<String>,
+    pub volume_id: Option<String>,
+    pub chapter_title_snapshot: Option<String>,
+    pub volume_title_snapshot: Option<String>,
+    pub chapter_source_version: Option<i64>,
+    pub chunk_ordinal: i64,
+    pub paragraph_ordinals: Vec<i64>,
+    pub tiptap_node_paths: Vec<Vec<usize>>,
+    pub paragraph_spans: Vec<RetrievalParagraphSpan>,
+    pub text_hash: String,
+    pub short_quote: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievalChunk {
+    pub chunk_id: String,
+    pub source_id: String,
+    pub book_id: String,
+    pub source_version: i64,
+    pub index_version: i64,
+    pub ordinal: i64,
+    pub source_text: String,
+    pub index_text: String,
+    pub text_hash: String,
+    pub short_quote: String,
+    pub locator: RetrievalChunkLocator,
+}

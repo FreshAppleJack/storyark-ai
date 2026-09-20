@@ -1,6 +1,6 @@
 use super::*;
 use crate::rag::contracts::{RetrievalAnchor, RetrievalScope};
-use crate::storage::{ListRetrievalSources, SavePlanning};
+use crate::storage::{ListRetrievalChunks, ListRetrievalSources, SavePlanning};
 
 fn source<'a>(sources: &'a Value, kind: &str) -> &'a Value {
     sources
@@ -174,4 +174,72 @@ fn retrieval_scope_filters_by_book_kind_and_future_plan_before_results() {
         .unwrap()
         .iter()
         .all(|item| item["bookId"] != other.book_id));
+}
+
+#[test]
+fn chunk_registry_keeps_locators_and_historical_version_identity() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let mut chapter = fixture(&mut db);
+    let book_id = chapter.book_id.clone();
+    db.save_chapter(chapter.clone()).unwrap();
+
+    let scope = RetrievalScope {
+        book_id: book_id.clone(),
+        allowed_source_kinds: vec![crate::rag::contracts::RetrievalSourceKind::Manuscript],
+        allowed_chapter_ids: Vec::new(),
+        before_chapter_order: None,
+        before_anchor: None,
+        include_future_plan: false,
+        include_generated: false,
+        include_stale: false,
+    };
+    let first = db
+        .list_retrieval_chunks(ListRetrievalChunks {
+            scope: scope.clone(),
+        })
+        .unwrap();
+    let first_chunk = first
+        .as_array()
+        .unwrap()
+        .first()
+        .expect("a saved manuscript should produce a chunk");
+    assert_eq!(first_chunk["bookId"], book_id);
+    assert_eq!(first_chunk["sourceVersion"], 2);
+    assert_eq!(first_chunk["indexVersion"], 1);
+    assert_eq!(first_chunk["locator"]["chapterId"], chapter.chapter_id);
+    assert_eq!(first_chunk["locator"]["chapterTitleSnapshot"], "New title");
+    assert!(!first_chunk["locator"]["tiptapNodePaths"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert_eq!(first_chunk["locator"]["textHash"], first_chunk["textHash"]);
+    let first_id = first_chunk["chunkId"].as_str().unwrap().to_owned();
+    let source_id = first_chunk["sourceId"].as_str().unwrap().to_owned();
+
+    chapter.expected_database_version = 2;
+    chapter.title = "Changed title".into();
+    db.save_chapter(chapter).unwrap();
+    let second = db
+        .list_retrieval_chunks(ListRetrievalChunks { scope })
+        .unwrap();
+    assert!(second
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|chunk| chunk["sourceVersion"] == 3));
+    assert!(second
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|chunk| chunk["chunkId"] != first_id));
+    let historical_count: i64 = db
+        .connection
+        .query_row(
+            "SELECT count(*) FROM retrieval_chunks WHERE source_id=?",
+            [source_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(historical_count >= 2);
 }

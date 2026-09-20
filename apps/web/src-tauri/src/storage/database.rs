@@ -10,7 +10,8 @@ const MIGRATION_0004: &str = include_str!("../../migrations/0004_ai_model_config
 const MIGRATION_0005: &str = include_str!("../../migrations/0005_ai_credentials.sql");
 const MIGRATION_0006: &str = include_str!("../../migrations/0006_content_state.sql");
 const MIGRATION_0007: &str = include_str!("../../migrations/0007_retrieval_sources.sql");
-const LATEST_VERSION: i64 = 7;
+const MIGRATION_0008: &str = include_str!("../../migrations/0008_retrieval_chunks.sql");
+const LATEST_VERSION: i64 = 8;
 
 impl Database {
     pub fn open(directory: &Path) -> Result<Self> {
@@ -55,6 +56,7 @@ impl Database {
             4 => {}
             5 => {}
             6 => {}
+            7 => {}
             v if v == LATEST_VERSION => {}
             _ => {
                 return Err(StorageError::new(
@@ -79,6 +81,10 @@ impl Database {
             tx.execute_batch(MIGRATION_0007)?;
             tx.pragma_update(None, "user_version", 7)?;
         }
+        if version < 8 {
+            tx.execute_batch(MIGRATION_0008)?;
+            tx.pragma_update(None, "user_version", 8)?;
+        }
         tx.prepare("SELECT credential_mode FROM ai_model_configs LIMIT 0")?;
         tx.prepare("SELECT credential_ref FROM ai_credential_cleanup LIMIT 0")?;
         tx.prepare("SELECT c.config_version,s.default_config_id FROM ai_model_configs c,ai_generation_settings s LIMIT 0")?;
@@ -86,6 +92,7 @@ impl Database {
         tx.prepare("SELECT b.author,b.cover_color,v.book_id,c.content_version,c.content_state,c.foreshadowings_json FROM books b,volumes v,chapters c LIMIT 0")?;
         tx.prepare("SELECT ch.aliases_json,g.book_id,gn.character_id,ge.label,p.story_summary,ap.dark_mode,bw.final_content FROM characters ch,graphs g,graph_nodes gn,graph_edges ge,planning p,application_preferences ap,brainstorm_workspaces bw LIMIT 0")?;
         tx.prepare("SELECT rs.book_id,rs.source_kind,rs.source_version,rs.visibility_scope_json,rs.index_status FROM retrieval_sources rs LIMIT 0")?;
+        tx.prepare("SELECT rc.book_id,rc.source_id,rc.source_version,rc.index_version,rc.locator_json FROM retrieval_chunks rc LIMIT 0")?;
         let integrity: String = tx.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
         if integrity != "ok" || tx.prepare("PRAGMA foreign_key_check")?.exists([])? {
             return Err(StorageError::new(

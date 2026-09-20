@@ -59,7 +59,7 @@ fn upgrade_from_v1_preserves_work_data_and_creates_a_prior_backup() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 7);
+    assert_eq!(version, 8);
     let loaded = db.read_book(&book_id).unwrap();
     let chapter = &loaded["chapters"][0];
     // Content, original recovery copy, ids, unknown note fields and the lock
@@ -89,6 +89,7 @@ fn upgrade_from_v1_preserves_work_data_and_creates_a_prior_backup() {
         "application_preferences",
         "brainstorm_workspaces",
         "retrieval_sources",
+        "retrieval_chunks",
     ] {
         let count: i64 = db
             .connection
@@ -164,7 +165,7 @@ fn a_fresh_database_initializes_at_the_latest_version_with_all_tables() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 7);
+    assert_eq!(version, 8);
     for table in [
         "books",
         "volumes",
@@ -179,6 +180,7 @@ fn a_fresh_database_initializes_at_the_latest_version_with_all_tables() {
         "application_preferences",
         "brainstorm_workspaces",
         "retrieval_sources",
+        "retrieval_chunks",
     ] {
         db.connection
             .prepare(&format!("SELECT * FROM {table} LIMIT 0"))

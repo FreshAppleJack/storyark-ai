@@ -41,7 +41,7 @@ pub use import::{ImportWork, PrepareWorkImport};
 pub use planning::SavePlanning;
 pub use preferences::SavePreferences;
 pub use requests::*;
-pub use retrieval_sources::{ListRetrievalSources, SyncRetrievalSources};
+pub use retrieval_sources::{ListRetrievalChunks, ListRetrievalSources, SyncRetrievalSources};
 
 use rusqlite::Connection;
 use serde_json::Value;

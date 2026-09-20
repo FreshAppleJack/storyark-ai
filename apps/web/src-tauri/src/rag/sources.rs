@@ -12,6 +12,7 @@ pub fn normalize_index_text(value: &str) -> String {
     let mut output = String::with_capacity(value.len());
     let mut pending_space = false;
     for character in value.chars() {
+        let character = canonical_character(character);
         if character.is_whitespace() {
             pending_space = !output.is_empty();
             continue;
@@ -20,13 +21,18 @@ pub fn normalize_index_text(value: &str) -> String {
             output.push(' ');
         }
         pending_space = false;
-        if character.is_ascii() {
-            output.extend(character.to_lowercase());
-        } else {
-            output.push(character);
-        }
+        output.extend(character.to_lowercase());
     }
     output.trim().to_owned()
+}
+
+fn canonical_character(character: char) -> char {
+    match character {
+        '\u{3000}' => ' ',
+        '\u{FF01}'..='\u{FF5E}' => char::from_u32(character as u32 - 0xfee0).unwrap_or(character),
+        '\u{200B}' | '\u{200C}' | '\u{200D}' | '\u{FEFF}' => ' ',
+        _ => character,
+    }
 }
 
 pub fn tiptap_text(value: &Value) -> Option<String> {
