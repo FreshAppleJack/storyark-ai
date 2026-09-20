@@ -64,6 +64,8 @@ fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri
         preferences_commands::local_save_preferences,
         brainstorm_commands::local_read_brainstorm,
         brainstorm_commands::local_save_brainstorm,
+        retrieval_commands::local_sync_retrieval_sources,
+        retrieval_commands::local_list_retrieval_sources,
     ])
 }
 mod brainstorm_commands;
@@ -72,6 +74,8 @@ mod export;
 mod graph_commands;
 mod planning_commands;
 mod preferences_commands;
+pub mod rag;
+mod retrieval_commands;
 mod storage;
 use tauri::Manager;
 

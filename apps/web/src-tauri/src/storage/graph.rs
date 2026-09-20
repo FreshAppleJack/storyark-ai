@@ -94,6 +94,7 @@ impl Database {
         tx.execute("INSERT INTO graphs(book_id,created_at,updated_at) VALUES (?,?,?) ON CONFLICT(book_id) DO NOTHING", params![book_id,time,time])?;
         let graph = read_graph(&tx, book_id)?.ok_or_else(invalid)?;
         validate_graph(&tx, book_id, &graph.nodes, &graph.edges)?;
+        super::retrieval_sources::sync_sources_in_transaction(&tx, book_id)?;
         tx.commit()?;
         Ok(json!(graph))
     }
@@ -133,6 +134,7 @@ impl Database {
             return Err(StorageError::new("VERSION_CONFLICT", "Graph changed"));
         }
         let saved = read_graph(&tx, &input.book_id)?.ok_or_else(invalid)?;
+        super::retrieval_sources::sync_sources_in_transaction(&tx, &input.book_id)?;
         tx.commit()?;
         Ok(json!({"graph":saved,"sessionKey":input.session_key,"revision":input.revision}))
     }

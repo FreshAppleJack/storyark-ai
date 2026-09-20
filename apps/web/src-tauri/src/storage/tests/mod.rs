@@ -16,6 +16,7 @@ mod migrations;
 mod mutations;
 mod planning;
 mod preferences;
+mod retrieval;
 mod worker;
 
 struct TempDirectory(PathBuf);

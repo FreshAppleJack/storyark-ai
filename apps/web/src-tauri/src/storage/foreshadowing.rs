@@ -76,6 +76,7 @@ impl Database {
         if changed != 1 {
             return Err(StorageError::new("VERSION_CONFLICT", "Chapter changed"));
         }
+        super::retrieval_sources::sync_sources_in_transaction(&tx, &input.book_id)?;
         let result = record(&tx, "chapters", &input.chapter_id)?;
         tx.commit()?;
         Ok(result)

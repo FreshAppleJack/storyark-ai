@@ -82,7 +82,7 @@ export interface SaveChapterRequest {
 }
 export type StorageResult<T> =
     | { ok: true; value: T }
-    | { ok: false; error: { code: 'NOT_FOUND' | 'OWNERSHIP_MISMATCH' | 'VERSION_CONFLICT' | 'READ_ONLY' | 'INVALID_INPUT' | 'CONTENT_INCOMPATIBLE' | 'STORAGE_FAILURE' | 'IMPORT_INVALID' | 'IMPORT_UNSUPPORTED_VERSION' | 'IMPORT_CONFLICT' | 'BACKUP_FAILED' | 'UNSUPPORTED_ASSET' | 'CANCELLED'; message: string; currentDatabaseVersion?: DatabaseVersion } };
+    | { ok: false; error: { code: 'NOT_FOUND' | 'OWNERSHIP_MISMATCH' | 'VERSION_CONFLICT' | 'READ_ONLY' | 'INVALID_INPUT' | 'CONTENT_INCOMPATIBLE' | 'STORAGE_FAILURE' | 'IMPORT_INVALID' | 'IMPORT_UNSUPPORTED_VERSION' | 'IMPORT_CONFLICT' | 'BACKUP_FAILED' | 'UNSUPPORTED_ASSET' | 'CANCELLED' | 'INDEX_STALE' | 'PROVIDER_UNAVAILABLE'; message: string; currentDatabaseVersion?: DatabaseVersion } };
 export interface LocalStorageCommands {
     listBooks(): Promise<StorageResult<LocalBook[]>>;
     readBook(input: { bookId: UUID }): Promise<StorageResult<{ book: LocalBook; volumes: LocalVolume[]; chapters: LocalChapter[] }>>;

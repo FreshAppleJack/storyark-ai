@@ -24,6 +24,7 @@ mod planning_validation;
 mod preferences;
 mod records;
 mod requests;
+mod retrieval_sources;
 mod targets;
 #[cfg(test)]
 mod tests;
@@ -40,6 +41,7 @@ pub use import::{ImportWork, PrepareWorkImport};
 pub use planning::SavePlanning;
 pub use preferences::SavePreferences;
 pub use requests::*;
+pub use retrieval_sources::{ListRetrievalSources, SyncRetrievalSources};
 
 use rusqlite::Connection;
 use serde_json::Value;

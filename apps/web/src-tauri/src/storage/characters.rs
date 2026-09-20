@@ -46,6 +46,7 @@ impl Database {
             input.expected_book_version,
             now,
         )?;
+        super::retrieval_sources::sync_sources_in_transaction(&tx, &input.character.book_id)?;
         let result = json!({"character":record(&tx,"characters",&id)?,"book":record(&tx,"books",&input.character.book_id)?});
         tx.commit()?;
         Ok(result)
@@ -80,6 +81,7 @@ impl Database {
                 &input.character_id,
             )?;
         }
+        super::retrieval_sources::sync_sources_in_transaction(&tx, &input.character.book_id)?;
         let result = record(&tx, "characters", &input.character_id)?;
         tx.commit()?;
         Ok(result)
@@ -99,6 +101,7 @@ impl Database {
         if changed != 1 {
             return Err(StorageError::new("VERSION_CONFLICT", "Record changed"));
         }
+        super::retrieval_sources::sync_sources_in_transaction(&tx, &input.book_id)?;
         let result = record(&tx, "characters", &input.character_id)?;
         tx.commit()?;
         Ok(result)

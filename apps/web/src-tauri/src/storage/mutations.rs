@@ -57,6 +57,10 @@ impl Database {
         if changed != 1 {
             return Err(StorageError::new("VERSION_CONFLICT", "Record changed"));
         }
+        if target.table == "chapters" {
+            let book_id = target.row["bookId"].as_str().ok_or_else(invalid)?;
+            super::retrieval_sources::sync_sources_in_transaction(&tx, book_id)?;
+        }
         let result = record(&tx, target.table, &target.id)?;
         tx.commit()?;
         Ok(result)
@@ -82,6 +86,13 @@ impl Database {
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let source_book_id = input
+            .parent
+            .as_ref()
+            .and_then(|parent| match &parent.target {
+                Target::Book { book_id } | Target::Volume { book_id, .. } => Some(book_id.clone()),
+                Target::Chapter { .. } => None,
+            });
         // A reorder never bumps the parent version: position is a child-row
         // property, and callers update children from the returned records.
         let child_table: &str = match &input.parent {
@@ -153,6 +164,9 @@ impl Database {
         {
             return Err(invalid());
         }
+        if let Some(book_id) = source_book_id {
+            super::retrieval_sources::sync_sources_in_transaction(&tx, &book_id)?;
+        }
         tx.commit()?;
         Ok(Value::Array(ordered))
     }
@@ -161,6 +175,16 @@ impl Database {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let target = locate(&tx, &input.target.target)?;
+        let source_book_id = if target.table == "books" {
+            None
+        } else {
+            Some(
+                target.row["bookId"]
+                    .as_str()
+                    .ok_or_else(invalid)?
+                    .to_owned(),
+            )
+        };
         unlocked_ancestors(&target)?;
         unlocked(&target.row)?;
         expected(&target.row, input.target.expected_database_version)?;
@@ -214,6 +238,9 @@ impl Database {
             }
             None => None,
         };
+        if let Some(book_id) = source_book_id {
+            super::retrieval_sources::sync_sources_in_transaction(&tx, &book_id)?;
+        }
         tx.commit()?;
         Ok(json!({"deletedId":target.id,"parent":parent}))
     }

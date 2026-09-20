@@ -90,6 +90,7 @@ impl Database {
         let time = now()?;
         tx.execute("INSERT INTO planning(book_id,story_summary,story_background,chapter_summaries_json,plot_settings_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(book_id) DO UPDATE SET story_summary=excluded.story_summary,story_background=excluded.story_background,chapter_summaries_json=excluded.chapter_summaries_json,plot_settings_json=excluded.plot_settings_json,database_version=planning.database_version+1,updated_at=max(planning.updated_at,excluded.updated_at)",
             params![input.book_id,input.story_summary,input.story_background,input.chapter_summaries.to_string(),input.plot_settings.to_string(),time,time])?;
+        super::retrieval_sources::sync_sources_in_transaction(&tx, &input.book_id)?;
         let result = read(&tx, &input.book_id)?;
         tx.commit()?;
         Ok(json!({"planning":result,"sessionKey":input.session_key,"revision":input.revision}))

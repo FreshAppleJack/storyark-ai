@@ -224,6 +224,7 @@ impl Database {
             ));
         }
         let imported_book = record(&tx, "books", &imported_book_id)?;
+        super::retrieval_sources::sync_sources_in_transaction(&tx, &imported_book_id)?;
         tx.commit()?;
         Ok(json!({
             "mode": match mode { ImportMode::Import => "import", ImportMode::Replace => "replace", ImportMode::Copy => "copy" },

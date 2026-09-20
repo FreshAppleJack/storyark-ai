@@ -54,6 +54,8 @@ fn main() {
             "local_save_preferences",
             "local_read_brainstorm",
             "local_save_brainstorm",
+            "local_sync_retrieval_sources",
+            "local_list_retrieval_sources",
         ])),
     )
     .expect("Failed to build the application permission manifest")
