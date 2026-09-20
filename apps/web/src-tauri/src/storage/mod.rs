@@ -42,7 +42,7 @@ pub use import::{ImportWork, PrepareWorkImport};
 pub use planning::SavePlanning;
 pub use preferences::SavePreferences;
 pub use requests::*;
-pub(crate) use retrieval_index::{IndexCommitResult, IndexWork};
+pub(crate) use retrieval_index::IndexWork;
 pub use retrieval_index::{ListRetrievalIndexJobs, QueueRetrievalIndex, RetrievalIndexJobAction};
 pub use retrieval_sources::{ListRetrievalChunks, ListRetrievalSources, SyncRetrievalSources};
 

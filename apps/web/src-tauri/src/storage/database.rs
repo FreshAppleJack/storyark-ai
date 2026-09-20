@@ -58,6 +58,7 @@ impl Database {
             5 => {}
             6 => {}
             7 => {}
+            8 => {}
             v if v == LATEST_VERSION => {}
             _ => {
                 return Err(StorageError::new(

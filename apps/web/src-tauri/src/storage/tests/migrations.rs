@@ -119,6 +119,56 @@ fn upgrade_from_v1_preserves_work_data_and_creates_a_prior_backup() {
 }
 
 #[test]
+fn version_eight_database_runs_the_retrieval_index_migration() {
+    let temp = TempDirectory::new();
+    seed_v1_database(&temp.0);
+    let connection = Connection::open(temp.0.join("storyark.sqlite3")).unwrap();
+    for (version, migration) in [
+        (
+            2,
+            include_str!("../../../migrations/0002_local_content.sql"),
+        ),
+        (3, include_str!("../../../migrations/0003_book_cover.sql")),
+        (
+            4,
+            include_str!("../../../migrations/0004_ai_model_configs.sql"),
+        ),
+        (
+            5,
+            include_str!("../../../migrations/0005_ai_credentials.sql"),
+        ),
+        (
+            6,
+            include_str!("../../../migrations/0006_content_state.sql"),
+        ),
+        (
+            7,
+            include_str!("../../../migrations/0007_retrieval_sources.sql"),
+        ),
+        (
+            8,
+            include_str!("../../../migrations/0008_retrieval_chunks.sql"),
+        ),
+    ] {
+        connection.execute_batch(migration).unwrap();
+        connection
+            .pragma_update(None, "user_version", version)
+            .unwrap();
+    }
+    drop(connection);
+
+    let db = Database::open(&temp.0).unwrap();
+    let version: i64 = db
+        .connection
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 9);
+    db.connection
+        .prepare("SELECT * FROM retrieval_index_jobs LIMIT 0")
+        .unwrap();
+}
+
+#[test]
 fn a_failed_upgrade_rolls_back_and_keeps_the_v1_database() {
     let temp = TempDirectory::new();
     let (book_id, _, _) = seed_v1_database(&temp.0);

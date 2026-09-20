@@ -309,7 +309,7 @@ fn local_index_job_commits_vectors_and_semantic_search_reads_only_ready_rows() {
         let vectors = vec![vector; work.chunks.len()];
         assert_eq!(
             db.commit_retrieval_index_job(&work, &vectors).unwrap(),
-            crate::storage::IndexCommitResult::Completed
+            super::super::retrieval_index::IndexCommitResult::Completed
         );
     }
     let response = db
