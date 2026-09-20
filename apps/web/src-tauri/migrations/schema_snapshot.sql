@@ -2,7 +2,7 @@
 
 -- Full schema snapshot for NEW EMPTY databases only; not an incremental migration.
 
--- Based on the registered Rust migrations through version 9. No application data.
+-- Based on the registered Rust migrations through version 11. No application data.
 
 -- Do not add this file to the runtime migration registry or execute all *.sql files.
 
@@ -272,6 +272,34 @@ CREATE TABLE retrieval_index_jobs (
     UNIQUE(source_id, source_version, index_version, embedding_fingerprint)
 ) STRICT;
 
+CREATE TABLE retrieval_search_events (
+    event_id TEXT PRIMARY KEY NOT NULL CHECK(length(trim(event_id)) BETWEEN 1 AND 128),
+    book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    retrieval_version TEXT NOT NULL CHECK(length(trim(retrieval_version)) BETWEEN 1 AND 128),
+    task TEXT NOT NULL CHECK(length(trim(task)) BETWEEN 1 AND 64),
+    requested_mode TEXT NOT NULL,
+    effective_mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    query_hash TEXT NOT NULL CHECK(length(trim(query_hash)) BETWEEN 1 AND 256),
+    embedding_fingerprint TEXT,
+    source_versions_json TEXT NOT NULL CHECK(json_valid(source_versions_json)),
+    hit_ids_json TEXT NOT NULL CHECK(json_valid(hit_ids_json)),
+    created_at INTEGER NOT NULL CHECK(created_at >= 0)
+) STRICT;
+
+CREATE TABLE ai_generation_events (
+    event_id TEXT PRIMARY KEY NOT NULL CHECK(length(trim(event_id)) BETWEEN 1 AND 128),
+    request_id TEXT NOT NULL UNIQUE CHECK(length(trim(request_id)) BETWEEN 1 AND 128),
+    book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    session_id TEXT NOT NULL CHECK(length(trim(session_id)) BETWEEN 1 AND 4096),
+    prompt_version TEXT NOT NULL CHECK(length(trim(prompt_version)) BETWEEN 1 AND 128),
+    retrieval_version TEXT,
+    config_id TEXT NOT NULL CHECK(length(trim(config_id)) BETWEEN 1 AND 128),
+    model_id TEXT NOT NULL CHECK(length(trim(model_id)) BETWEEN 1 AND 256),
+    source_versions_json TEXT NOT NULL CHECK(json_valid(source_versions_json)),
+    created_at INTEGER NOT NULL CHECK(created_at >= 0)
+) STRICT;
+
 CREATE INDEX books_order ON books(position, id);
 
 CREATE INDEX volumes_order ON volumes(book_id, position, id);
@@ -300,7 +328,13 @@ CREATE INDEX retrieval_index_jobs_book_state_idx
 CREATE INDEX retrieval_index_jobs_source_idx
     ON retrieval_index_jobs(source_id, source_version, index_version);
 
-PRAGMA user_version = 9;
+CREATE INDEX retrieval_search_events_book_time_idx
+    ON retrieval_search_events(book_id, created_at, event_id);
+
+CREATE INDEX ai_generation_events_book_time_idx
+    ON ai_generation_events(book_id, created_at, event_id);
+
+PRAGMA user_version = 11;
 
 COMMIT;
 

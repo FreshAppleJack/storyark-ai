@@ -480,6 +480,7 @@ mod tests {
             },
             context_snapshot_id: snapshot.context_snapshot_id.clone(),
             output_chars: 300,
+            retrieval_trace: None,
         };
         assert!(runtime
             .take_context(&snapshot.context_snapshot_id, &request)

@@ -133,11 +133,35 @@ pub fn source_is_visible(source: &RetrievalSource, scope: &RetrievalScope) -> bo
     }
     if let Some(order) = scope.before_chapter_order {
         let allowed = match &source.visibility_scope {
-            RetrievalVisibilityScope::Chapter { chapter_order, .. } => *chapter_order < order,
+            RetrievalVisibilityScope::Chapter {
+                chapter_id,
+                chapter_order,
+            } => {
+                if let Some(anchor) = &scope.before_anchor {
+                    if chapter_id == &anchor.chapter_id {
+                        *chapter_order <= order
+                    } else {
+                        *chapter_order < order
+                    }
+                } else {
+                    *chapter_order < order
+                }
+            }
             RetrievalVisibilityScope::Planning { .. } => true,
             RetrievalVisibilityScope::Book => true,
         };
         if !allowed {
+            return false;
+        }
+    }
+    if let Some(range) = &scope.time_range {
+        if range
+            .updated_after
+            .is_some_and(|value| source.updated_at < value)
+            || range
+                .updated_before
+                .is_some_and(|value| source.updated_at > value)
+        {
             return false;
         }
     }

@@ -122,7 +122,7 @@ fn retrieval_scope_filters_by_book_kind_and_future_plan_before_results() {
         .as_array()
         .unwrap()
         .iter()
-        .all(|item| item["sourceKind"] != "manuscript"));
+        .any(|item| item["sourceKind"] == "manuscript"));
 
     let future = db
         .list_retrieval_sources(ListRetrievalSources {
@@ -135,6 +135,7 @@ fn retrieval_scope_filters_by_book_kind_and_future_plan_before_results() {
                 include_future_plan: true,
                 include_generated: false,
                 include_stale: false,
+                time_range: None,
             },
         })
         .unwrap();
@@ -171,6 +172,7 @@ fn retrieval_scope_filters_by_book_kind_and_future_plan_before_results() {
                 include_future_plan: true,
                 include_generated: true,
                 include_stale: true,
+                time_range: None,
             },
         })
         .unwrap();
@@ -198,6 +200,7 @@ fn chunk_registry_keeps_locators_and_historical_version_identity() {
         include_future_plan: false,
         include_generated: false,
         include_stale: false,
+        time_range: None,
     };
     let first = db
         .list_retrieval_chunks(ListRetrievalChunks {
@@ -269,22 +272,93 @@ fn lexical_search_uses_cjk_fts_and_returns_locators() {
                     include_future_plan: false,
                     include_generated: false,
                     include_stale: false,
+                    time_range: None,
                 },
                 query: "你好".into(),
                 mode: RetrievalSearchMode::Lexical,
                 limit: 10,
+                excluded_hit_ids: Vec::new(),
+                char_budget: 6_000,
+                token_budget: None,
+                adjacent_chunk_count: 1,
+                task: crate::rag::contracts::RetrievalTaskStrategy::Generic,
             },
             None,
             None,
         )
         .unwrap();
     assert_eq!(response["effectiveMode"], "lexical");
+    assert_eq!(response["status"], "ready");
+    assert_eq!(response["scoreSemantics"], "ranking_only");
+    assert_eq!(response["retrievalVersion"], "p1-d-v1");
+    assert_eq!(response["trace"]["task"], "generic");
     assert_eq!(response["degraded"], false);
     assert!(!response["hits"].as_array().unwrap().is_empty());
+    assert!(response["hits"][0]["hitId"].as_str().is_some());
+    assert_eq!(response["hits"][0]["bookId"], chapter.book_id);
+    assert_eq!(response["hits"][0]["sourceKind"], "manuscript");
+    assert_eq!(response["hits"][0]["recallMethods"][0], "lexical");
+    assert_eq!(response["hits"][0]["freshness"], "fresh");
+    assert!(response["context"]["text"]
+        .as_str()
+        .unwrap()
+        .contains("你好"));
     assert_eq!(
         response["hits"][0]["chunk"]["locator"]["chapterId"],
         chapter.chapter_id
     );
+    assert_eq!(
+        db.connection
+            .query_row(
+                "SELECT count(*) FROM retrieval_search_events WHERE book_id=? AND task=?",
+                rusqlite::params![chapter.book_id, "generic"],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        1
+    );
+}
+
+#[test]
+fn hybrid_search_without_local_embedding_reports_lexical_degradation() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let chapter = fixture(&mut db);
+    db.save_chapter(chapter.clone()).unwrap();
+    let response = db
+        .search_retrieval(
+            RetrievalSearchRequest {
+                scope: RetrievalScope {
+                    book_id: chapter.book_id.clone(),
+                    allowed_source_kinds: vec![
+                        crate::rag::contracts::RetrievalSourceKind::Manuscript,
+                    ],
+                    allowed_chapter_ids: vec![chapter.chapter_id.clone()],
+                    before_chapter_order: None,
+                    before_anchor: None,
+                    include_future_plan: false,
+                    include_generated: false,
+                    include_stale: false,
+                    time_range: None,
+                },
+                query: "你好".into(),
+                mode: RetrievalSearchMode::Hybrid,
+                limit: 3,
+                excluded_hit_ids: Vec::new(),
+                char_budget: 6_000,
+                token_budget: None,
+                adjacent_chunk_count: 0,
+                task: crate::rag::contracts::RetrievalTaskStrategy::Continuation,
+            },
+            None,
+            Some("Local embedding is not configured".into()),
+        )
+        .unwrap();
+    assert_eq!(response["effectiveMode"], "lexical");
+    assert_eq!(response["status"], "degraded_lexical");
+    assert_eq!(response["degraded"], true);
+    assert_eq!(response["embeddingAvailable"], false);
+    assert!(!response["hits"].as_array().unwrap().is_empty());
 }
 
 #[test]
@@ -326,10 +400,16 @@ fn local_index_job_commits_vectors_and_semantic_search_reads_only_ready_rows() {
                     include_future_plan: false,
                     include_generated: false,
                     include_stale: false,
+                    time_range: None,
                 },
                 query: "任何词都可以".into(),
                 mode: RetrievalSearchMode::Semantic,
                 limit: 1,
+                excluded_hit_ids: Vec::new(),
+                char_budget: 6_000,
+                token_budget: None,
+                adjacent_chunk_count: 1,
+                task: crate::rag::contracts::RetrievalTaskStrategy::Generic,
             },
             Some(vec![1.0; DIMENSION]),
             None,

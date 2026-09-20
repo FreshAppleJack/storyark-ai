@@ -1,21 +1,14 @@
 use super::records::record;
-use super::retrieval_sources::{read_chunks, resolve_scope, sync_sources_in_transaction};
+use super::retrieval_sources::sync_sources_in_transaction;
 use super::validation::{now, valid_id};
 use super::{Database, Result, StorageError};
 use crate::rag::chunking::CHUNK_INDEX_VERSION;
-use crate::rag::contracts::{
-    RetrievalChunk, RetrievalIndexJob, RetrievalIndexJobState, RetrievalIndexStatus,
-    RetrievalSearchHit, RetrievalSearchMode, RetrievalSearchRequest, RetrievalSearchResponse,
-};
-use crate::rag::embeddings::{decode_vector, dot, encode_vector};
-use crate::rag::lexical::fts_query;
+use crate::rag::contracts::{RetrievalIndexJob, RetrievalIndexJobState, RetrievalIndexStatus};
+use crate::rag::embeddings::encode_vector;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-
-const MAX_SEARCH_LIMIT: usize = 50;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -476,144 +469,4 @@ impl Database {
         tx.commit()?;
         Ok(json!(job))
     }
-
-    pub fn search_retrieval(
-        &mut self,
-        input: RetrievalSearchRequest,
-        query_vector: Option<Vec<f32>>,
-        degradation_reason: Option<String>,
-    ) -> Result<Value> {
-        let requested_mode = input.mode.clone();
-        let effective_mode =
-            if matches!(input.mode, RetrievalSearchMode::Lexical) || query_vector.is_none() {
-                RetrievalSearchMode::Lexical
-            } else {
-                input.mode.clone()
-            };
-        let degraded =
-            !matches!(input.mode, RetrievalSearchMode::Lexical) && query_vector.is_none();
-        let limit = input.limit.clamp(1, MAX_SEARCH_LIMIT);
-        let tx = self
-            .connection
-            .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let scope = resolve_scope(&tx, input.scope)?;
-        sync_sources_in_transaction(&tx, &scope.book_id)?;
-        let chunks = read_chunks(&tx, &scope)?;
-        let chunk_by_id = chunks
-            .iter()
-            .cloned()
-            .map(|chunk| (chunk.chunk_id.clone(), chunk))
-            .collect::<HashMap<_, _>>();
-        let lexical_scores = lexical_scores(&tx, &scope.book_id, &input.query, &chunk_by_id)?;
-        let semantic_scores = if let Some(query) = query_vector.as_deref() {
-            semantic_scores(
-                &tx,
-                &scope.book_id,
-                query,
-                &chunk_by_id,
-                &crate::rag::embeddings::current_fingerprint(),
-            )?
-        } else {
-            HashMap::new()
-        };
-        let mut ids = lexical_scores
-            .keys()
-            .chain(semantic_scores.keys())
-            .cloned()
-            .collect::<HashSet<_>>();
-        let mut hits = ids
-            .drain()
-            .filter_map(|chunk_id| {
-                let chunk = chunk_by_id.get(&chunk_id)?.clone();
-                let lexical = lexical_scores.get(&chunk_id).copied();
-                let semantic = semantic_scores.get(&chunk_id).copied();
-                let score = match effective_mode {
-                    RetrievalSearchMode::Lexical => lexical.unwrap_or(0.0),
-                    RetrievalSearchMode::Semantic => semantic.unwrap_or(0.0),
-                    RetrievalSearchMode::Hybrid => {
-                        lexical.unwrap_or(0.0) * 0.5 + semantic.unwrap_or(0.0) * 0.5
-                    }
-                };
-                Some(RetrievalSearchHit {
-                    chunk,
-                    score,
-                    lexical_score: lexical,
-                    semantic_score: semantic,
-                })
-            })
-            .collect::<Vec<_>>();
-        hits.sort_by(|left, right| {
-            right
-                .score
-                .total_cmp(&left.score)
-                .then_with(|| left.chunk.chunk_id.cmp(&right.chunk.chunk_id))
-        });
-        hits.truncate(limit);
-        tx.commit()?;
-        Ok(json!(RetrievalSearchResponse {
-            requested_mode,
-            effective_mode,
-            degraded,
-            degradation_reason,
-            embedding_available: query_vector.is_some(),
-            hits,
-        }))
-    }
-}
-
-fn lexical_scores(
-    db: &Connection,
-    book_id: &str,
-    query: &str,
-    chunks: &HashMap<String, RetrievalChunk>,
-) -> Result<HashMap<String, f32>> {
-    let Some(query) = fts_query(query) else {
-        return Ok(HashMap::new());
-    };
-    let mut statement = db.prepare(
-        "SELECT f.chunk_id,bm25(retrieval_chunks_fts)
-         FROM retrieval_chunks_fts f
-         WHERE f.book_id=? AND retrieval_chunks_fts MATCH ?",
-    )?;
-    let rows = statement.query_map(params![book_id, query], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
-    })?;
-    let mut scores = HashMap::new();
-    for row in rows {
-        let (chunk_id, rank) = row?;
-        if chunks.contains_key(&chunk_id) {
-            let rank = (-rank).max(0.0) as f32;
-            scores.insert(chunk_id, 1.0 / (1.0 + rank));
-        }
-    }
-    Ok(scores)
-}
-
-fn semantic_scores(
-    db: &Connection,
-    book_id: &str,
-    query: &[f32],
-    chunks: &HashMap<String, RetrievalChunk>,
-    fingerprint: &str,
-) -> Result<HashMap<String, f32>> {
-    let mut statement = db.prepare(
-        "SELECT c.chunk_id,c.embedding_blob
-         FROM retrieval_chunks c JOIN retrieval_sources s ON s.source_id=c.source_id AND s.book_id=c.book_id
-         WHERE c.book_id=? AND c.source_version=s.source_version AND c.index_version=?
-           AND s.index_status='ready' AND s.embedding_fingerprint=? AND c.embedding_blob IS NOT NULL",
-    )?;
-    let rows = statement.query_map(params![book_id, CHUNK_INDEX_VERSION, fingerprint], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
-    })?;
-    let mut scores = HashMap::new();
-    for row in rows {
-        let (chunk_id, blob) = row?;
-        if !chunks.contains_key(&chunk_id) {
-            continue;
-        }
-        let vector =
-            decode_vector(&blob).map_err(|_| index_error("Stored embedding vector is invalid"))?;
-        scores.insert(chunk_id, dot(query, &vector));
-    }
-    Ok(scores)
 }

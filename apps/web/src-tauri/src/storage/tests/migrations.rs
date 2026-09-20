@@ -59,7 +59,7 @@ fn upgrade_from_v1_preserves_work_data_and_creates_a_prior_backup() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 11);
     let loaded = db.read_book(&book_id).unwrap();
     let chapter = &loaded["chapters"][0];
     // Content, original recovery copy, ids, unknown note fields and the lock
@@ -92,6 +92,8 @@ fn upgrade_from_v1_preserves_work_data_and_creates_a_prior_backup() {
         "retrieval_chunks",
         "retrieval_chunks_fts",
         "retrieval_index_jobs",
+        "retrieval_search_events",
+        "ai_generation_events",
     ] {
         let count: i64 = db
             .connection
@@ -162,9 +164,15 @@ fn version_eight_database_runs_the_retrieval_index_migration() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 11);
     db.connection
         .prepare("SELECT * FROM retrieval_index_jobs LIMIT 0")
+        .unwrap();
+    db.connection
+        .prepare("SELECT * FROM retrieval_search_events LIMIT 0")
+        .unwrap();
+    db.connection
+        .prepare("SELECT task FROM retrieval_search_events LIMIT 0")
         .unwrap();
 }
 
@@ -217,7 +225,7 @@ fn a_fresh_database_initializes_at_the_latest_version_with_all_tables() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 9);
+    assert_eq!(version, 11);
     for table in [
         "books",
         "volumes",
@@ -235,6 +243,8 @@ fn a_fresh_database_initializes_at_the_latest_version_with_all_tables() {
         "retrieval_chunks",
         "retrieval_chunks_fts",
         "retrieval_index_jobs",
+        "retrieval_search_events",
+        "ai_generation_events",
     ] {
         db.connection
             .prepare(&format!("SELECT * FROM {table} LIMIT 0"))
@@ -242,6 +252,53 @@ fn a_fresh_database_initializes_at_the_latest_version_with_all_tables() {
     }
     // A fresh empty database takes no pre-upgrade backup.
     assert!(!temp.0.join("backups").exists());
+}
+
+#[test]
+fn version_ten_audit_database_without_task_column_is_repaired() {
+    let temp = TempDirectory::new();
+    let db = Database::open(&temp.0).unwrap();
+    db.connection
+        .execute_batch(
+            "DROP INDEX retrieval_search_events_book_time_idx;
+             ALTER TABLE retrieval_search_events RENAME TO retrieval_search_events_v10;
+             CREATE TABLE retrieval_search_events (
+                 event_id TEXT PRIMARY KEY NOT NULL,
+                 book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                 retrieval_version TEXT NOT NULL,
+                 requested_mode TEXT NOT NULL,
+                 effective_mode TEXT NOT NULL,
+                 status TEXT NOT NULL,
+                 query_hash TEXT NOT NULL,
+                 embedding_fingerprint TEXT,
+                 source_versions_json TEXT NOT NULL,
+                 hit_ids_json TEXT NOT NULL,
+                 created_at INTEGER NOT NULL
+             ) STRICT;
+             INSERT INTO retrieval_search_events(
+                 event_id,book_id,retrieval_version,requested_mode,effective_mode,status,
+                 query_hash,embedding_fingerprint,source_versions_json,hit_ids_json,created_at
+             ) SELECT event_id,book_id,retrieval_version,requested_mode,effective_mode,status,
+                 query_hash,embedding_fingerprint,source_versions_json,hit_ids_json,created_at
+                 FROM retrieval_search_events_v10;
+             DROP TABLE retrieval_search_events_v10;
+             CREATE INDEX retrieval_search_events_book_time_idx
+                 ON retrieval_search_events(book_id, created_at, event_id);
+             PRAGMA user_version = 10;",
+        )
+        .unwrap();
+    drop(db);
+
+    let repaired = Database::open(&temp.0).unwrap();
+    let version: i64 = repaired
+        .connection
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 11);
+    repaired
+        .connection
+        .prepare("SELECT task FROM retrieval_search_events LIMIT 0")
+        .unwrap();
 }
 
 #[test]

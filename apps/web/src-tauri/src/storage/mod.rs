@@ -3,6 +3,7 @@
 mod ai_cleanup;
 mod ai_generation;
 mod ai_settings;
+mod audit;
 mod backup;
 mod brainstorm;
 mod character_order;
@@ -25,6 +26,7 @@ mod preferences;
 mod records;
 mod requests;
 mod retrieval_index;
+mod retrieval_search;
 mod retrieval_sources;
 mod targets;
 #[cfg(test)]

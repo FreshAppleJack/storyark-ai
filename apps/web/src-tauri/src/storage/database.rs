@@ -12,7 +12,22 @@ const MIGRATION_0006: &str = include_str!("../../migrations/0006_content_state.s
 const MIGRATION_0007: &str = include_str!("../../migrations/0007_retrieval_sources.sql");
 const MIGRATION_0008: &str = include_str!("../../migrations/0008_retrieval_chunks.sql");
 const MIGRATION_0009: &str = include_str!("../../migrations/0009_retrieval_indexing.sql");
-const LATEST_VERSION: i64 = 9;
+const MIGRATION_0010: &str = include_str!("../../migrations/0010_retrieval_audit.sql");
+const MIGRATION_0011: &str = include_str!("../../migrations/0011_retrieval_search_task.sql");
+const LATEST_VERSION: i64 = 11;
+const RETRIEVAL_SEARCH_TASK_REPAIR: &str =
+    "ALTER TABLE retrieval_search_events ADD COLUMN task TEXT NOT NULL DEFAULT 'generic' CHECK(length(trim(task)) BETWEEN 1 AND 64);";
+
+fn retrieval_search_events_has_task(transaction: &rusqlite::Transaction<'_>) -> Result<bool> {
+    let mut statement = transaction.prepare("PRAGMA table_info(retrieval_search_events)")?;
+    let mut rows = statement.query([])?;
+    while let Some(row) = rows.next()? {
+        if row.get::<_, String>(1)? == "task" {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
 
 impl Database {
     pub fn open(directory: &Path) -> Result<Self> {
@@ -59,7 +74,9 @@ impl Database {
             6 => {}
             7 => {}
             8 => {}
-            v if v == LATEST_VERSION => {}
+            9 => {}
+            10 => {}
+            11 => {}
             _ => {
                 return Err(StorageError::new(
                     "STORAGE_FAILURE",
@@ -91,6 +108,17 @@ impl Database {
             tx.execute_batch(MIGRATION_0009)?;
             tx.pragma_update(None, "user_version", 9)?;
         }
+        if version < 10 {
+            tx.execute_batch(MIGRATION_0010)?;
+            tx.pragma_update(None, "user_version", 10)?;
+        }
+        if version < 11 {
+            tx.execute_batch(MIGRATION_0011)?;
+            if !retrieval_search_events_has_task(&tx)? {
+                tx.execute_batch(RETRIEVAL_SEARCH_TASK_REPAIR)?;
+            }
+            tx.pragma_update(None, "user_version", 11)?;
+        }
         tx.prepare("SELECT credential_mode FROM ai_model_configs LIMIT 0")?;
         tx.prepare("SELECT credential_ref FROM ai_credential_cleanup LIMIT 0")?;
         tx.prepare("SELECT c.config_version,s.default_config_id FROM ai_model_configs c,ai_generation_settings s LIMIT 0")?;
@@ -101,6 +129,8 @@ impl Database {
         tx.prepare("SELECT rc.book_id,rc.source_id,rc.source_version,rc.index_version,rc.locator_json,rc.embedding_blob FROM retrieval_chunks rc LIMIT 0")?;
         tx.prepare("SELECT f.chunk_id,f.book_id,f.source_id,f.source_version,f.index_version FROM retrieval_chunks_fts f LIMIT 0")?;
         tx.prepare("SELECT j.job_id,j.book_id,j.source_id,j.source_version,j.index_version,j.embedding_fingerprint,j.state FROM retrieval_index_jobs j LIMIT 0")?;
+        tx.prepare("SELECT r.event_id,r.book_id,r.retrieval_version,r.task,r.status,r.source_versions_json FROM retrieval_search_events r LIMIT 0")?;
+        tx.prepare("SELECT g.event_id,g.request_id,g.book_id,g.prompt_version,g.retrieval_version,g.config_id,g.model_id,g.source_versions_json FROM ai_generation_events g LIMIT 0")?;
         let integrity: String = tx.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
         if integrity != "ok" || tx.prepare("PRAGMA foreign_key_check")?.exists([])? {
             return Err(StorageError::new(

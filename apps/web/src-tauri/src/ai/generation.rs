@@ -9,6 +9,13 @@ pub struct SourceVersion {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GenerationRetrievalTrace {
+    pub retrieval_version: String,
+    pub source_versions: Vec<SourceVersion>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum GenerationTarget {
     Continue {
@@ -40,6 +47,8 @@ pub struct GenerateRequest {
     pub target: GenerationTarget,
     pub context_snapshot_id: String,
     pub output_chars: u32,
+    #[serde(default)]
+    pub retrieval_trace: Option<GenerationRetrievalTrace>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

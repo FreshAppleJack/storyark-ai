@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub const RETRIEVAL_VERSION: &str = "p1-d-v1";
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RetrievalSourceKind {
@@ -192,6 +194,13 @@ pub struct RetrievalAnchor {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RetrievalTimeRange {
+    pub updated_after: Option<i64>,
+    pub updated_before: Option<i64>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct RetrievalScope {
     pub book_id: String,
     #[serde(default)]
@@ -206,6 +215,8 @@ pub struct RetrievalScope {
     pub include_generated: bool,
     #[serde(default)]
     pub include_stale: bool,
+    #[serde(default)]
+    pub time_range: Option<RetrievalTimeRange>,
 }
 
 impl RetrievalScope {
@@ -226,6 +237,7 @@ impl RetrievalScope {
             include_future_plan: false,
             include_generated: false,
             include_stale: false,
+            time_range: None,
         }
     }
 }
@@ -310,6 +322,59 @@ impl RetrievalSearchMode {
     }
 }
 
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrievalTaskStrategy {
+    #[default]
+    Generic,
+    Continuation,
+    Brainstorm,
+    ConsistencyCheck,
+}
+
+impl RetrievalTaskStrategy {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Generic => "generic",
+            Self::Continuation => "continuation",
+            Self::Brainstorm => "brainstorm",
+            Self::ConsistencyCheck => "consistency_check",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrievalRecallMethod {
+    Lexical,
+    Alias,
+    Semantic,
+    Adjacent,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrievalFreshness {
+    Fresh,
+    Stale,
+    Pending,
+    FuturePlan,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrievalSearchStatus {
+    Ready,
+    DegradedLexical,
+    NoResults,
+    StaleOnly,
+    FuturePlanOnly,
+    EmbeddingUnavailable,
+    IndexNotReady,
+    LexicalNoMatch,
+    BudgetExhausted,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RetrievalSearchRequest {
@@ -317,8 +382,18 @@ pub struct RetrievalSearchRequest {
     pub query: String,
     #[serde(default = "default_search_mode")]
     pub mode: RetrievalSearchMode,
-    #[serde(default = "default_search_limit")]
+    #[serde(default = "default_search_limit", alias = "topK")]
     pub limit: usize,
+    #[serde(default)]
+    pub excluded_hit_ids: Vec<String>,
+    #[serde(default = "default_char_budget")]
+    pub char_budget: usize,
+    #[serde(default)]
+    pub token_budget: Option<usize>,
+    #[serde(default = "default_adjacent_chunk_count")]
+    pub adjacent_chunk_count: usize,
+    #[serde(default)]
+    pub task: RetrievalTaskStrategy,
 }
 
 fn default_search_mode() -> RetrievalSearchMode {
@@ -329,13 +404,63 @@ fn default_search_limit() -> usize {
     10
 }
 
+fn default_char_budget() -> usize {
+    6_000
+}
+
+fn default_adjacent_chunk_count() -> usize {
+    1
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RetrievalSearchHit {
+    pub hit_id: String,
+    pub book_id: String,
+    pub source_kind: RetrievalSourceKind,
+    pub entity_id: String,
+    pub chapter_id: Option<String>,
+    pub source_version: i64,
+    pub chunk_id: String,
+    pub quote: String,
+    pub locator: RetrievalChunkLocator,
+    pub recall_methods: Vec<RetrievalRecallMethod>,
+    pub freshness: RetrievalFreshness,
     pub chunk: RetrievalChunk,
     pub score: f32,
     pub lexical_score: Option<f32>,
     pub semantic_score: Option<f32>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievalSourceVersionRecord {
+    pub source_id: String,
+    pub source_version: i64,
+    pub index_version: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievalSearchTrace {
+    pub search_id: String,
+    pub retrieval_version: String,
+    pub task: RetrievalTaskStrategy,
+    pub created_at: i64,
+    pub embedding_fingerprint: Option<String>,
+    pub source_versions: Vec<RetrievalSourceVersionRecord>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievalContext {
+    pub text: String,
+    pub char_count: usize,
+    pub token_estimate: usize,
+    pub char_budget: usize,
+    pub token_budget: Option<usize>,
+    pub included_hit_ids: Vec<String>,
+    pub omitted_hit_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -343,9 +468,16 @@ pub struct RetrievalSearchHit {
 pub struct RetrievalSearchResponse {
     pub requested_mode: RetrievalSearchMode,
     pub effective_mode: RetrievalSearchMode,
+    pub status: RetrievalSearchStatus,
     pub degraded: bool,
     pub degradation_reason: Option<String>,
     pub embedding_available: bool,
+    pub retrieval_version: String,
+    pub score_semantics: String,
+    pub lexical_match_count: usize,
+    pub semantic_match_count: usize,
+    pub trace: RetrievalSearchTrace,
+    pub context: RetrievalContext,
     pub hits: Vec<RetrievalSearchHit>,
 }
 

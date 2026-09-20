@@ -493,7 +493,7 @@ fn character_sources(db: &Connection, book_id: &str, drafts: &mut Vec<SourceDraf
             RetrievalVisibilityScope::Book,
             text,
             updated_at,
-            json!({"isArchived": archived}),
+            json!({"isArchived": archived, "aliases": aliases}),
         ));
     }
     Ok(())
@@ -997,6 +997,25 @@ pub(crate) fn read_chunks(db: &Connection, scope: &RetrievalScope) -> Result<Vec
         }
         let locator: RetrievalChunkLocator = serde_json::from_str(&locator_json)
             .map_err(|_| registry_error("Invalid retrieval chunk locator"))?;
+        if let Some(anchor) = &scope.before_anchor {
+            if locator.chapter_id.as_deref() == Some(anchor.chapter_id.as_str())
+                && !locator.paragraph_spans.is_empty()
+                && !locator.paragraph_spans.iter().all(|span| {
+                    let before_paragraph = anchor
+                        .paragraph_ordinal
+                        .is_some_and(|ordinal| span.paragraph_ordinal < ordinal);
+                    let before_offset = anchor
+                        .paragraph_ordinal
+                        .zip(anchor.text_offset)
+                        .is_some_and(|(ordinal, offset)| {
+                            span.paragraph_ordinal == ordinal && span.end_offset <= offset
+                        });
+                    before_paragraph || before_offset
+                })
+            {
+                continue;
+            }
+        }
         if locator.text_hash != text_hash
             || locator.chunk_ordinal != ordinal
             || stable_text_hash(&source_text) != text_hash
@@ -1073,6 +1092,17 @@ pub(crate) fn resolve_scope(db: &Connection, mut scope: RetrievalScope) -> Resul
             return Err(invalid());
         }
         scope.before_chapter_order = Some(order);
+    }
+    if let Some(range) = &scope.time_range {
+        if range.updated_after.is_some_and(|value| value < 0)
+            || range.updated_before.is_some_and(|value| value < 0)
+            || range
+                .updated_after
+                .zip(range.updated_before)
+                .is_some_and(|(after, before)| after > before)
+        {
+            return Err(invalid());
+        }
     }
     Ok(scope)
 }

@@ -111,6 +111,16 @@ pub async fn ai_start_generation<R: tauri::Runtime>(
         Ok(snapshot) => snapshot,
         Err(error) => return Ok(Reply::from(Err(error))),
     };
+    if let Err(error) = storage
+        .run_typed({
+            let request = input.clone();
+            let model_id = snapshot.config.model_id.clone();
+            move |db| db.record_ai_generation_start(&request, &model_id)
+        })
+        .await
+    {
+        return Ok(Reply::from(Err(error)));
+    }
     let cancellation = match runtime.register(&request_id, &input.session_id) {
         Ok(cancellation) => cancellation,
         Err(error) => return Ok(Reply::from(Err(error))),
