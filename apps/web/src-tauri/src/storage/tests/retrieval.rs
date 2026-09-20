@@ -1,6 +1,11 @@
 use super::*;
-use crate::rag::contracts::{RetrievalAnchor, RetrievalScope};
-use crate::storage::{ListRetrievalChunks, ListRetrievalSources, SavePlanning};
+use crate::rag::contracts::{
+    RetrievalAnchor, RetrievalScope, RetrievalSearchMode, RetrievalSearchRequest,
+};
+use crate::rag::embeddings::{current_fingerprint, DIMENSION};
+use crate::storage::{
+    ListRetrievalChunks, ListRetrievalSources, QueueRetrievalIndex, SavePlanning,
+};
 
 fn source<'a>(sources: &'a Value, kind: &str) -> &'a Value {
     sources
@@ -242,4 +247,95 @@ fn chunk_registry_keeps_locators_and_historical_version_identity() {
         )
         .unwrap();
     assert!(historical_count >= 2);
+}
+
+#[test]
+fn lexical_search_uses_cjk_fts_and_returns_locators() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let chapter = fixture(&mut db);
+    db.save_chapter(chapter.clone()).unwrap();
+    let response = db
+        .search_retrieval(
+            RetrievalSearchRequest {
+                scope: RetrievalScope {
+                    book_id: chapter.book_id.clone(),
+                    allowed_source_kinds: vec![
+                        crate::rag::contracts::RetrievalSourceKind::Manuscript,
+                    ],
+                    allowed_chapter_ids: vec![chapter.chapter_id.clone()],
+                    before_chapter_order: None,
+                    before_anchor: None,
+                    include_future_plan: false,
+                    include_generated: false,
+                    include_stale: false,
+                },
+                query: "你好".into(),
+                mode: RetrievalSearchMode::Lexical,
+                limit: 10,
+            },
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(response["effectiveMode"], "lexical");
+    assert_eq!(response["degraded"], false);
+    assert!(!response["hits"].as_array().unwrap().is_empty());
+    assert_eq!(
+        response["hits"][0]["chunk"]["locator"]["chapterId"],
+        chapter.chapter_id
+    );
+}
+
+#[test]
+fn local_index_job_commits_vectors_and_semantic_search_reads_only_ready_rows() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let chapter = fixture(&mut db);
+    db.save_chapter(chapter.clone()).unwrap();
+    let fingerprint = current_fingerprint();
+    let jobs = db
+        .queue_retrieval_index(
+            QueueRetrievalIndex {
+                book_id: chapter.book_id.clone(),
+            },
+            &fingerprint,
+        )
+        .unwrap();
+    assert!(!jobs.as_array().unwrap().is_empty());
+    while let Some(work) = db.claim_next_retrieval_index_job(&chapter.book_id).unwrap() {
+        let mut vector = vec![0.0; DIMENSION];
+        vector[0] = 1.0;
+        let vectors = vec![vector; work.chunks.len()];
+        assert_eq!(
+            db.commit_retrieval_index_job(&work, &vectors).unwrap(),
+            crate::storage::IndexCommitResult::Completed
+        );
+    }
+    let response = db
+        .search_retrieval(
+            RetrievalSearchRequest {
+                scope: RetrievalScope {
+                    book_id: chapter.book_id.clone(),
+                    allowed_source_kinds: vec![
+                        crate::rag::contracts::RetrievalSourceKind::Manuscript,
+                    ],
+                    allowed_chapter_ids: vec![chapter.chapter_id],
+                    before_chapter_order: None,
+                    before_anchor: None,
+                    include_future_plan: false,
+                    include_generated: false,
+                    include_stale: false,
+                },
+                query: "任何词都可以".into(),
+                mode: RetrievalSearchMode::Semantic,
+                limit: 1,
+            },
+            Some(vec![1.0; DIMENSION]),
+            None,
+        )
+        .unwrap();
+    assert_eq!(response["effectiveMode"], "semantic");
+    assert_eq!(response["embeddingAvailable"], true);
+    assert_eq!(response["hits"].as_array().unwrap().len(), 1);
 }

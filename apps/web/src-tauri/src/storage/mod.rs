@@ -24,6 +24,7 @@ mod planning_validation;
 mod preferences;
 mod records;
 mod requests;
+mod retrieval_index;
 mod retrieval_sources;
 mod targets;
 #[cfg(test)]
@@ -41,6 +42,8 @@ pub use import::{ImportWork, PrepareWorkImport};
 pub use planning::SavePlanning;
 pub use preferences::SavePreferences;
 pub use requests::*;
+pub(crate) use retrieval_index::{IndexCommitResult, IndexWork};
+pub use retrieval_index::{ListRetrievalIndexJobs, QueueRetrievalIndex, RetrievalIndexJobAction};
 pub use retrieval_sources::{ListRetrievalChunks, ListRetrievalSources, SyncRetrievalSources};
 
 use rusqlite::Connection;

@@ -291,3 +291,112 @@ pub struct RetrievalChunk {
     pub short_quote: String,
     pub locator: RetrievalChunkLocator,
 }
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrievalSearchMode {
+    Lexical,
+    Semantic,
+    Hybrid,
+}
+
+impl RetrievalSearchMode {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Lexical => "lexical",
+            Self::Semantic => "semantic",
+            Self::Hybrid => "hybrid",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievalSearchRequest {
+    pub scope: RetrievalScope,
+    pub query: String,
+    #[serde(default = "default_search_mode")]
+    pub mode: RetrievalSearchMode,
+    #[serde(default = "default_search_limit")]
+    pub limit: usize,
+}
+
+fn default_search_mode() -> RetrievalSearchMode {
+    RetrievalSearchMode::Hybrid
+}
+
+fn default_search_limit() -> usize {
+    10
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievalSearchHit {
+    pub chunk: RetrievalChunk,
+    pub score: f32,
+    pub lexical_score: Option<f32>,
+    pub semantic_score: Option<f32>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievalSearchResponse {
+    pub requested_mode: RetrievalSearchMode,
+    pub effective_mode: RetrievalSearchMode,
+    pub degraded: bool,
+    pub degradation_reason: Option<String>,
+    pub embedding_available: bool,
+    pub hits: Vec<RetrievalSearchHit>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RetrievalIndexJobState {
+    Queued,
+    Indexing,
+    Paused,
+    Cancelled,
+    Completed,
+    Failed,
+}
+
+impl RetrievalIndexJobState {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Indexing => "indexing",
+            Self::Paused => "paused",
+            Self::Cancelled => "cancelled",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "queued" => Self::Queued,
+            "indexing" => Self::Indexing,
+            "paused" => Self::Paused,
+            "cancelled" => Self::Cancelled,
+            "completed" => Self::Completed,
+            "failed" => Self::Failed,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievalIndexJob {
+    pub job_id: String,
+    pub book_id: String,
+    pub source_id: String,
+    pub source_version: i64,
+    pub index_version: i64,
+    pub embedding_fingerprint: String,
+    pub state: RetrievalIndexJobState,
+    pub attempts: i64,
+    pub last_error: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+}

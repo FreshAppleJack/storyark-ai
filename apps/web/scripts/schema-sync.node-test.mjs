@@ -12,7 +12,8 @@ test('snapshot reconstructs all migrated objects and version without rows', () =
     const db = new DatabaseSync(':memory:');
     try {
         db.exec(sql);
-        const rebuilt = db.prepare("SELECT type,name,sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 WHEN 'view' THEN 2 ELSE 3 END, rowid").all();
+        const rebuilt = db.prepare("SELECT type,name,sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 WHEN 'index' THEN 1 WHEN 'view' THEN 2 ELSE 3 END, rowid").all()
+            .filter(object => !object.name.startsWith('retrieval_chunks_fts_'));
         assert.deepEqual(rebuilt, objects);
         assert.equal(db.prepare('PRAGMA user_version').get().user_version, version);
         for (const object of objects.filter(item => item.type === 'table')) {

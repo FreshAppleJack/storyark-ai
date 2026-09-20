@@ -2,7 +2,7 @@
 
 -- Full schema snapshot for NEW EMPTY databases only; not an incremental migration.
 
--- Based on the registered Rust migrations through version 8. No application data.
+-- Based on the registered Rust migrations through version 9. No application data.
 
 -- Do not add this file to the runtime migration registry or execute all *.sql files.
 
@@ -243,8 +243,33 @@ CREATE TABLE retrieval_chunks (
     text_hash TEXT NOT NULL CHECK(length(trim(text_hash)) BETWEEN 1 AND 256),
     short_quote TEXT NOT NULL CHECK(length(short_quote) <= 4096),
     locator_json TEXT NOT NULL CHECK(json_valid(locator_json)),
-    created_at INTEGER NOT NULL CHECK(created_at >= 0),
+    created_at INTEGER NOT NULL CHECK(created_at >= 0), embedding_blob BLOB,
     UNIQUE(source_id, source_version, index_version, ordinal, text_hash)
+) STRICT;
+
+CREATE VIRTUAL TABLE retrieval_chunks_fts USING fts5(
+    chunk_id UNINDEXED,
+    book_id UNINDEXED,
+    source_id UNINDEXED,
+    source_version UNINDEXED,
+    index_version UNINDEXED,
+    search_text,
+    tokenize = 'unicode61'
+);
+
+CREATE TABLE retrieval_index_jobs (
+    job_id TEXT PRIMARY KEY NOT NULL,
+    book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    source_id TEXT NOT NULL REFERENCES retrieval_sources(source_id) ON DELETE CASCADE,
+    source_version INTEGER NOT NULL CHECK (source_version > 0),
+    index_version INTEGER NOT NULL CHECK (index_version > 0),
+    embedding_fingerprint TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('queued','indexing','paused','cancelled','completed','failed')),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    last_error TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    UNIQUE(source_id, source_version, index_version, embedding_fingerprint)
 ) STRICT;
 
 CREATE INDEX books_order ON books(position, id);
@@ -269,7 +294,13 @@ CREATE INDEX retrieval_chunks_book_version
 CREATE INDEX retrieval_chunks_hash
     ON retrieval_chunks(book_id, text_hash);
 
-PRAGMA user_version = 8;
+CREATE INDEX retrieval_index_jobs_book_state_idx
+    ON retrieval_index_jobs(book_id, state, updated_at, job_id);
+
+CREATE INDEX retrieval_index_jobs_source_idx
+    ON retrieval_index_jobs(source_id, source_version, index_version);
+
+PRAGMA user_version = 9;
 
 COMMIT;
 

@@ -5,6 +5,8 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             app.manage(ai::tasks::AiRuntime::default());
+            app.manage(rag::embeddings::EmbeddingRuntime::default());
+            app.manage(rag::indexing::RetrievalIndexRuntime::default());
             // STORYARK_DATA_DIR redirects the database directory for controlled
             // smoke tests; production runs always use the platform app-data dir.
             let directory = match std::env::var_os("STORYARK_DATA_DIR") {
@@ -67,6 +69,13 @@ fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri
         retrieval_commands::local_sync_retrieval_sources,
         retrieval_commands::local_list_retrieval_sources,
         retrieval_commands::local_list_retrieval_chunks,
+        retrieval_commands::local_embedding_status,
+        retrieval_commands::local_queue_retrieval_index,
+        retrieval_commands::local_list_retrieval_index_jobs,
+        retrieval_commands::local_pause_retrieval_index_job,
+        retrieval_commands::local_cancel_retrieval_index_job,
+        retrieval_commands::local_retry_retrieval_index_job,
+        retrieval_commands::local_search_retrieval,
     ])
 }
 mod brainstorm_commands;

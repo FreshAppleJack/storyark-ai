@@ -11,7 +11,8 @@ const MIGRATION_0005: &str = include_str!("../../migrations/0005_ai_credentials.
 const MIGRATION_0006: &str = include_str!("../../migrations/0006_content_state.sql");
 const MIGRATION_0007: &str = include_str!("../../migrations/0007_retrieval_sources.sql");
 const MIGRATION_0008: &str = include_str!("../../migrations/0008_retrieval_chunks.sql");
-const LATEST_VERSION: i64 = 8;
+const MIGRATION_0009: &str = include_str!("../../migrations/0009_retrieval_indexing.sql");
+const LATEST_VERSION: i64 = 9;
 
 impl Database {
     pub fn open(directory: &Path) -> Result<Self> {
@@ -85,6 +86,10 @@ impl Database {
             tx.execute_batch(MIGRATION_0008)?;
             tx.pragma_update(None, "user_version", 8)?;
         }
+        if version < 9 {
+            tx.execute_batch(MIGRATION_0009)?;
+            tx.pragma_update(None, "user_version", 9)?;
+        }
         tx.prepare("SELECT credential_mode FROM ai_model_configs LIMIT 0")?;
         tx.prepare("SELECT credential_ref FROM ai_credential_cleanup LIMIT 0")?;
         tx.prepare("SELECT c.config_version,s.default_config_id FROM ai_model_configs c,ai_generation_settings s LIMIT 0")?;
@@ -92,7 +97,9 @@ impl Database {
         tx.prepare("SELECT b.author,b.cover_color,v.book_id,c.content_version,c.content_state,c.foreshadowings_json FROM books b,volumes v,chapters c LIMIT 0")?;
         tx.prepare("SELECT ch.aliases_json,g.book_id,gn.character_id,ge.label,p.story_summary,ap.dark_mode,bw.final_content FROM characters ch,graphs g,graph_nodes gn,graph_edges ge,planning p,application_preferences ap,brainstorm_workspaces bw LIMIT 0")?;
         tx.prepare("SELECT rs.book_id,rs.source_kind,rs.source_version,rs.visibility_scope_json,rs.index_status FROM retrieval_sources rs LIMIT 0")?;
-        tx.prepare("SELECT rc.book_id,rc.source_id,rc.source_version,rc.index_version,rc.locator_json FROM retrieval_chunks rc LIMIT 0")?;
+        tx.prepare("SELECT rc.book_id,rc.source_id,rc.source_version,rc.index_version,rc.locator_json,rc.embedding_blob FROM retrieval_chunks rc LIMIT 0")?;
+        tx.prepare("SELECT f.chunk_id,f.book_id,f.source_id,f.source_version,f.index_version FROM retrieval_chunks_fts f LIMIT 0")?;
+        tx.prepare("SELECT j.job_id,j.book_id,j.source_id,j.source_version,j.index_version,j.embedding_fingerprint,j.state FROM retrieval_index_jobs j LIMIT 0")?;
         let integrity: String = tx.query_row("PRAGMA quick_check", [], |r| r.get(0))?;
         if integrity != "ok" || tx.prepare("PRAGMA foreign_key_check")?.exists([])? {
             return Err(StorageError::new(
@@ -108,6 +115,7 @@ impl Database {
             directory: directory.to_owned(),
             credentials: Default::default(),
         };
+        database.recover_retrieval_index_jobs()?;
         database.cleanup_credentials()?;
         Ok(database)
     }

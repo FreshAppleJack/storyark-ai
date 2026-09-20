@@ -27,6 +27,7 @@ zeroize = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["macros", "sync", "time"] }
+fastembed = { version = "6.1.0", default-features = false, features = ["ort-download-binaries-rustls-tls"] }
 
 [dev-dependencies]
 tauri = { version = "2.11.3", features = ["test"] }

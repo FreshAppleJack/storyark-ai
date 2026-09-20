@@ -12,6 +12,8 @@ export type RetrievalSourceStatus = 'active' | 'stale' | 'pending' | 'discarded'
 export type RetrievalSourceOrigin = 'author' | 'generated';
 export type RetrievalAuthoringStatus = 'author_confirmed' | 'ai_suggestion' | 'discarded';
 export type RetrievalIndexStatus = 'not_configured' | 'queued' | 'indexing' | 'ready' | 'partial' | 'stale' | 'failed';
+export type RetrievalSearchMode = 'lexical' | 'semantic' | 'hybrid';
+export type RetrievalIndexJobState = 'queued' | 'indexing' | 'paused' | 'cancelled' | 'completed' | 'failed';
 
 export type RetrievalVisibilityScope =
     | { kind: 'book' }
@@ -87,6 +89,55 @@ export interface RetrievalChunk {
     textHash: string;
     shortQuote: string;
     locator: RetrievalChunkLocator;
+}
+
+export interface EmbeddingStatus {
+    available: boolean;
+    providerId: string | null;
+    configId: string | null;
+    modelId: string | null;
+    dimension: number | null;
+    maxInputLength: number | null;
+    fingerprint: string | null;
+    errorCode: string | null;
+    errorMessage: string | null;
+}
+
+export interface RetrievalSearchRequest {
+    scope: RetrievalScope;
+    query: string;
+    mode?: RetrievalSearchMode;
+    limit?: number;
+}
+
+export interface RetrievalSearchHit {
+    chunk: RetrievalChunk;
+    score: number;
+    lexicalScore: number | null;
+    semanticScore: number | null;
+}
+
+export interface RetrievalSearchResponse {
+    requestedMode: RetrievalSearchMode;
+    effectiveMode: RetrievalSearchMode;
+    degraded: boolean;
+    degradationReason: string | null;
+    embeddingAvailable: boolean;
+    hits: RetrievalSearchHit[];
+}
+
+export interface RetrievalIndexJob {
+    jobId: string;
+    bookId: string;
+    sourceId: string;
+    sourceVersion: number;
+    indexVersion: number;
+    embeddingFingerprint: string;
+    state: RetrievalIndexJobState;
+    attempts: number;
+    lastError: string | null;
+    createdAt: number;
+    updatedAt: number;
 }
 
 export const continueRetrievalScope = (bookId: string, beforeAnchor: RetrievalAnchor): RetrievalScope => ({

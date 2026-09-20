@@ -10,6 +10,7 @@ use crate::rag::contracts::{
     RetrievalScope, RetrievalSource, RetrievalSourceKind, RetrievalSourceOrigin,
     RetrievalSourceStatus, RetrievalVisibilityScope,
 };
+use crate::rag::lexical::fts_document_text;
 use crate::rag::sources::{normalize_index_text, source_id, source_is_visible, tiptap_text};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::Deserialize;
@@ -712,12 +713,16 @@ fn sync_book_chunks(
 ) -> Result<()> {
     for draft in drafts {
         let chunks = chunk_blocks(&blocks_for_source(draft, chapters));
+        db.execute(
+            "DELETE FROM retrieval_chunks_fts WHERE source_id=? AND source_version=? AND index_version=?",
+            params![draft.source_id, draft.source_version, CHUNK_INDEX_VERSION],
+        )?;
         for chunk in chunks {
             let locator = locator_for_source(draft, chapters, &chunk);
             let locator_json = serde_json::to_string(&locator).map_err(|_| invalid())?;
             db.execute(
-                "INSERT OR IGNORE INTO retrieval_chunks(chunk_id,source_id,book_id,source_version,index_version,ordinal,source_text,index_text,text_hash,short_quote,locator_json,created_at)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "INSERT OR IGNORE INTO retrieval_chunks(chunk_id,source_id,book_id,source_version,index_version,ordinal,source_text,index_text,text_hash,short_quote,locator_json,created_at,embedding_blob)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL)",
                 params![
                     chunk_id(
                         &draft.source_id,
@@ -736,6 +741,23 @@ fn sync_book_chunks(
                     chunk.short_quote,
                     locator_json,
                     draft.updated_at,
+                ],
+            )?;
+            db.execute(
+                "INSERT INTO retrieval_chunks_fts(chunk_id,book_id,source_id,source_version,index_version,search_text)
+                 VALUES (?,?,?,?,?,?)",
+                params![
+                    chunk_id(
+                        &draft.source_id,
+                        draft.source_version,
+                        chunk.ordinal,
+                        &chunk.text_hash
+                    ),
+                    book_id,
+                    draft.source_id,
+                    draft.source_version,
+                    CHUNK_INDEX_VERSION,
+                    fts_document_text(&chunk.index_text),
                 ],
             )?;
         }
@@ -837,6 +859,10 @@ fn sync_book_sources(db: &Connection, book_id: &str) -> Result<()> {
     for existing_id in existing_ids {
         if !current_ids.contains(&existing_id) {
             db.execute(
+                "DELETE FROM retrieval_chunks_fts WHERE source_id=?",
+                [&existing_id],
+            )?;
+            db.execute(
                 "DELETE FROM retrieval_sources WHERE book_id=? AND source_id=?",
                 params![book_id, existing_id],
             )?;
@@ -846,7 +872,7 @@ fn sync_book_sources(db: &Connection, book_id: &str) -> Result<()> {
     Ok(())
 }
 
-fn read_sources(db: &Connection, book_id: &str) -> Result<Vec<RetrievalSource>> {
+pub(crate) fn read_sources(db: &Connection, book_id: &str) -> Result<Vec<RetrievalSource>> {
     let mut statement = db.prepare(
         "SELECT source_id,book_id,entity_id,source_kind,source_status,source_version,origin,authoring_status,visibility_scope_json,source_text,index_text,updated_at,index_status,index_version,embedding_fingerprint,entity_metadata_json
          FROM retrieval_sources WHERE book_id=? ORDER BY source_kind,entity_id,source_id",
@@ -919,7 +945,7 @@ fn read_sources(db: &Connection, book_id: &str) -> Result<Vec<RetrievalSource>> 
     Ok(sources)
 }
 
-fn read_chunks(db: &Connection, scope: &RetrievalScope) -> Result<Vec<RetrievalChunk>> {
+pub(crate) fn read_chunks(db: &Connection, scope: &RetrievalScope) -> Result<Vec<RetrievalChunk>> {
     let visible_sources = read_sources(db, &scope.book_id)?
         .into_iter()
         .filter(|source| source_is_visible(source, scope))
@@ -996,7 +1022,7 @@ fn read_chunks(db: &Connection, scope: &RetrievalScope) -> Result<Vec<RetrievalC
     Ok(chunks)
 }
 
-fn resolve_scope(db: &Connection, mut scope: RetrievalScope) -> Result<RetrievalScope> {
+pub(crate) fn resolve_scope(db: &Connection, mut scope: RetrievalScope) -> Result<RetrievalScope> {
     valid_id(&scope.book_id)?;
     record(db, "books", &scope.book_id)?;
     for chapter_id in &scope.allowed_chapter_ids {
