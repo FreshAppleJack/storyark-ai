@@ -42,6 +42,7 @@ fn request(
         token_budget: None,
         adjacent_chunk_count: 0,
         task: RetrievalTaskStrategy::Generic,
+        index_status: None,
     }
 }
 

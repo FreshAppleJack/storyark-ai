@@ -1,11 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     AlertTriangle, ArrowLeft, ChevronDown, ChevronRight, FileText, Folder,
-    GripVertical, Lock, Pencil, Plus, ScrollText, Search, Trash2,
+    GripVertical, Lock, Pencil, Plus, ScrollText, Search, Sparkles, Trash2,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Book, Chapter, Volume } from '../../../types';
 import { getFuzzyScore } from '../../../utils/search';
+import { StorySearchResults } from '../../retrieval/components/StorySearchResults';
+import { useLocalStorySearch } from '../../retrieval/hooks/useLocalStorySearch';
+import type { RetrievalSearchHit } from '../../../domain/retrieval/contracts';
 
 export type NavigatorItemType = 'volume' | 'chapter';
 
@@ -36,6 +39,7 @@ interface DragItemState {
 }
 
 type SidebarSearchMode = 'chapter' | 'volume';
+type StorySearchMode = 'title' | 'semantic';
 
 interface SidebarSearchResult {
     type: SidebarSearchMode;
@@ -85,6 +89,7 @@ export function ChapterNavigator({
 }: ChapterNavigatorProps): React.ReactElement {
     const [sidebarExpanded, setSidebarExpanded] = useState(true);
     const [expandedVolumes, setExpandedVolumes] = useState<Set<string>>(() => new Set(book.volumes.map(v => v.id)));
+    const [storySearchMode, setStorySearchMode] = useState<StorySearchMode>('title');
     const [sidebarSearchMode, setSidebarSearchMode] = useState<SidebarSearchMode>('chapter');
     const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
     const [sidebarSearchMessage, setSidebarSearchMessage] = useState('');
@@ -99,6 +104,7 @@ export function ChapterNavigator({
     const submittedRenameRef = useRef<RenamingState | null>(null);
     const dragItemRef = useRef<DragItemState | null>(null);
     const dragOverItemRef = useRef<DragItemState | null>(null);
+    const storySearch = useLocalStorySearch(book.id, localMode);
 
     // Only reconcile membership; content updates and reordering preserve user choices.
     const volumeIds = book.volumes.map(volume => volume.id);
@@ -326,6 +332,11 @@ export function ChapterNavigator({
             return;
         }
 
+        if (storySearchMode === 'semantic') {
+            void storySearch.search(trimmedQuery);
+            return;
+        }
+
         const firstResult = sidebarSearchResults[0];
         if (!firstResult) {
             setSidebarSearchMessage(`No matching ${sidebarSearchMode}s found.`);
@@ -333,6 +344,27 @@ export function ChapterNavigator({
         }
 
         selectSidebarSearchResult(firstResult);
+    };
+
+    const selectStorySearchResult = (hit: RetrievalSearchHit) => {
+        const chapterId = hit.chapterId || hit.locator.chapterId;
+        if (!chapterId) return;
+
+        const volume = book.volumes.find(candidate => candidate.chapters.some(chapter => chapter.id === chapterId));
+        if (!volume) {
+            setSidebarSearchMessage('This source belongs to a chapter that is no longer in the current book.');
+            return;
+        }
+
+        setExpandedVolumes(prev => {
+            const next = new Set(prev);
+            next.add(volume.id);
+            return next;
+        });
+        onSelectChapter(chapterId);
+        setSidebarSearchTarget({ type: 'chapter', id: chapterId });
+        setSidebarSearchMessage(`Opened the source chapter: "${hit.locator.chapterTitleSnapshot || chapterId}".`);
+        scrollSidebarItemIntoView('chapter', chapterId);
     };
 
     const handleDeleteClick = () => {
@@ -387,8 +419,31 @@ export function ChapterNavigator({
                             </div>
                         </div>
                         <form className="mt-4 space-y-2" onSubmit={handleSidebarSearchSubmit}>
-                            <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 text-xs font-medium dark:bg-slate-900">
-                                {(['chapter', 'volume'] as SidebarSearchMode[]).map((mode) => (
+                            {localMode && (
+                                <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 text-[11px] font-medium dark:bg-slate-900">
+                                    {(['title', 'semantic'] as StorySearchMode[]).map((mode) => (
+                                        <button
+                                            key={mode}
+                                            type="button"
+                                            onClick={() => {
+                                                setStorySearchMode(mode);
+                                                setSidebarSearchMessage('');
+                                                storySearch.clearSearch();
+                                            }}
+                                            className={`rounded-md px-2 py-1.5 transition ${
+                                                storySearchMode === mode
+                                                    ? 'bg-white text-brand-700 shadow-sm dark:bg-slate-800 dark:text-brand-300'
+                                                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                                            }`}
+                                        >
+                                            {mode === 'title' ? 'Title / Chapter' : 'Semantic / Story'}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {(storySearchMode === 'title' || !localMode) && (
+                                <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 text-xs font-medium dark:bg-slate-900">
+                                    {(['chapter', 'volume'] as SidebarSearchMode[]).map((mode) => (
                                     <button
                                         key={mode}
                                         type="button"
@@ -404,27 +459,48 @@ export function ChapterNavigator({
                                     >
                                         {mode}
                                     </button>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
                             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100 dark:border-slate-800 dark:bg-slate-900 dark:focus-within:border-brand-500 dark:focus-within:ring-brand-950/60">
-                                <Search size={15} className="flex-shrink-0 text-slate-400" />
+                                {storySearchMode === 'semantic' ? (
+                                    <Sparkles size={15} className="flex-shrink-0 text-brand-500" />
+                                ) : (
+                                    <Search size={15} className="flex-shrink-0 text-slate-400" />
+                                )}
                                 <input
                                     value={sidebarSearchQuery}
                                     onChange={(event) => {
                                         setSidebarSearchQuery(event.target.value);
                                         setSidebarSearchMessage('');
+                                        if (storySearchMode === 'semantic') storySearch.clearSearch();
                                     }}
-                                    placeholder={`Search ${sidebarSearchMode}s`}
+                                    placeholder={storySearchMode === 'semantic' ? 'Search the story' : `Search ${sidebarSearchMode}s`}
                                     className="min-w-0 flex-1 bg-transparent text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
                                 />
                                 <button
                                     type="submit"
+                                    disabled={storySearchMode === 'semantic' && storySearch.isSearching}
                                     className="rounded-md bg-brand-600 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-brand-700"
                                 >
-                                    Go
+                                    {storySearchMode === 'semantic' && storySearch.isSearching ? '…' : 'Go'}
                                 </button>
                             </div>
-                            {sidebarSearchQuery.trim() && sidebarSearchResults.length > 0 && (
+                            {storySearchMode === 'semantic' ? (
+                                <StorySearchResults
+                                    embeddingStatus={storySearch.embeddingStatus}
+                                    indexStatus={storySearch.indexStatus}
+                                    statusError={storySearch.statusError}
+                                    isStatusLoading={storySearch.isStatusLoading}
+                                    isIndexing={storySearch.isIndexing}
+                                    isSearching={storySearch.isSearching}
+                                    searchError={storySearch.searchError}
+                                    response={storySearch.response}
+                                    lastQuery={storySearch.lastQuery}
+                                    onQueueIndex={() => void storySearch.queueIndex()}
+                                    onSelectHit={selectStorySearchResult}
+                                />
+                            ) : sidebarSearchQuery.trim() && sidebarSearchResults.length > 0 && (
                                 <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                                     {sidebarSearchResults.map((result) => (
                                         <button
@@ -443,7 +519,7 @@ export function ChapterNavigator({
                                     ))}
                                 </div>
                             )}
-                            {sidebarSearchMessage && (
+                            {storySearchMode !== 'semantic' && sidebarSearchMessage && (
                                 <p className={`text-xs leading-5 ${sidebarSearchMessage.startsWith('No ') || sidebarSearchMessage.startsWith('Type ') ? 'text-amber-600 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>
                                     {sidebarSearchMessage}
                                 </p>

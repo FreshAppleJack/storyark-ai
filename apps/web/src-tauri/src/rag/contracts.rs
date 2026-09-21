@@ -394,6 +394,10 @@ pub struct RetrievalSearchRequest {
     pub adjacent_chunk_count: usize,
     #[serde(default)]
     pub task: RetrievalTaskStrategy,
+    /// The frontend's last observed status is diagnostic only. The database
+    /// remains authoritative when the search status is calculated.
+    #[serde(default)]
+    pub index_status: Option<RetrievalIndexStatus>,
 }
 
 fn default_search_mode() -> RetrievalSearchMode {

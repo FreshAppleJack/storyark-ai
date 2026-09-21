@@ -35,6 +35,10 @@ export interface RetrievalScope {
     includeFuturePlan?: boolean;
     includeGenerated?: boolean;
     includeStale?: boolean;
+    timeRange?: {
+        updatedAfter?: number;
+        updatedBefore?: number;
+    };
 }
 
 export interface RetrievalSource {
@@ -106,23 +110,92 @@ export interface EmbeddingStatus {
 export interface RetrievalSearchRequest {
     scope: RetrievalScope;
     query: string;
-    mode?: RetrievalSearchMode;
-    limit?: number;
+    mode: RetrievalSearchMode;
+    limit: number;
+    excludedHitIds: string[];
+    charBudget: number;
+    tokenBudget?: number;
+    adjacentChunkCount: number;
+    task: RetrievalTaskStrategy;
+    /** Client-observed status is diagnostic only; Rust derives the authoritative status. */
+    indexStatus: RetrievalIndexStatus;
 }
 
+export type RetrievalTaskStrategy =
+    | 'generic'
+    | 'continuation'
+    | 'brainstorm'
+    | 'consistency_check';
+
+export type RetrievalRecallMethod = 'lexical' | 'alias' | 'semantic' | 'adjacent';
+export type RetrievalFreshness = 'fresh' | 'stale' | 'pending' | 'future_plan';
+export type RetrievalSearchStatus =
+    | 'ready'
+    | 'degraded_lexical'
+    | 'no_results'
+    | 'stale_only'
+    | 'future_plan_only'
+    | 'embedding_unavailable'
+    | 'index_not_ready'
+    | 'lexical_no_match'
+    | 'budget_exhausted';
+
 export interface RetrievalSearchHit {
+    hitId: string;
+    bookId: string;
+    sourceKind: RetrievalSourceKind;
+    entityId: string;
+    chapterId: string | null;
+    sourceVersion: number;
+    chunkId: string;
+    quote: string;
+    locator: RetrievalChunkLocator;
+    recallMethods: RetrievalRecallMethod[];
+    freshness: RetrievalFreshness;
     chunk: RetrievalChunk;
     score: number;
     lexicalScore: number | null;
     semanticScore: number | null;
 }
 
+export interface RetrievalSourceVersionRecord {
+    sourceId: string;
+    sourceVersion: number;
+    indexVersion: number;
+}
+
+export interface RetrievalSearchTrace {
+    searchId: string;
+    retrievalVersion: string;
+    task: RetrievalTaskStrategy;
+    createdAt: number;
+    embeddingFingerprint: string | null;
+    sourceVersions: RetrievalSourceVersionRecord[];
+}
+
+export interface RetrievalContext {
+    text: string;
+    charCount: number;
+    tokenEstimate: number;
+    charBudget: number;
+    tokenBudget: number | null;
+    includedHitIds: string[];
+    omittedHitIds: string[];
+}
+
 export interface RetrievalSearchResponse {
     requestedMode: RetrievalSearchMode;
     effectiveMode: RetrievalSearchMode;
+    status: RetrievalSearchStatus;
     degraded: boolean;
     degradationReason: string | null;
     embeddingAvailable: boolean;
+    retrievalVersion: string;
+    scoreSemantics: string;
+    lexicalMatchCount: number;
+    semanticMatchCount: number;
+    trace: RetrievalSearchTrace;
+    context: RetrievalContext;
     hits: RetrievalSearchHit[];
 }
 
