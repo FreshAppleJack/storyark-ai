@@ -469,7 +469,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
     if (!book) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-400">Loading Book Data...</div>;
 
     return (
-        <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden font-sans relative transition-colors duration-300">
+        <div className="relative flex h-screen min-h-0 min-w-0 overflow-hidden bg-slate-50 font-sans transition-colors duration-300 dark:bg-slate-950">
             <ChapterNavigator
                 localMode={isLocal}
                 key={book.id}
@@ -489,7 +489,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
             />
 
             {/* Main Area */}
-            <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-950 shadow-xl z-10">
+            <main className="z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white shadow-xl dark:bg-slate-950">
                 <EditorHeader
                     localMode={isLocal}
                     volumeTitle={activeVolume?.title}
@@ -526,9 +526,9 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     onRegenerate={aiContinue.regenerate}
                 />
 
-                <div className="flex-1 min-h-0 bg-slate-100 dark:bg-slate-900 flex overflow-hidden">
-                    <div className="flex-1 overflow-y-auto flex justify-center items-start pb-12 px-4">
-                        <div className="w-full max-w-3xl mt-8 bg-white dark:bg-slate-950 shadow-md border border-slate-200 dark:border-slate-800 min-h-[1300px] flex flex-col relative">
+                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100 dark:bg-slate-900">
+                    <div className="flex min-h-0 min-w-0 flex-1 items-start justify-center overflow-y-auto px-4 pb-12">
+                        <div className="relative mt-8 flex min-w-0 min-h-[1300px] w-full max-w-3xl flex-col border border-slate-200 bg-white shadow-md dark:border-slate-800 dark:bg-slate-950">
                             {activeChapter ? (
                                 <>
                                     <div

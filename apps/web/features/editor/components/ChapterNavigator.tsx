@@ -124,6 +124,7 @@ export function ChapterNavigator({
     );
     const hideChapterTree = storySearchMode === 'semantic'
         && (storySearch.isSearching || storySearch.response !== null || storySearch.searchError !== null);
+    const expandSemanticSearchPanel = storySearchMode === 'semantic' && hideChapterTree;
 
     // Only reconcile membership; content updates and reordering preserve user choices.
     const volumeIds = book.volumes.map(volume => volume.id);
@@ -451,9 +452,9 @@ export function ChapterNavigator({
 
     return (
         <>
-            <aside className={`h-full min-h-0 flex-shrink-0 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 ease-in-out flex flex-col ${sidebarExpanded ? 'w-72' : 'w-16'}`}>
+            <aside className={`relative h-full min-h-0 min-w-0 max-w-[50vw] flex-shrink-0 overflow-hidden bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 ease-in-out flex flex-col max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:left-0 max-[900px]:z-30 max-[900px]:shadow-2xl ${sidebarExpanded ? 'w-72' : 'w-16'}`}>
                 {/* Sidebar Header */}
-                <div className="h-14 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4">
+                <div className="h-14 flex-shrink-0 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4">
                     {sidebarExpanded ? (
                         <div className="flex items-center gap-2 overflow-hidden cursor-pointer" onClick={onNavigateDashboard}>
                             <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white flex-shrink-0">
@@ -472,7 +473,7 @@ export function ChapterNavigator({
                 </div>
 
                 {sidebarExpanded && (
-                    <div className="p-4 border-b border-slate-100 dark:border-slate-800">
+                    <div className={`min-w-0 border-b border-slate-100 p-4 dark:border-slate-800 ${expandSemanticSearchPanel ? 'min-h-0 flex flex-1 flex-col overflow-hidden' : 'flex-shrink-0'}`}>
                         <div className="flex items-center gap-3 mb-2">
                             <div className={`w-10 h-14 ${book.coverColor || 'bg-slate-700'} rounded shadow-sm flex-shrink-0`}></div>
                             <div className="overflow-hidden">
@@ -480,7 +481,7 @@ export function ChapterNavigator({
                                 <p className="text-xs text-slate-500 dark:text-slate-400 truncate">by {book.author}</p>
                             </div>
                         </div>
-                        <form className="mt-4 space-y-2" onSubmit={handleSidebarSearchSubmit}>
+                        <form className={`mt-4 min-w-0 space-y-2 ${expandSemanticSearchPanel ? 'min-h-0 flex flex-1 flex-col overflow-hidden' : ''}`} onSubmit={handleSidebarSearchSubmit}>
                             {localMode && (
                                 <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 text-[11px] font-medium dark:bg-slate-900">
                                     {(['title', 'semantic'] as StorySearchMode[]).map((mode) => (
@@ -549,25 +550,27 @@ export function ChapterNavigator({
                                 </button>
                             </div>
                             {storySearchMode === 'semantic' ? (
-                                <StorySearchResults
-                                    embeddingStatus={storySearch.embeddingStatus}
-                                    indexStatus={storySearch.indexStatus}
-                                    indexProgress={storySearch.indexProgress}
-                                    statusError={storySearch.statusError}
-                                    isStatusLoading={storySearch.isStatusLoading}
-                                    isIndexing={storySearch.isIndexing}
-                                    isSearching={storySearch.isSearching}
-                                    searchError={storySearch.searchError}
-                                    response={storySearch.response}
-                                    lastQuery={storySearch.lastQuery}
-                                    filters={storySearch.filters}
-                                    chapters={storySearchChapters}
-                                    activeChapterId={activeChapterId}
-                                    selectionMessage={sidebarSearchMessage}
-                                    onFiltersChange={storySearch.updateFilters}
-                                    onQueueIndex={() => void storySearch.queueIndex()}
-                                    onSelectHit={selectStorySearchResult}
-                                />
+                                <div className={expandSemanticSearchPanel ? 'min-h-0 min-w-0 flex-1 overflow-y-auto pr-1 custom-scrollbar' : ''}>
+                                    <StorySearchResults
+                                        embeddingStatus={storySearch.embeddingStatus}
+                                        indexStatus={storySearch.indexStatus}
+                                        indexProgress={storySearch.indexProgress}
+                                        statusError={storySearch.statusError}
+                                        isStatusLoading={storySearch.isStatusLoading}
+                                        isIndexing={storySearch.isIndexing}
+                                        isSearching={storySearch.isSearching}
+                                        searchError={storySearch.searchError}
+                                        response={storySearch.response}
+                                        lastQuery={storySearch.lastQuery}
+                                        filters={storySearch.filters}
+                                        chapters={storySearchChapters}
+                                        activeChapterId={activeChapterId}
+                                        selectionMessage={sidebarSearchMessage}
+                                        onFiltersChange={storySearch.updateFilters}
+                                        onQueueIndex={() => void storySearch.queueIndex()}
+                                        onSelectHit={selectStorySearchResult}
+                                    />
+                                </div>
                             ) : sidebarSearchQuery.trim() && sidebarSearchResults.length > 0 && (
                                 <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                                     {sidebarSearchResults.map((result) => (
