@@ -14,11 +14,25 @@ export const localDerivedIndexKey = (bookId: string) => [...localKeys.all, 'deri
 export class LocalStorageError extends Error {
     constructor(public readonly code: string, message: string) { super(message); }
 }
-export async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+
+export interface LocalCallOptions {
+    failureMessage?: string;
+}
+
+export async function call<T>(
+    command: string,
+    args?: Record<string, unknown>,
+    options: LocalCallOptions = {},
+): Promise<T> {
     if (!isTauri()) throw new LocalStorageError('DESKTOP_REQUIRED', 'Open the StoryArk desktop app to access your local books. Browser preview cannot save books.');
     let result: StorageResult<T>;
     try { result = await invoke<StorageResult<T>>(command, args); }
-    catch { throw new LocalStorageError('IPC_FAILURE', 'The desktop storage request failed. Your draft has not been marked saved.'); }
+    catch {
+        throw new LocalStorageError(
+            'IPC_FAILURE',
+            options.failureMessage ?? 'The desktop storage request failed. Your draft has not been marked saved.',
+        );
+    }
     if (!result.ok) throw new LocalStorageError(result.error.code, result.error.message);
     return result.value;
 }

@@ -116,7 +116,7 @@ export function useLocalStorySearch(bookId: string, enabled: boolean): LocalStor
             if (requestId !== statusRequestRef.current) return;
             if (embeddingResult.status === 'rejected') {
                 setEmbeddingStatus(null);
-                setIndexStatus('not_configured');
+                setIndexStatus(null);
                 setStatusError(errorMessage(embeddingResult.reason, 'Local embedding status could not be loaded.'));
                 return;
             }
@@ -124,7 +124,7 @@ export function useLocalStorySearch(bookId: string, enabled: boolean): LocalStor
             const nextEmbeddingStatus = embeddingResult.value;
             setEmbeddingStatus(nextEmbeddingStatus);
             if (sourcesResult.status === 'rejected') {
-                setIndexStatus(nextEmbeddingStatus.available ? 'partial' : 'not_configured');
+                setIndexStatus(null);
                 setStatusError(errorMessage(sourcesResult.reason, 'Local story index status could not be loaded.'));
                 return;
             }

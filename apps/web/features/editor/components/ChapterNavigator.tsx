@@ -104,7 +104,7 @@ export function ChapterNavigator({
     const submittedRenameRef = useRef<RenamingState | null>(null);
     const dragItemRef = useRef<DragItemState | null>(null);
     const dragOverItemRef = useRef<DragItemState | null>(null);
-    const storySearch = useLocalStorySearch(book.id, localMode);
+    const storySearch = useLocalStorySearch(book.id, localMode && storySearchMode === 'semantic');
 
     // Only reconcile membership; content updates and reordering preserve user choices.
     const volumeIds = book.volumes.map(volume => volume.id);

@@ -57,6 +57,13 @@ fn main() {
             "local_sync_retrieval_sources",
             "local_list_retrieval_sources",
             "local_list_retrieval_chunks",
+            "local_embedding_status",
+            "local_queue_retrieval_index",
+            "local_list_retrieval_index_jobs",
+            "local_pause_retrieval_index_job",
+            "local_cancel_retrieval_index_job",
+            "local_retry_retrieval_index_job",
+            "local_search_retrieval",
         ])),
     )
     .expect("Failed to build the application permission manifest")

@@ -40,7 +40,7 @@ function statusLabel(status: RetrievalIndexStatus | null): string {
         case 'partial': return 'Local story index is incomplete';
         case 'failed': return 'Local story index failed';
         case 'not_configured': return 'Local embedding is not ready';
-        default: return 'Checking local story index';
+        default: return 'Local semantic search status unavailable';
     }
 }
 
@@ -136,8 +136,10 @@ export function StorySearchResults({
                         <Sparkles size={13} className="text-brand-500" />
                         <span>{isStatusLoading ? 'Checking local semantic search…' : statusLabel(indexStatus)}</span>
                     </div>
-                    {statusError && <p className="mt-1 text-amber-600 dark:text-amber-300">{statusError}</p>}
-                    {!embeddingStatus?.available ? (
+                    {statusError && <p role="alert" className="mt-1 text-amber-600 dark:text-amber-300">{statusError}</p>}
+                    {!embeddingStatus ? (
+                        <p className="mt-1">Semantic search status is unavailable. Title / Chapter search remains available; retry when the desktop storage is ready.</p>
+                    ) : !embeddingStatus.available ? (
                         <p className="mt-1">Semantic search needs local embedding or an index that is still building. Title / Chapter search remains available.</p>
                     ) : indexStatus !== 'ready' ? (
                         <p className="mt-1">Semantic search needs a ready local index. You can build it here without affecting writing or title search.</p>

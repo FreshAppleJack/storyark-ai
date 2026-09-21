@@ -109,4 +109,33 @@ describe('useLocalStorySearch', () => {
         expect(mocks.listSources).not.toHaveBeenCalled();
         expect(mocks.search).not.toHaveBeenCalled();
     });
+
+    it('keeps embedding status unknown when the desktop read request fails', async () => {
+        mocks.embeddingStatus.mockRejectedValue(new Error('The local retrieval request failed. Writing and saved drafts are unaffected.'));
+
+        const { result } = renderHook(() => useLocalStorySearch('book-1', true));
+
+        await waitFor(() => expect(result.current.statusError).toContain('Writing and saved drafts are unaffected.'));
+
+        expect(result.current.embeddingStatus).toBeNull();
+        expect(result.current.indexStatus).toBeNull();
+    });
+
+    it('does not claim an index state when the source read request fails', async () => {
+        mocks.embeddingStatus.mockResolvedValue({
+            ...unavailableEmbedding,
+            available: true,
+            fingerprint: 'local-fingerprint',
+            errorCode: null,
+            errorMessage: null,
+        });
+        mocks.listSources.mockRejectedValue(new Error('The local retrieval request failed. Writing and saved drafts are unaffected.'));
+
+        const { result } = renderHook(() => useLocalStorySearch('book-1', true));
+
+        await waitFor(() => expect(result.current.statusError).toContain('Writing and saved drafts are unaffected.'));
+
+        expect(result.current.embeddingStatus?.available).toBe(true);
+        expect(result.current.indexStatus).toBeNull();
+    });
 });
