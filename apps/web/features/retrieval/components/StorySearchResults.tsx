@@ -299,8 +299,7 @@ export function StorySearchResults({
             {response && (
                 <div className="space-y-2">
                     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-                        <div className="flex items-center gap-2 font-semibold text-slate-700 dark:text-slate-200">
-                            <Sparkles size={13} className="text-brand-500" />
+                        <div className="font-semibold text-slate-700 dark:text-slate-200">
                             <span>{resultStatusMessage(response)}</span>
                         </div>
                         <p className="mt-1">

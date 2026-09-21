@@ -451,7 +451,7 @@ export function ChapterNavigator({
 
     return (
         <>
-            <aside className={`flex-shrink-0 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 ease-in-out flex flex-col ${sidebarExpanded ? 'w-72' : 'w-16'}`}>
+            <aside className={`h-full min-h-0 flex-shrink-0 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 ease-in-out flex flex-col ${sidebarExpanded ? 'w-72' : 'w-16'}`}>
                 {/* Sidebar Header */}
                 <div className="h-14 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4">
                     {sidebarExpanded ? (
@@ -597,7 +597,7 @@ export function ChapterNavigator({
                 )}
 
                 {/* Sidebar List */}
-                <div className={`flex-1 overflow-y-auto py-2 custom-scrollbar relative ${hideChapterTree ? 'hidden' : ''}`}>
+                <div className={`min-h-0 flex-1 overflow-y-auto py-2 custom-scrollbar relative ${hideChapterTree ? 'hidden' : ''}`}>
                     {sidebarExpanded ? (
                         <div className="px-2 space-y-1">
                             {book.volumes.length === 0 && (
