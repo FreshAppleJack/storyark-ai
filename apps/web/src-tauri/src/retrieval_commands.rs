@@ -45,9 +45,13 @@ pub async fn local_list_retrieval_chunks(
 pub async fn local_embedding_status(
     embedding: tauri::State<'_, EmbeddingRuntime>,
 ) -> Result<Reply, ()> {
+    let embedding = embedding.inner().clone();
+    let status = tauri::async_runtime::spawn_blocking(move || embedding.status())
+        .await
+        .map_err(|_| ())?;
     Ok(Reply::Success {
         ok: true,
-        value: json!(embedding.status()),
+        value: json!(status),
     })
 }
 

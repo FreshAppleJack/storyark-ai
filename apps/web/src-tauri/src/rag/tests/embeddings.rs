@@ -32,6 +32,8 @@ fn configured_local_model_emits_normalized_bilingual_vectors() {
         return;
     }
     let runtime = EmbeddingRuntime::default();
+    let status = runtime.status();
+    assert!(status.available, "local model status failed: {status:?}");
     let result = runtime.with_provider(|provider| {
         let documents = provider.embed_documents(&[
             "中文故事中的人物关系与冲突".to_owned(),

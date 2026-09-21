@@ -8,7 +8,9 @@ import { Book, Chapter, Volume } from '../../../types';
 import { getFuzzyScore } from '../../../utils/search';
 import { StorySearchResults } from '../../retrieval/components/StorySearchResults';
 import { useLocalStorySearch } from '../../retrieval/hooks/useLocalStorySearch';
-import type { RetrievalSearchHit } from '../../../domain/retrieval/contracts';
+import { retrievalRepository } from '../../../data/local/retrievalRepository';
+import { resolveRetrievalChunkLocator } from '../../../domain/retrieval/locator';
+import type { RetrievalChunkLocator, RetrievalSearchHit } from '../../../domain/retrieval/contracts';
 
 export type NavigatorItemType = 'volume' | 'chapter';
 
@@ -55,7 +57,7 @@ interface ChapterNavigatorProps {
     book: Book;
     activeChapterId: string;
     onNavigateDashboard: () => void;
-    onSelectChapter: (chapterId: string) => void;
+    onSelectChapter: (chapterId: string) => Promise<boolean> | void;
     onAddVolume: (title: string) => Promise<string | null>;
     onAddChapter: (volumeId: string, title: string) => Promise<string | null>;
     onRenameVolume: (volumeId: string, title: string) => Promise<void>;
@@ -64,6 +66,7 @@ interface ChapterNavigatorProps {
     onReorderVolumes: (volumes: Volume[]) => void;
     onReorderChapters: (volumeId: string, chapters: Chapter[]) => void;
     onOpenPlotSetting: (chapterId: string) => void;
+    onOpenRetrievalLocator?: (chapterId: string, locator: RetrievalChunkLocator) => void;
 }
 
 /**
@@ -86,6 +89,7 @@ export function ChapterNavigator({
     onReorderVolumes,
     onReorderChapters,
     onOpenPlotSetting,
+    onOpenRetrievalLocator,
 }: ChapterNavigatorProps): React.ReactElement {
     const [sidebarExpanded, setSidebarExpanded] = useState(true);
     const [expandedVolumes, setExpandedVolumes] = useState<Set<string>>(() => new Set(book.volumes.map(v => v.id)));
@@ -104,7 +108,20 @@ export function ChapterNavigator({
     const submittedRenameRef = useRef<RenamingState | null>(null);
     const dragItemRef = useRef<DragItemState | null>(null);
     const dragOverItemRef = useRef<DragItemState | null>(null);
-    const storySearch = useLocalStorySearch(book.id, localMode && storySearchMode === 'semantic');
+    const storySearchChapters = useMemo(() => book.volumes.flatMap(volume => volume.chapters.map(chapter => ({
+        id: chapter.id,
+        title: chapter.title,
+        volumeTitle: volume.title,
+    }))), [book.volumes]);
+    const storySearchChapterIds = useMemo(
+        () => storySearchChapters.map(chapter => chapter.id),
+        [storySearchChapters],
+    );
+    const storySearch = useLocalStorySearch(
+        book.id,
+        localMode && storySearchMode === 'semantic',
+        { chapterIds: storySearchChapterIds, activeChapterId },
+    );
 
     // Only reconcile membership; content updates and reordering preserve user choices.
     const volumeIds = book.volumes.map(volume => volume.id);
@@ -346,7 +363,7 @@ export function ChapterNavigator({
         selectSidebarSearchResult(firstResult);
     };
 
-    const selectStorySearchResult = (hit: RetrievalSearchHit) => {
+    const selectStorySearchResult = async (hit: RetrievalSearchHit) => {
         const chapterId = hit.chapterId || hit.locator.chapterId;
         if (!chapterId) return;
 
@@ -361,9 +378,52 @@ export function ChapterNavigator({
             next.add(volume.id);
             return next;
         });
-        onSelectChapter(chapterId);
+        const navigationAccepted = await onSelectChapter(chapterId);
+        if (navigationAccepted === false) {
+            setSidebarSearchMessage('The chapter could not be opened because the current draft was not saved.');
+            return;
+        }
+
+        let resolution: ReturnType<typeof resolveRetrievalChunkLocator>;
+        try {
+            const scope = {
+                bookId: book.id,
+                allowedSourceKinds: [hit.sourceKind],
+                allowedChapterIds: [chapterId],
+                includeFuturePlan: false,
+                includeGenerated: false,
+                includeStale: false,
+            };
+            const [sources, chunks] = await Promise.all([
+                retrievalRepository.listSources(scope),
+                retrievalRepository.listChunks(scope),
+            ]);
+            const currentSource = sources.find(source => source.sourceId === hit.chunk.sourceId);
+            if (!currentSource) {
+                setSidebarSearchMessage('The source changed or is no longer available. Keep the excerpt and refresh the local index.');
+                return;
+            }
+            const currentChunks = chunks.filter(chunk => (
+                chunk.sourceId === hit.chunk.sourceId && chunk.locator.chapterId === chapterId
+            ));
+            resolution = resolveRetrievalChunkLocator(hit.chunk, {
+                chapterId,
+                sourceVersion: currentSource.sourceVersion,
+                chunks: currentChunks.map(chunk => ({ textHash: chunk.textHash, locator: chunk.locator })),
+            });
+        } catch (error) {
+            setSidebarSearchMessage(error instanceof Error && error.message
+                ? error.message
+                : 'The source could not be verified. Keep the excerpt and retry after local storage is ready.');
+            return;
+        }
+        if (resolution.status === 'source-changed') {
+            setSidebarSearchMessage(`${resolution.message} The excerpt remains available above; refresh or rebuild the local index.`);
+            return;
+        }
+        onOpenRetrievalLocator?.(chapterId, resolution.locator);
         setSidebarSearchTarget({ type: 'chapter', id: chapterId });
-        setSidebarSearchMessage(`Opened the source chapter: "${hit.locator.chapterTitleSnapshot || chapterId}".`);
+        setSidebarSearchMessage(`Opened the source chapter: "${hit.locator.chapterTitleSnapshot || chapterId}". Located by ${resolution.matchedBy === 'version' ? 'source version' : 'unique text hash'}.`);
         scrollSidebarItemIntoView('chapter', chapterId);
     };
 
@@ -490,6 +550,7 @@ export function ChapterNavigator({
                                 <StorySearchResults
                                     embeddingStatus={storySearch.embeddingStatus}
                                     indexStatus={storySearch.indexStatus}
+                                    indexProgress={storySearch.indexProgress}
                                     statusError={storySearch.statusError}
                                     isStatusLoading={storySearch.isStatusLoading}
                                     isIndexing={storySearch.isIndexing}
@@ -497,6 +558,11 @@ export function ChapterNavigator({
                                     searchError={storySearch.searchError}
                                     response={storySearch.response}
                                     lastQuery={storySearch.lastQuery}
+                                    filters={storySearch.filters}
+                                    chapters={storySearchChapters}
+                                    activeChapterId={activeChapterId}
+                                    selectionMessage={sidebarSearchMessage}
+                                    onFiltersChange={storySearch.updateFilters}
                                     onQueueIndex={() => void storySearch.queueIndex()}
                                     onSelectHit={selectStorySearchResult}
                                 />

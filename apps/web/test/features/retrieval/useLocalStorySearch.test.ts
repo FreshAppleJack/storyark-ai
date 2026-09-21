@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { EmbeddingStatus, RetrievalSearchResponse } from '../../../domain/retrieval/contracts';
 
@@ -98,6 +98,35 @@ describe('useLocalStorySearch', () => {
             }),
         }));
         await waitFor(() => expect(result.current.response?.effectiveMode).toBe('lexical'));
+    });
+
+    it('sends source, chapter, planning, and time filters to the retrieval contract', async () => {
+        const { result } = renderHook(() => useLocalStorySearch('book-1', true, {
+            chapterIds: ['chapter-1', 'chapter-2'],
+            activeChapterId: 'chapter-2',
+        }));
+
+        await waitFor(() => expect(result.current.indexStatus).toBe('not_configured'));
+        act(() => result.current.updateFilters({
+            sourceKinds: ['manuscript', 'character'],
+            includePlanning: true,
+            chapterRange: 'before_current',
+            updatedAfter: 100,
+            updatedBefore: 200,
+        }));
+        await result.current.search('hidden door');
+
+        expect(mocks.search).toHaveBeenCalledWith(expect.objectContaining({
+            scope: {
+                bookId: 'book-1',
+                allowedSourceKinds: ['manuscript', 'character', 'planning'],
+                allowedChapterIds: ['chapter-1', 'chapter-2'],
+                includeFuturePlan: false,
+                includeGenerated: false,
+                includeStale: false,
+                timeRange: { updatedAfter: 100, updatedBefore: 200 },
+            },
+        }));
     });
 
     it('does not call desktop retrieval when semantic mode is disabled', async () => {

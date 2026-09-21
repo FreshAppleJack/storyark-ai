@@ -260,6 +260,7 @@ pub struct RetrievalSource {
     pub index_status: RetrievalIndexStatus,
     pub index_version: Option<i64>,
     pub embedding_fingerprint: Option<String>,
+    pub index_updated_at: Option<i64>,
     pub entity_metadata: Value,
 }
 
@@ -425,6 +426,8 @@ pub struct RetrievalSearchHit {
     pub entity_id: String,
     pub chapter_id: Option<String>,
     pub source_version: i64,
+    pub source_updated_at: i64,
+    pub index_updated_at: Option<i64>,
     pub chunk_id: String,
     pub quote: String,
     pub locator: RetrievalChunkLocator,

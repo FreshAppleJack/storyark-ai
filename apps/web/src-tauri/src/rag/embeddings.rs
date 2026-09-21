@@ -233,7 +233,14 @@ impl EmbeddingRuntime {
         }
         let status = match configured_model_dir() {
             Some(directory) if model_resources_exist(&directory) => {
-                EmbeddingStatus::available(EmbeddingFingerprint::current().stable_string())
+                match LocalFastEmbedProvider::load(&directory) {
+                    Ok(provider) => {
+                        let fingerprint = provider.fingerprint.clone();
+                        state.provider = Some(provider);
+                        EmbeddingStatus::available(fingerprint)
+                    }
+                    Err(error) => EmbeddingStatus::unavailable("MODEL_LOAD_FAILED", error),
+                }
             }
             Some(_) => EmbeddingStatus::unavailable(
                 "MODEL_INCOMPLETE",
@@ -302,9 +309,26 @@ pub fn dot(left: &[f32], right: &[f32]) -> f32 {
 }
 
 pub fn configured_model_dir() -> Option<PathBuf> {
-    std::env::var_os("STORYARK_EMBEDDING_MODEL_DIR")
-        .filter(|value| !value.is_empty())
-        .map(PathBuf::from)
+    if let Some(value) =
+        std::env::var_os("STORYARK_EMBEDDING_MODEL_DIR").filter(|value| !value.is_empty())
+    {
+        return Some(PathBuf::from(value));
+    }
+
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+
+    ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"]
+        .iter()
+        .filter_map(|name| std::env::var_os(name).filter(|value| !value.is_empty()))
+        .map(|root| {
+            PathBuf::from(root)
+                .join("StoryArk_OutsideDocs")
+                .join("Embedding_Model")
+                .join("multilingual-e5-small")
+        })
+        .find(|directory| directory.is_dir())
 }
 
 fn model_resources_exist(directory: &Path) -> bool {

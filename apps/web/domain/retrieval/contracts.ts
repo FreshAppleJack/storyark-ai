@@ -14,6 +14,15 @@ export type RetrievalAuthoringStatus = 'author_confirmed' | 'ai_suggestion' | 'd
 export type RetrievalIndexStatus = 'not_configured' | 'queued' | 'indexing' | 'ready' | 'partial' | 'stale' | 'failed';
 export type RetrievalSearchMode = 'lexical' | 'semantic' | 'hybrid';
 export type RetrievalIndexJobState = 'queued' | 'indexing' | 'paused' | 'cancelled' | 'completed' | 'failed';
+export type RetrievalChapterRange = 'all' | 'current' | 'before_current';
+
+export interface RetrievalSearchFilters {
+    sourceKinds: RetrievalSourceKind[];
+    includePlanning: boolean;
+    chapterRange: RetrievalChapterRange;
+    updatedAfter: number | null;
+    updatedBefore: number | null;
+}
 
 export type RetrievalVisibilityScope =
     | { kind: 'book' }
@@ -57,6 +66,7 @@ export interface RetrievalSource {
     indexStatus: RetrievalIndexStatus;
     indexVersion: number | null;
     embeddingFingerprint: string | null;
+    indexUpdatedAt: number | null;
     entityMetadata: Record<string, unknown>;
 }
 
@@ -147,6 +157,8 @@ export interface RetrievalSearchHit {
     entityId: string;
     chapterId: string | null;
     sourceVersion: number;
+    sourceUpdatedAt: number;
+    indexUpdatedAt: number | null;
     chunkId: string;
     quote: string;
     locator: RetrievalChunkLocator;

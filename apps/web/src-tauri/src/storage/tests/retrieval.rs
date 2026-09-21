@@ -298,6 +298,8 @@ fn lexical_search_uses_cjk_fts_and_returns_locators() {
     assert!(response["hits"][0]["hitId"].as_str().is_some());
     assert_eq!(response["hits"][0]["bookId"], chapter.book_id);
     assert_eq!(response["hits"][0]["sourceKind"], "manuscript");
+    assert!(response["hits"][0]["sourceUpdatedAt"].as_i64().is_some());
+    assert!(response["hits"][0]["indexUpdatedAt"].is_null());
     assert_eq!(response["hits"][0]["recallMethods"][0], "lexical");
     assert_eq!(response["hits"][0]["freshness"], "fresh");
     assert!(response["context"]["text"]
@@ -421,4 +423,5 @@ fn local_index_job_commits_vectors_and_semantic_search_reads_only_ready_rows() {
     assert_eq!(response["effectiveMode"], "semantic");
     assert_eq!(response["embeddingAvailable"], true);
     assert_eq!(response["hits"].as_array().unwrap().len(), 1);
+    assert!(response["hits"][0]["indexUpdatedAt"].as_i64().is_some());
 }

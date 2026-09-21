@@ -353,6 +353,8 @@ fn search_hit(candidate: Candidate) -> RetrievalSearchHit {
         entity_id,
         chapter_id,
         source_version: chunk.source_version,
+        source_updated_at: source.updated_at,
+        index_updated_at: source.index_updated_at,
         chunk_id: chunk.chunk_id.clone(),
         quote: chunk.short_quote.clone(),
         locator: chunk.locator.clone(),

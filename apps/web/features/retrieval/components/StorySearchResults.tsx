@@ -1,14 +1,20 @@
-import { AlertCircle, BookOpen, Loader2, RefreshCw, Sparkles } from 'lucide-react';
+import { AlertCircle, BookOpen, ChevronDown, ChevronUp, Loader2, RefreshCw, Sparkles } from 'lucide-react';
+import { useState } from 'react';
+import type { ReactElement } from 'react';
 import type {
     EmbeddingStatus,
     RetrievalIndexStatus,
+    RetrievalSearchFilters,
     RetrievalSearchHit,
     RetrievalSearchResponse,
 } from '../../../domain/retrieval/contracts';
+import type { RetrievalIndexProgress, StorySearchChapterOption } from '../hooks/useLocalStorySearch';
+import { StorySearchFilters } from './StorySearchFilters';
 
 interface StorySearchResultsProps {
     embeddingStatus: EmbeddingStatus | null;
     indexStatus: RetrievalIndexStatus | null;
+    indexProgress: RetrievalIndexProgress | null;
     statusError: string | null;
     isStatusLoading: boolean;
     isIndexing: boolean;
@@ -16,8 +22,13 @@ interface StorySearchResultsProps {
     searchError: string | null;
     response: RetrievalSearchResponse | null;
     lastQuery: string;
+    filters: RetrievalSearchFilters;
+    chapters: StorySearchChapterOption[];
+    activeChapterId: string;
+    selectionMessage: string;
+    onFiltersChange: (patch: Partial<RetrievalSearchFilters>) => void;
     onQueueIndex: () => void;
-    onSelectHit: (hit: RetrievalSearchHit) => void;
+    onSelectHit: (hit: RetrievalSearchHit) => void | Promise<void>;
 }
 
 const SOURCE_LABELS: Record<RetrievalSearchHit['sourceKind'], string> = {
@@ -45,8 +56,11 @@ function statusLabel(status: RetrievalIndexStatus | null): string {
 }
 
 function resultStatusMessage(response: RetrievalSearchResponse): string {
-    if (response.degraded || response.status === 'degraded_lexical' || response.status === 'embedding_unavailable') {
-        return 'Semantic search is unavailable or the index is not ready. Showing lexical matches from this book.';
+    if (response.status === 'embedding_unavailable') {
+        return 'Local embedding is unavailable. Showing lexical matches from this book.';
+    }
+    if (response.status === 'degraded_lexical' || response.degraded) {
+        return 'The semantic index is unavailable or incomplete. Showing lexical matches from this book.';
     }
     if (response.status === 'index_not_ready') {
         return 'The local semantic index is not ready. Showing the available lexical matches.';
@@ -72,8 +86,38 @@ function hitTitle(hit: RetrievalSearchHit): string {
         || SOURCE_LABELS[hit.sourceKind];
 }
 
-function hitQuote(hit: RetrievalSearchHit): string {
-    return hit.quote || hit.locator.shortQuote || hit.chunk.shortQuote || 'No excerpt available.';
+function hitExcerpt(hit: RetrievalSearchHit): string {
+    return hit.chunk.sourceText || hit.quote || hit.locator.shortQuote || hit.chunk.shortQuote || 'No excerpt available.';
+}
+
+function formatTimestamp(timestamp: number | null): string {
+    if (timestamp === null) return 'Not indexed';
+    return new Date(timestamp).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function renderIndexProgress(progress: RetrievalIndexProgress | null): ReactElement | null {
+    if (!progress || progress.totalSources === 0 || progress.percent >= 100) return null;
+    return (
+        <div className="mt-2 rounded-md bg-slate-100 px-2 py-2 dark:bg-slate-950">
+            <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
+                <span>Approximate source progress</span>
+                <span>{progress.completedSources}/{progress.totalSources} sources · {progress.percent}%</span>
+            </div>
+            <div
+                className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
+                role="progressbar"
+                aria-label="Approximate local embedding index progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progress.percent}
+            >
+                <div className="h-full rounded-full bg-brand-500 transition-[width]" style={{ width: `${progress.percent}%` }} />
+            </div>
+            <p className="mt-1 text-[10px] leading-4 text-slate-400 dark:text-slate-500">
+                One source can contain many chunks, so this is a progress estimate rather than a token counter.
+            </p>
+        </div>
+    );
 }
 
 function renderIndexAction(
@@ -82,7 +126,7 @@ function renderIndexAction(
     isIndexing: boolean,
     isStatusLoading: boolean,
     onQueueIndex: () => void,
-): React.ReactElement | null {
+): ReactElement | null {
     if (!embeddingStatus?.available || indexStatus === 'ready' || !indexStatus) return null;
 
     const isBusy = isIndexing || indexStatus === 'queued' || indexStatus === 'indexing';
@@ -99,9 +143,72 @@ function renderIndexAction(
     );
 }
 
+function SearchHitCard({
+    hit,
+    expanded,
+    onToggleExpanded,
+    onSelect,
+}: {
+    hit: RetrievalSearchHit;
+    expanded: boolean;
+    onToggleExpanded: () => void;
+    onSelect: () => void;
+}): ReactElement {
+    const excerpt = hitExcerpt(hit);
+    const canExpand = excerpt.length > 240;
+    const location = [hit.locator.volumeTitleSnapshot, hitTitle(hit)]
+        .filter(Boolean)
+        .join(' / ');
+
+    return (
+        <article className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-left dark:border-slate-800 dark:bg-slate-900">
+            <div className="flex items-start gap-1.5 text-[11px] font-semibold text-brand-700 dark:text-brand-300">
+                <BookOpen size={12} className="mt-0.5 flex-shrink-0" />
+                <span className="min-w-0 flex-1 truncate" title={location}>{location}</span>
+                <span className="flex-shrink-0 font-normal text-slate-400">{SOURCE_LABELS[hit.sourceKind]}</span>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-slate-400">
+                <span>Source v{hit.sourceVersion}</span>
+                <span>Indexed {formatTimestamp(hit.indexUpdatedAt)}</span>
+                <span>{hit.freshness}</span>
+            </div>
+            <p className={`mt-1 text-xs leading-5 text-slate-700 dark:text-slate-300 ${expanded ? '' : 'line-clamp-3'}`}>
+                {excerpt}
+            </p>
+            {canExpand && (
+                <button
+                    type="button"
+                    onClick={onToggleExpanded}
+                    className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-brand-700 hover:underline dark:text-brand-300"
+                >
+                    {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    {expanded ? 'Show less' : 'Show full excerpt'}
+                </button>
+            )}
+            <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
+                <span>{hit.recallMethods.join(' + ')}</span>
+                <span>•</span>
+                <span>Evidence object</span>
+                {hit.chapterId ? (
+                    <button
+                        type="button"
+                        onClick={onSelect}
+                        className="ml-auto font-semibold text-brand-700 hover:underline dark:text-brand-300"
+                    >
+                        Open and locate
+                    </button>
+                ) : (
+                    <span className="ml-auto">Book-level source</span>
+                )}
+            </div>
+        </article>
+    );
+}
+
 export function StorySearchResults({
     embeddingStatus,
     indexStatus,
+    indexProgress,
     statusError,
     isStatusLoading,
     isIndexing,
@@ -109,13 +216,26 @@ export function StorySearchResults({
     searchError,
     response,
     lastQuery,
+    filters,
+    chapters,
+    activeChapterId,
+    selectionMessage,
+    onFiltersChange,
     onQueueIndex,
     onSelectHit,
-}: StorySearchResultsProps): React.ReactElement {
+}: StorySearchResultsProps): ReactElement {
+    const [expandedHitIds, setExpandedHitIds] = useState<Set<string>>(() => new Set());
     const showInitialStatus = !response && !isSearching && !searchError;
 
     return (
         <div className="space-y-2" aria-live="polite">
+            <StorySearchFilters
+                filters={filters}
+                chapters={chapters}
+                activeChapterId={activeChapterId}
+                onChange={onFiltersChange}
+            />
+
             {isSearching && (
                 <div className="flex items-center gap-2 rounded-lg border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-700 dark:border-brand-900 dark:bg-brand-950/30 dark:text-brand-300">
                     <Loader2 size={14} className="animate-spin" />
@@ -130,6 +250,14 @@ export function StorySearchResults({
                 </div>
             )}
 
+            {selectionMessage && (
+                <p role="status" className={`rounded-lg border px-3 py-2 text-xs leading-5 ${selectionMessage.startsWith('Opened')
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-300'
+                    : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300'}`}>
+                    {selectionMessage}
+                </p>
+            )}
+
             {showInitialStatus && (
                 <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
                     <div className="flex items-center gap-2 font-semibold text-slate-700 dark:text-slate-200">
@@ -140,12 +268,16 @@ export function StorySearchResults({
                     {!embeddingStatus ? (
                         <p className="mt-1">Semantic search status is unavailable. Title / Chapter search remains available; retry when the desktop storage is ready.</p>
                     ) : !embeddingStatus.available ? (
-                        <p className="mt-1">Semantic search needs local embedding or an index that is still building. Title / Chapter search remains available.</p>
+                        <>
+                            <p className="mt-1">Semantic search needs the local embedding model before it can build or query the semantic index. Title / Chapter search remains available.</p>
+                            {embeddingStatus.errorMessage && <p className="mt-1 text-amber-600 dark:text-amber-300">{embeddingStatus.errorMessage}</p>}
+                        </>
                     ) : indexStatus !== 'ready' ? (
                         <p className="mt-1">Semantic search needs a ready local index. You can build it here without affecting writing or title search.</p>
                     ) : (
                         <p className="mt-1">Searches the current book using local semantic and lexical evidence.</p>
                     )}
+                    {renderIndexProgress(indexProgress)}
                     {renderIndexAction(embeddingStatus, indexStatus, isIndexing, isStatusLoading, onQueueIndex)}
                 </div>
             )}
@@ -164,31 +296,24 @@ export function StorySearchResults({
                         </p>
                     </div>
                     {response.hits.length > 0 && (
-                        <div className="max-h-72 space-y-1.5 overflow-y-auto pr-1">
+                        <div className="max-h-96 space-y-1.5 overflow-y-auto pr-1">
                             {response.hits.map(hit => (
-                                <button
+                                <SearchHitCard
                                     key={hit.hitId}
-                                    type="button"
-                                    onClick={() => onSelectHit(hit)}
-                                    disabled={!hit.chapterId}
-                                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-left transition hover:border-brand-300 hover:bg-brand-50 disabled:cursor-default disabled:hover:border-slate-200 disabled:hover:bg-white dark:border-slate-800 dark:bg-slate-900 dark:hover:border-brand-800 dark:hover:bg-brand-950/30 dark:disabled:hover:border-slate-800 dark:disabled:hover:bg-slate-900"
-                                >
-                                    <div className="flex items-center gap-1.5 text-[11px] font-semibold text-brand-700 dark:text-brand-300">
-                                        <BookOpen size={12} />
-                                        <span className="truncate">{hitTitle(hit)}</span>
-                                        <span className="ml-auto flex-shrink-0 font-normal text-slate-400">{SOURCE_LABELS[hit.sourceKind]}</span>
-                                    </div>
-                                    <p className="mt-1 line-clamp-3 text-xs leading-5 text-slate-700 dark:text-slate-300">{hitQuote(hit)}</p>
-                                    <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
-                                        <span>{hit.recallMethods.join(' + ')}</span>
-                                        <span>•</span>
-                                        <span>{hit.freshness}</span>
-                                        {hit.chapterId && <span className="ml-auto">Open source</span>}
-                                    </div>
-                                </button>
+                                    hit={hit}
+                                    expanded={expandedHitIds.has(hit.hitId)}
+                                    onToggleExpanded={() => setExpandedHitIds(previous => {
+                                        const next = new Set(previous);
+                                        if (next.has(hit.hitId)) next.delete(hit.hitId);
+                                        else next.add(hit.hitId);
+                                        return next;
+                                    })}
+                                    onSelect={() => void onSelectHit(hit)}
+                                />
                             ))}
                         </div>
                     )}
+                    {renderIndexProgress(indexProgress)}
                     {renderIndexAction(embeddingStatus, indexStatus, isIndexing, isStatusLoading, onQueueIndex)}
                 </div>
             )}

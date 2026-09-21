@@ -874,8 +874,13 @@ fn sync_book_sources(db: &Connection, book_id: &str) -> Result<()> {
 
 pub(crate) fn read_sources(db: &Connection, book_id: &str) -> Result<Vec<RetrievalSource>> {
     let mut statement = db.prepare(
-        "SELECT source_id,book_id,entity_id,source_kind,source_status,source_version,origin,authoring_status,visibility_scope_json,source_text,index_text,updated_at,index_status,index_version,embedding_fingerprint,entity_metadata_json
-         FROM retrieval_sources WHERE book_id=? ORDER BY source_kind,entity_id,source_id",
+        "SELECT s.source_id,s.book_id,s.entity_id,s.source_kind,s.source_status,s.source_version,s.origin,s.authoring_status,s.visibility_scope_json,s.source_text,s.index_text,s.updated_at,s.index_status,s.index_version,s.embedding_fingerprint,
+                (SELECT MAX(j.updated_at) FROM retrieval_index_jobs j
+                 WHERE j.source_id=s.source_id AND j.book_id=s.book_id
+                   AND j.source_version=s.source_version AND j.index_version=s.index_version
+                   AND j.embedding_fingerprint=s.embedding_fingerprint AND j.state='completed') AS index_updated_at,
+                s.entity_metadata_json
+         FROM retrieval_sources s WHERE s.book_id=? ORDER BY s.source_kind,s.entity_id,s.source_id",
     )?;
     let rows = statement.query_map([book_id], |row| {
         Ok((
@@ -894,7 +899,8 @@ pub(crate) fn read_sources(db: &Connection, book_id: &str) -> Result<Vec<Retriev
             row.get::<_, String>(12)?,
             row.get::<_, Option<i64>>(13)?,
             row.get::<_, Option<String>>(14)?,
-            row.get::<_, String>(15)?,
+            row.get::<_, Option<i64>>(15)?,
+            row.get::<_, String>(16)?,
         ))
     })?;
     let mut sources = Vec::new();
@@ -915,6 +921,7 @@ pub(crate) fn read_sources(db: &Connection, book_id: &str) -> Result<Vec<Retriev
             index_status,
             index_version,
             fingerprint,
+            index_updated_at,
             metadata,
         ) = row?;
         sources.push(RetrievalSource {
@@ -939,6 +946,7 @@ pub(crate) fn read_sources(db: &Connection, book_id: &str) -> Result<Vec<Retriev
                 .ok_or_else(|| registry_error("Unknown retrieval index status"))?,
             index_version,
             embedding_fingerprint: fingerprint,
+            index_updated_at,
             entity_metadata: parse_json(&metadata, "Invalid retrieval entity metadata")?,
         });
     }

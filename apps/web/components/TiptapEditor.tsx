@@ -23,6 +23,7 @@ import { Character, EDITOR_SPACING_LIMITS, ForeshadowingNote } from '../types';
 import { calculateMixedWordCount } from '../utils/textUtils'; // Import common utility function
 import type { AiContinueAnchor } from '../features/editor/types/aiContinue';
 import { buildAiContinueContent } from '../features/editor/utils/aiContinueText';
+import type { RetrievalChunkLocator } from '../domain/retrieval/contracts';
 
 const EMPTY_CHARACTERS: Character[] = [];
 
@@ -36,6 +37,7 @@ export interface TiptapEditorRef {
     forceRefreshHighlights: () => void;
     removeForeshadowing: (id: string) => void;
     focusForeshadowing: (id: string) => boolean;
+    focusRetrievalLocator: (locator: RetrievalChunkLocator) => boolean;
 }
 
 interface TiptapEditorProps {
@@ -638,6 +640,32 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 const delta = targetCenterY - window.innerHeight / 2;
                 window.scrollTo({ top: window.scrollY + delta, behavior: 'smooth' });
             }
+            return true;
+        },
+        focusRetrievalLocator: (locator: RetrievalChunkLocator) => {
+            if (!editor || editor.isDestroyed) return false;
+            const targetParagraph = locator.paragraphSpans[0]?.paragraphOrdinal
+                ?? locator.paragraphOrdinals[0];
+            if (targetParagraph === undefined) {
+                editor.view.dom.scrollIntoView({ block: 'start', behavior: 'smooth' });
+                return true;
+            }
+
+            let paragraphOrdinal = 0;
+            let targetPosition: number | null = null;
+            editor.state.doc.descendants((node, position) => {
+                if (!['paragraph', 'heading', 'blockquote', 'codeBlock'].includes(node.type.name)) return;
+                if (paragraphOrdinal === targetParagraph && targetPosition === null) targetPosition = position;
+                paragraphOrdinal += 1;
+            });
+            if (targetPosition === null) return false;
+
+            const targetDom = editor.view.nodeDOM(targetPosition);
+            const target = targetDom instanceof HTMLElement
+                ? targetDom
+                : targetDom?.parentElement;
+            if (!target) return false;
+            target.scrollIntoView({ block: 'center', behavior: 'smooth' });
             return true;
         }
     }));
