@@ -17,6 +17,7 @@ mod mutations;
 mod planning;
 mod preferences;
 mod retrieval;
+mod retrieval_p1e;
 mod worker;
 
 struct TempDirectory(PathBuf);

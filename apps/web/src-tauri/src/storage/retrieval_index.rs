@@ -358,7 +358,6 @@ impl Database {
                 params![blob, chunk.chunk_id, work.book_id, work.source_version, work.index_version],
             )?;
             if changed != 1 {
-                tx.commit()?;
                 return Ok(IndexCommitResult::Stale);
             }
         }
