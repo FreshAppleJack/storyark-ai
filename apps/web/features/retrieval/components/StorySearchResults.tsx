@@ -59,11 +59,14 @@ function resultStatusMessage(response: RetrievalSearchResponse): string {
     if (response.status === 'embedding_unavailable') {
         return 'Local embedding is unavailable. Showing lexical matches from this book.';
     }
-    if (response.status === 'degraded_lexical' || response.degraded) {
-        return 'The semantic index is unavailable or incomplete. Showing lexical matches from this book.';
-    }
     if (response.status === 'index_not_ready') {
-        return 'The local semantic index is not ready. Showing the available lexical matches.';
+        return 'The local semantic index is not ready for the selected scope. Showing the available lexical matches.';
+    }
+    if (response.status === 'degraded_lexical') {
+        return 'The local embedding query was unavailable. Showing lexical matches from this book.';
+    }
+    if (response.degraded) {
+        return 'Semantic retrieval was unavailable for the selected scope. Showing lexical matches from this book.';
     }
     if (response.status === 'budget_exhausted') {
         return 'Matches were found, but the context budget was too small to include their excerpts.';

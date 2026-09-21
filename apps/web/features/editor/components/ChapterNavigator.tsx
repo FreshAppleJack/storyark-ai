@@ -122,6 +122,8 @@ export function ChapterNavigator({
         localMode && storySearchMode === 'semantic',
         { chapterIds: storySearchChapterIds, activeChapterId },
     );
+    const hideChapterTree = storySearchMode === 'semantic'
+        && (storySearch.isSearching || storySearch.response !== null || storySearch.searchError !== null);
 
     // Only reconcile membership; content updates and reordering preserve user choices.
     const volumeIds = book.volumes.map(volume => volume.id);
@@ -595,7 +597,7 @@ export function ChapterNavigator({
                 )}
 
                 {/* Sidebar List */}
-                <div className="flex-1 overflow-y-auto py-2 custom-scrollbar relative">
+                <div className={`flex-1 overflow-y-auto py-2 custom-scrollbar relative ${hideChapterTree ? 'hidden' : ''}`}>
                     {sidebarExpanded ? (
                         <div className="px-2 space-y-1">
                             {book.volumes.length === 0 && (

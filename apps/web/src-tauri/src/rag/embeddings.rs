@@ -319,12 +319,18 @@ pub fn configured_model_dir() -> Option<PathBuf> {
         return None;
     }
 
-    ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"]
+    let mut roots = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"]
         .iter()
         .filter_map(|name| std::env::var_os(name).filter(|value| !value.is_empty()))
+        .map(PathBuf::from)
+        .collect::<Vec<_>>();
+    if let Some(profile) = std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()) {
+        roots.push(PathBuf::from(profile).join("OneDrive"));
+    }
+    roots
+        .into_iter()
         .map(|root| {
-            PathBuf::from(root)
-                .join("StoryArk_OutsideDocs")
+            root.join("StoryArk_OutsideDocs")
                 .join("Embedding_Model")
                 .join("multilingual-e5-small")
         })
