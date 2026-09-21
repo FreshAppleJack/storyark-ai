@@ -48,7 +48,7 @@ cargo test --lib
 cargo test --lib storage::tests::retrieval_p1e::local_semantic_path_records_p1e_baseline_when_model_is_configured -- --nocapture --test-threads=1
 ```
 
-The Tauri retrieval IPC is registered and has one retrieval contract. There is
-not yet a dedicated frontend retrieval-result panel in this work unit, so UI
-click-through locator verification remains part of the P1 consumer work rather
-than being claimed by this backend completion record.
+The Tauri retrieval IPC is registered and has one retrieval contract. The real
+desktop WebView search, evidence-card rendering, locator click-through, and
+no-answer acceptance are recorded in
+[`P1S3_ACCEPTANCE.md`](P1S3_ACCEPTANCE.md).

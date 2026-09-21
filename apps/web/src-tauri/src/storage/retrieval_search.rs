@@ -5,16 +5,17 @@ use super::validation::{invalid, now};
 use super::{Database, Result, StorageError};
 use crate::rag::chunking::{stable_text_hash, CHUNK_INDEX_VERSION};
 use crate::rag::contracts::{
-    RetrievalChunk, RetrievalFreshness, RetrievalRecallMethod, RetrievalScope, RetrievalSearchHit,
-    RetrievalSearchMode, RetrievalSearchRequest, RetrievalSearchResponse, RetrievalSearchStatus,
-    RetrievalSearchTrace, RetrievalSource, RetrievalSourceKind, RetrievalSourceStatus,
-    RetrievalSourceVersionRecord, RetrievalTaskStrategy, RETRIEVAL_VERSION,
+    RetrievalChunk, RetrievalFreshness, RetrievalIndexStatus, RetrievalRecallMethod,
+    RetrievalScope, RetrievalSearchHit, RetrievalSearchMode, RetrievalSearchRequest,
+    RetrievalSearchResponse, RetrievalSearchStatus, RetrievalSearchTrace, RetrievalSource,
+    RetrievalSourceKind, RetrievalSourceStatus, RetrievalSourceVersionRecord,
+    RetrievalTaskStrategy, RETRIEVAL_VERSION,
 };
 use crate::rag::embeddings::{decode_vector, dot};
 use crate::rag::lexical::fts_query;
 use crate::rag::search::{
     add_recall_method, assemble_context, rrf_score, ContextItem, DEFAULT_ADJACENT_CHUNKS,
-    MAX_CONTEXT_CHAR_BUDGET, MAX_CONTEXT_TOKEN_BUDGET,
+    MAX_CONTEXT_CHAR_BUDGET, MAX_CONTEXT_TOKEN_BUDGET, MIN_SEMANTIC_SCORE,
 };
 use crate::rag::sources::normalize_index_text;
 use rusqlite::{params, Connection, TransactionBehavior};
@@ -183,11 +184,30 @@ fn semantic_recall(
             .total_cmp(&left.score)
             .then_with(|| left.chunk_id.cmp(&right.chunk_id))
     });
+    recalls.retain(|recall| recall.score >= MIN_SEMANTIC_SCORE);
     recalls.truncate(limit);
     for (index, recall) in recalls.iter_mut().enumerate() {
         recall.rank = index + 1;
     }
     Ok(recalls)
+}
+
+fn semantic_index_ready(
+    chunks: &HashMap<String, RetrievalChunk>,
+    sources: &HashMap<String, RetrievalSource>,
+    fingerprint: Option<&str>,
+) -> bool {
+    let Some(fingerprint) = fingerprint else {
+        return false;
+    };
+    chunks.values().any(|chunk| {
+        sources.get(&chunk.source_id).is_some_and(|source| {
+            source.index_status == RetrievalIndexStatus::Ready
+                && source.source_version == chunk.source_version
+                && source.index_version == Some(CHUNK_INDEX_VERSION)
+                && source.embedding_fingerprint.as_deref() == Some(fingerprint)
+        })
+    })
 }
 
 fn build_candidates(
@@ -612,22 +632,20 @@ impl Database {
         } else {
             Vec::new()
         };
+        let semantic_index_ready =
+            semantic_index_ready(&chunk_by_id, &sources, fingerprint.as_deref());
         let effective_mode = match requested_mode {
             RetrievalSearchMode::Lexical => RetrievalSearchMode::Lexical,
-            RetrievalSearchMode::Semantic if query_vector.is_none() || semantic.is_empty() => {
-                RetrievalSearchMode::Lexical
-            }
+            RetrievalSearchMode::Semantic if !semantic_index_ready => RetrievalSearchMode::Lexical,
             RetrievalSearchMode::Semantic => RetrievalSearchMode::Semantic,
-            RetrievalSearchMode::Hybrid if query_vector.is_none() || semantic.is_empty() => {
-                RetrievalSearchMode::Lexical
-            }
+            RetrievalSearchMode::Hybrid if !semantic_index_ready => RetrievalSearchMode::Lexical,
             RetrievalSearchMode::Hybrid if lexical.is_empty() => RetrievalSearchMode::Semantic,
             RetrievalSearchMode::Hybrid => RetrievalSearchMode::Hybrid,
         };
         let degraded = matches!(
             requested_mode,
             RetrievalSearchMode::Semantic | RetrievalSearchMode::Hybrid
-        ) && (query_vector.is_none() || semantic.is_empty());
+        ) && !semantic_index_ready;
         let mut primary = build_candidates(
             &effective_mode,
             &input.query,
@@ -656,21 +674,18 @@ impl Database {
                 } else {
                     RetrievalSearchStatus::DegradedLexical
                 }
-            } else if degraded && semantic.is_empty() && !lexical.is_empty() {
+            } else if degraded && !semantic_index_ready && !lexical.is_empty() {
                 RetrievalSearchStatus::IndexNotReady
             } else if matches!(requested_mode, RetrievalSearchMode::Lexical) {
                 RetrievalSearchStatus::LexicalNoMatch
-            } else if query_vector.is_some() && semantic.is_empty() {
+            } else if query_vector.is_some() && !semantic_index_ready {
                 RetrievalSearchStatus::IndexNotReady
             } else {
                 RetrievalSearchStatus::NoResults
             }
         } else if degraded && query_vector.is_none() {
             RetrievalSearchStatus::DegradedLexical
-        } else if degraded
-            && semantic.is_empty()
-            && !matches!(requested_mode, RetrievalSearchMode::Lexical)
-        {
+        } else if degraded && !matches!(requested_mode, RetrievalSearchMode::Lexical) {
             RetrievalSearchStatus::IndexNotReady
         } else {
             RetrievalSearchStatus::Ready

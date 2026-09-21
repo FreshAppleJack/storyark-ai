@@ -1,6 +1,7 @@
 use crate::rag::contracts::RetrievalRecallMethod;
 
 pub const RRF_K: f32 = 60.0;
+pub const MIN_SEMANTIC_SCORE: f32 = 0.85;
 pub const DEFAULT_ADJACENT_CHUNKS: usize = 1;
 pub const MAX_CONTEXT_CHAR_BUDGET: usize = 64_000;
 pub const MAX_CONTEXT_TOKEN_BUDGET: usize = 16_000;
