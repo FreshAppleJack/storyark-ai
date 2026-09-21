@@ -80,6 +80,12 @@ function resultStatusMessage(response: RetrievalSearchResponse): string {
     if (response.status === 'lexical_no_match' || response.status === 'no_results') {
         return 'No story matches were found in this book.';
     }
+    if (response.effectiveMode === 'semantic') {
+        return 'Semantic matches are ready for this scope. Scores are ranking signals, not probabilities.';
+    }
+    if (response.effectiveMode === 'lexical') {
+        return 'Lexical matches are ready for this scope. Scores are ranking signals, not probabilities.';
+    }
     return 'Semantic and lexical matches are ranked together. Scores are ranking signals, not probabilities.';
 }
 
@@ -99,12 +105,15 @@ function formatTimestamp(timestamp: number | null): string {
 }
 
 function renderIndexProgress(progress: RetrievalIndexProgress | null): ReactElement | null {
-    if (!progress || progress.totalSources === 0 || progress.percent >= 100) return null;
+    if (!progress) return null;
+    const percent = Math.min(100, Math.max(0, progress.percent));
     return (
         <div className="mt-2 rounded-md bg-slate-100 px-2 py-2 dark:bg-slate-950">
             <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
                 <span>Approximate source progress</span>
-                <span>{progress.completedSources}/{progress.totalSources} sources · {progress.percent}%</span>
+                <span>{progress.totalSources === 0
+                    ? 'No indexable sources'
+                    : `${progress.completedSources}/${progress.totalSources} sources · ${percent}%`}</span>
             </div>
             <div
                 className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
@@ -112,9 +121,9 @@ function renderIndexProgress(progress: RetrievalIndexProgress | null): ReactElem
                 aria-label="Approximate local embedding index progress"
                 aria-valuemin={0}
                 aria-valuemax={100}
-                aria-valuenow={progress.percent}
+                aria-valuenow={percent}
             >
-                <div className="h-full rounded-full bg-brand-500 transition-[width]" style={{ width: `${progress.percent}%` }} />
+                <div className="h-full rounded-full bg-brand-500 transition-[width]" style={{ width: `${percent}%` }} />
             </div>
             <p className="mt-1 text-[10px] leading-4 text-slate-400 dark:text-slate-500">
                 One source can contain many chunks, so this is a progress estimate rather than a token counter.
@@ -130,19 +139,21 @@ function renderIndexAction(
     isStatusLoading: boolean,
     onQueueIndex: () => void,
 ): ReactElement | null {
-    if (!embeddingStatus?.available || indexStatus === 'ready' || !indexStatus) return null;
+    if (!embeddingStatus?.available || !indexStatus) return null;
 
     const isBusy = isIndexing || indexStatus === 'queued' || indexStatus === 'indexing';
     return (
-        <button
-            type="button"
-            onClick={onQueueIndex}
-            disabled={isBusy || isStatusLoading}
-            className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-brand-200 px-2 py-1 text-[11px] font-semibold text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-brand-800 dark:text-brand-300 dark:hover:bg-brand-950/40"
-        >
-            {isBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-            {isBusy ? 'Indexing…' : indexStatus === 'failed' ? 'Retry index' : 'Build local index'}
-        </button>
+        <div className="mt-2 flex justify-center">
+            <button
+                type="button"
+                onClick={onQueueIndex}
+                disabled={isBusy || isStatusLoading}
+                className="inline-flex items-center gap-1.5 rounded-md border border-brand-200 px-2 py-1 text-[11px] font-semibold text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-brand-800 dark:text-brand-300 dark:hover:bg-brand-950/40"
+            >
+                {isBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+                {isBusy ? 'Indexing…' : indexStatus === 'failed' ? 'Retry index' : indexStatus === 'ready' ? 'Rebuild local index' : 'Build local index'}
+            </button>
+        </div>
     );
 }
 

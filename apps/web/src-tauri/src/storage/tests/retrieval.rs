@@ -407,7 +407,7 @@ fn local_index_job_commits_vectors_and_semantic_search_reads_only_ready_rows() {
                     time_range: None,
                 },
                 query: "任何词都可以".into(),
-                mode: RetrievalSearchMode::Semantic,
+                mode: RetrievalSearchMode::Hybrid,
                 limit: 1,
                 excluded_hit_ids: Vec::new(),
                 char_budget: 6_000,
@@ -421,6 +421,9 @@ fn local_index_job_commits_vectors_and_semantic_search_reads_only_ready_rows() {
         )
         .unwrap();
     assert_eq!(response["effectiveMode"], "semantic");
+    assert_eq!(response["status"], "ready");
+    assert_eq!(response["degraded"], false);
+    assert_eq!(response["lexicalMatchCount"], 0);
     assert_eq!(response["embeddingAvailable"], true);
     assert_eq!(response["hits"].as_array().unwrap().len(), 1);
     assert!(response["hits"][0]["indexUpdatedAt"].as_i64().is_some());

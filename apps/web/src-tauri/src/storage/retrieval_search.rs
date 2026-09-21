@@ -624,7 +624,10 @@ impl Database {
             RetrievalSearchMode::Hybrid if lexical.is_empty() => RetrievalSearchMode::Semantic,
             RetrievalSearchMode::Hybrid => RetrievalSearchMode::Hybrid,
         };
-        let degraded = effective_mode != requested_mode;
+        let degraded = matches!(
+            requested_mode,
+            RetrievalSearchMode::Semantic | RetrievalSearchMode::Hybrid
+        ) && (query_vector.is_none() || semantic.is_empty());
         let mut primary = build_candidates(
             &effective_mode,
             &input.query,
