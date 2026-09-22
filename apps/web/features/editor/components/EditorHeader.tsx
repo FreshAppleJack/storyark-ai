@@ -61,7 +61,7 @@ export function EditorHeader({
     onExportWorkJson,
 }: EditorHeaderProps): React.ReactElement {
     return (
-        <header className="flex h-14 min-w-0 flex-shrink-0 items-center justify-between overflow-hidden border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-950">
+        <header className="flex h-14 min-w-0 flex-shrink-0 items-center justify-between overflow-visible border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-950">
             <div className="min-w-0 flex-shrink">
                 {hasActiveChapter ? (
                     <div className="flex flex-col">
@@ -75,7 +75,7 @@ export function EditorHeader({
                 )}
             </div>
 
-            <div className="min-w-0 max-w-full overflow-x-auto whitespace-nowrap custom-scrollbar flex items-center gap-4">
+            <div className="min-w-0 max-w-full overflow-x-auto whitespace-nowrap custom-scrollbar flex items-center gap-4 py-1">
                 <SaveStatusIndicator state={saveStatus} savedText={localMode ? 'Saved locally' : 'Saved'} onRetry={onRetrySave} />
 
                 <div className="h-4 mx-1 border-l border-slate-300 dark:border-slate-700" />

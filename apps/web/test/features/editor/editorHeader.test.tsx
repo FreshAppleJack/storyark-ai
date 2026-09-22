@@ -35,6 +35,16 @@ describe('EditorHeader', () => {
         expect(screen.getByText('My Chapter')).toBeInTheDocument();
     });
 
+    it('keeps navigation focus outlines inside the visible header area', () => {
+        render(<EditorHeader {...createProps()} />);
+
+        const header = screen.getByRole('banner');
+        const actions = screen.getByText('AI Continue').closest('div');
+
+        expect(header).toHaveClass('overflow-visible');
+        expect(actions).toHaveClass('py-1');
+    });
+
     it('prompts to select a chapter when none is active', () => {
         render(<EditorHeader {...createProps({ hasActiveChapter: false })} />);
 
