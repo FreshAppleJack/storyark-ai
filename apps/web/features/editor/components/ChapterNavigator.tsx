@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
     AlertTriangle, ArrowLeft, ChevronDown, ChevronRight, FileText, Folder,
     GripVertical, Lock, Pencil, Plus, ScrollText, Search, Sparkles, Trash2,
@@ -26,6 +26,30 @@ interface ContextMenuState {
     type: NavigatorItemType;
     id: string;
     parentId?: string;
+}
+
+interface ContextMenuPosition {
+    left: number;
+    top: number;
+}
+
+const CONTEXT_MENU_GUTTER = 8;
+
+function clampContextMenuPosition(
+    anchorX: number,
+    anchorY: number,
+    menuWidth: number,
+    menuHeight: number,
+    viewportWidth: number,
+    viewportHeight: number,
+): ContextMenuPosition {
+    const maxLeft = Math.max(CONTEXT_MENU_GUTTER, viewportWidth - menuWidth - CONTEXT_MENU_GUTTER);
+    const maxTop = Math.max(CONTEXT_MENU_GUTTER, viewportHeight - menuHeight - CONTEXT_MENU_GUTTER);
+
+    return {
+        left: Math.min(Math.max(anchorX, CONTEXT_MENU_GUTTER), maxLeft),
+        top: Math.min(Math.max(anchorY, CONTEXT_MENU_GUTTER), maxTop),
+    };
 }
 
 interface RenamingState {
@@ -100,11 +124,13 @@ export function ChapterNavigator({
     const [sidebarSearchTarget, setSidebarSearchTarget] = useState<{ type: SidebarSearchMode; id: string } | null>(null);
 
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+    const [contextMenuPosition, setContextMenuPosition] = useState<ContextMenuPosition | null>(null);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [itemToDelete, setItemToDelete] = useState<NavigatorDeleteTarget | null>(null);
     const [renamingState, setRenamingState] = useState<RenamingState | null>(null);
 
     const renameInputRef = useRef<HTMLInputElement>(null);
+    const contextMenuRef = useRef<HTMLDivElement>(null);
     const submittedRenameRef = useRef<RenamingState | null>(null);
     const dragItemRef = useRef<DragItemState | null>(null);
     const dragOverItemRef = useRef<DragItemState | null>(null);
@@ -291,8 +317,44 @@ export function ChapterNavigator({
 
     const handleContextMenu = (e: React.MouseEvent, type: NavigatorItemType, id: string, parentId?: string) => {
         e.preventDefault(); e.stopPropagation();
+        setContextMenuPosition(null);
         setContextMenu({ x: e.clientX, y: e.clientY, type, id, parentId });
     };
+
+    const repositionContextMenu = useCallback(() => {
+        if (!contextMenu || !contextMenuRef.current) return;
+
+        const { width, height } = contextMenuRef.current.getBoundingClientRect();
+        const nextPosition = clampContextMenuPosition(
+            contextMenu.x,
+            contextMenu.y,
+            width,
+            height,
+            window.innerWidth,
+            window.innerHeight,
+        );
+        setContextMenuPosition(current => (
+            current?.left === nextPosition.left && current.top === nextPosition.top
+                ? current
+                : nextPosition
+        ));
+    }, [contextMenu]);
+
+    useLayoutEffect(() => {
+        if (!contextMenu) return;
+        repositionContextMenu();
+    }, [contextMenu, repositionContextMenu]);
+
+    useEffect(() => {
+        if (!contextMenu) return;
+
+        window.addEventListener('resize', repositionContextMenu);
+        window.addEventListener('scroll', repositionContextMenu, true);
+        return () => {
+            window.removeEventListener('resize', repositionContextMenu);
+            window.removeEventListener('scroll', repositionContextMenu, true);
+        };
+    }, [contextMenu, repositionContextMenu]);
 
     const startRenaming = () => {
         if (!contextMenu) return;
@@ -729,8 +791,9 @@ export function ChapterNavigator({
             {/* Navigator context menu */}
             {contextMenu && (
                 <div
-                    className="fixed z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg rounded-md py-1 w-44"
-                    style={{ top: contextMenu.y, left: contextMenu.x }}
+                    ref={contextMenuRef}
+                    className="fixed z-50 max-h-[calc(100vh-1rem)] w-44 overflow-y-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-800 dark:bg-slate-900"
+                    style={contextMenuPosition ?? { top: contextMenu.y, left: contextMenu.x }}
                     onClick={(e) => e.stopPropagation()}
                 >
                     {contextMenu.type === 'chapter' && (

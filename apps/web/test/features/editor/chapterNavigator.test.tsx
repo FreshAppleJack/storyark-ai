@@ -190,6 +190,26 @@ describe('ChapterNavigator', () => {
         expect(screen.getByText('Delete')).toBeInTheDocument();
     });
 
+    it('keeps the context menu inside the viewport near the bottom-right corner', async () => {
+        render(<ChapterNavigator {...createProps()} />);
+
+        const chapter = screen.getByText('Chapter One');
+        fireEvent.contextMenu(chapter, { clientX: window.innerWidth - 1, clientY: window.innerHeight - 1 });
+
+        const menu = screen.getByText('Plot Setting').parentElement as HTMLDivElement;
+        Object.defineProperty(menu, 'getBoundingClientRect', {
+            configurable: true,
+            value: () => ({ width: 176, height: 104 }),
+        });
+
+        fireEvent.contextMenu(chapter, { clientX: window.innerWidth - 1, clientY: window.innerHeight - 1 });
+
+        await waitFor(() => {
+            expect(menu.style.left).toBe(`${window.innerWidth - 184}px`);
+            expect(menu.style.top).toBe(`${window.innerHeight - 112}px`);
+        });
+    });
+
     it('renames a chapter through the context menu', async () => {
         const user = userEvent.setup();
         const props = createProps();
