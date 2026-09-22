@@ -8,8 +8,6 @@ import { Book, Chapter, Volume } from '../../../types';
 import { getFuzzyScore } from '../../../utils/search';
 import { StorySearchResults } from '../../retrieval/components/StorySearchResults';
 import { useLocalStorySearch } from '../../retrieval/hooks/useLocalStorySearch';
-import { IndexScheduleControl } from '../../retrieval/components/IndexScheduleControl';
-import { indexScheduleRepository } from '../../../data/local/indexScheduleRepository';
 import { retrievalRepository } from '../../../data/local/retrievalRepository';
 import { resolveRetrievalChunkLocator } from '../../../domain/retrieval/locator';
 import type { RetrievalChunkLocator, RetrievalSearchHit } from '../../../domain/retrieval/contracts';
@@ -118,9 +116,6 @@ export function ChapterNavigator({
     onOpenRetrievalLocator,
 }: ChapterNavigatorProps): React.ReactElement {
     const [sidebarExpanded, setSidebarExpanded] = useState(true);
-    useEffect(() => {
-        if (localMode) void indexScheduleRepository.read(book.id).catch(() => undefined);
-    }, [book.id, localMode]);
     const [expandedVolumes, setExpandedVolumes] = useState<Set<string>>(() => new Set(book.volumes.map(v => v.id)));
     const [storySearchMode, setStorySearchMode] = useState<StorySearchMode>('title');
     const [sidebarSearchMode, setSidebarSearchMode] = useState<SidebarSearchMode>('chapter');
@@ -637,7 +632,6 @@ export function ChapterNavigator({
                                         onQueueIndex={() => void storySearch.queueIndex()}
                                         onSelectHit={selectStorySearchResult}
                                     />
-                                    <IndexScheduleControl key={book.id} bookId={book.id} />
                                 </div>
                             ) : sidebarSearchQuery.trim() && sidebarSearchResults.length > 0 && (
                                 <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-sm dark:border-slate-800 dark:bg-slate-900">

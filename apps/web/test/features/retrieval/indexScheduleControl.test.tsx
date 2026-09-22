@@ -15,12 +15,12 @@ describe('IndexScheduleControl', () => {
     it('persists the switch with the observed version and preserves it on failure', async () => {
         vi.mocked(indexScheduleRepository.save).mockRejectedValue(new Error('Version conflict'));
         render(<IndexScheduleControl bookId="book-a" />);
-        const toggle = screen.getByRole('checkbox', { name: 'Automatically build local index' });
+        const toggle = screen.getByRole('button', { name: 'Automatically build local index' });
         await waitFor(() => expect(toggle).toBeEnabled());
         fireEvent.click(toggle);
         await screen.findByText('Version conflict');
         expect(indexScheduleRepository.save).toHaveBeenCalledWith(true, 1);
-        expect(toggle).not.toBeChecked();
+        expect(toggle).toHaveAttribute('aria-pressed', 'false');
         expect(screen.getByText(/2 sources waiting/)).toBeInTheDocument();
     });
     it('shows the committed setting after successful save', async () => {
@@ -30,9 +30,9 @@ describe('IndexScheduleControl', () => {
             return saved;
         });
         render(<IndexScheduleControl />);
-        const toggle = screen.getByRole('checkbox');
+        const toggle = screen.getByRole('button', { name: 'Automatically build local index' });
         await waitFor(() => expect(toggle).toBeEnabled());
         fireEvent.click(toggle);
-        await waitFor(() => expect(toggle).toBeChecked());
+        await waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'true'));
     });
 });

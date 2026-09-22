@@ -1,6 +1,8 @@
 import { isTauri } from '@tauri-apps/api/core';
+import { RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { indexScheduleRepository, type IndexScheduleStatus } from '../../../data/local/indexScheduleRepository';
+import { SettingShell, ToggleControl } from '../../settings/components/SettingControls';
 
 export function IndexScheduleControl({ bookId }: { bookId?: string }) {
     const [status, setStatus] = useState<IndexScheduleStatus | null>(null);
@@ -36,17 +38,33 @@ export function IndexScheduleControl({ bookId }: { bookId?: string }) {
             setError(reason instanceof Error ? reason.message : 'Index preference could not be saved.');
         } finally { setSaving(false); }
     };
-    return <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-3 text-xs leading-5 text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-        <label className="flex items-center justify-between gap-3 font-semibold text-slate-800 dark:text-slate-200">
-            Automatically build local index
-            <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={status?.enabled ?? false} disabled={!status || saving} onChange={() => void toggle()} />
-        </label>
-        <p>Updates after saved changes settle for 60 seconds, or after 5 minutes of continuous changes. Uses local CPU.</p>
-        {status && <>
-            <p>Auto indexing {status.enabled ? 'on' : 'off'} · {status.pendingSources} sources waiting</p>
-            <p>Last completed: {status.lastCompletedAt ? new Date(status.lastCompletedAt).toLocaleString() : 'Not yet'}</p>
-            {status.lastError && <p className="text-amber-700 dark:text-amber-300">Last task failure: {status.lastError}</p>}
-        </>}
-        {error && <p role="alert" className="text-rose-600 dark:text-rose-300">{error}</p>}
-    </div>;
+    return <SettingShell
+        title="Local story index"
+        description="Keep semantic and lexical story search materials available locally. Automatic indexing waits for a pause in saved changes and uses local CPU."
+        icon={<RefreshCw size={22} />}
+    >
+        <div className="space-y-4">
+            <div className="flex items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">Automatically build local index</p>
+                    <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">Updates after saved changes settle for 60 seconds, or after 5 minutes of continuous changes.</p>
+                </div>
+                <ToggleControl
+                    ariaLabel="Automatically build local index"
+                    enabled={status?.enabled ?? false}
+                    disabled={!status || saving}
+                    onChange={() => void toggle()}
+                />
+            </div>
+            {status && <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{status.enabled ? 'Automatic indexing on' : 'Automatic indexing off'}</p>
+                    <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{status.pendingSources} sources waiting</span>
+                </div>
+                <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Last completed: {status.lastCompletedAt ? new Date(status.lastCompletedAt).toLocaleString() : 'Not yet'}</p>
+                {status.lastError && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">Last task failure: {status.lastError}</p>}
+            </div>}
+            {error && <p role="alert" className="text-sm text-rose-600 dark:text-rose-300">{error}</p>}
+        </div>
+    </SettingShell>;
 }
