@@ -5,6 +5,7 @@ import { usePreferences } from '../InteractionContent/PreferencesContext';
 import { SettingShell, ToggleControl } from '../features/settings/components/SettingControls';
 import { WritingPreferences } from '../features/settings/components/WritingPreferences';
 import { AiModels } from '../features/settings/components/AiModels';
+import { IndexScheduleControl } from '../features/retrieval/components/IndexScheduleControl';
 import { Button } from '../components/ui/Button';
 
 // Local mode: account/profile settings stay unmounted (no login, no account
@@ -91,6 +92,7 @@ const UserSettings: React.FC = () => {
 
                     <WritingPreferences />
                     <AiModels />
+                    <IndexScheduleControl />
                 </div>
 
                 <div className="flex justify-end">

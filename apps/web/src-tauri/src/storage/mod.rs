@@ -26,6 +26,7 @@ mod preferences;
 mod records;
 mod requests;
 mod retrieval_index;
+mod retrieval_scheduler;
 mod retrieval_search;
 mod retrieval_sources;
 mod targets;
@@ -46,6 +47,7 @@ pub use preferences::SavePreferences;
 pub use requests::*;
 pub(crate) use retrieval_index::IndexWork;
 pub use retrieval_index::{ListRetrievalIndexJobs, QueueRetrievalIndex, RetrievalIndexJobAction};
+pub use retrieval_scheduler::{IndexScheduleScope, SaveIndexPreferences};
 pub use retrieval_sources::{ListRetrievalChunks, ListRetrievalSources, SyncRetrievalSources};
 
 use rusqlite::Connection;

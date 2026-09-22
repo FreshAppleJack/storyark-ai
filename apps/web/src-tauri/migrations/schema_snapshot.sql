@@ -2,7 +2,7 @@
 
 -- Full schema snapshot for NEW EMPTY databases only; not an incremental migration.
 
--- Based on the registered Rust migrations through version 11. No application data.
+-- Based on the registered Rust migrations through version 12. No application data.
 
 -- Do not add this file to the runtime migration registry or execute all *.sql files.
 
@@ -268,7 +268,7 @@ CREATE TABLE retrieval_index_jobs (
     attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     last_error TEXT,
     created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL, automatic INTEGER NOT NULL DEFAULT 0 CHECK(automatic IN (0,1)),
     UNIQUE(source_id, source_version, index_version, embedding_fingerprint)
 ) STRICT;
 
@@ -299,6 +299,20 @@ CREATE TABLE ai_generation_events (
     source_versions_json TEXT NOT NULL CHECK(json_valid(source_versions_json)),
     created_at INTEGER NOT NULL CHECK(created_at >= 0)
 ) STRICT;
+
+CREATE TABLE retrieval_preferences (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    auto_index INTEGER NOT NULL DEFAULT 0 CHECK(auto_index IN (0,1)),
+    database_version INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE retrieval_dirty_sources (
+    source_id TEXT PRIMARY KEY REFERENCES retrieval_sources(source_id) ON DELETE CASCADE,
+    book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    source_version INTEGER NOT NULL,
+    first_changed INTEGER NOT NULL,
+    last_changed INTEGER NOT NULL
+);
 
 CREATE INDEX books_order ON books(position, id);
 
@@ -334,7 +348,9 @@ CREATE INDEX retrieval_search_events_book_time_idx
 CREATE INDEX ai_generation_events_book_time_idx
     ON ai_generation_events(book_id, created_at, event_id);
 
-PRAGMA user_version = 11;
+CREATE INDEX retrieval_dirty_book ON retrieval_dirty_sources(book_id);
+
+PRAGMA user_version = 12;
 
 COMMIT;
 

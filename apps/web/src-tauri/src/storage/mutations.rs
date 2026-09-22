@@ -78,6 +78,12 @@ impl Database {
         if changed != 1 {
             return Err(StorageError::new("VERSION_CONFLICT", "Record changed"));
         }
+        let book_id = if target.table == "books" {
+            target.id.as_str()
+        } else {
+            target.row["bookId"].as_str().ok_or_else(invalid)?
+        };
+        super::retrieval_sources::sync_sources_in_transaction(&tx, book_id)?;
         let result = record(&tx, target.table, &target.id)?;
         tx.commit()?;
         Ok(result)

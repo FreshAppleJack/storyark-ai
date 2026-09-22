@@ -23,6 +23,7 @@ fn request(
     mode: RetrievalSearchMode,
 ) -> RetrievalSearchRequest {
     RetrievalSearchRequest {
+        freshness_policy: None,
         scope: RetrievalScope {
             book_id: book_id.to_owned(),
             allowed_source_kinds: vec![kind],

@@ -202,6 +202,10 @@ impl Database {
                 params![CHUNK_INDEX_VERSION, source_id],
             )?;
             queued.push(job_id);
+            tx.execute(
+                "UPDATE retrieval_index_jobs SET automatic=0 WHERE job_id=?",
+                [queued.last().unwrap()],
+            )?;
         }
         let jobs = read_jobs(&tx, &input.book_id)?
             .into_iter()
@@ -229,10 +233,13 @@ impl Database {
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        tx.execute("UPDATE retrieval_index_jobs SET state='cancelled',last_error='Source superseded before indexing' WHERE book_id=? AND state='queued' AND NOT EXISTS(SELECT 1 FROM retrieval_sources s WHERE s.source_id=retrieval_index_jobs.source_id AND s.source_version=retrieval_index_jobs.source_version AND s.index_version=retrieval_index_jobs.index_version)", [book_id])?;
         let job = tx
             .query_row(
                 "SELECT job_id,book_id,source_id,source_version,index_version,embedding_fingerprint
-                 FROM retrieval_index_jobs WHERE book_id=? AND state='queued'
+                 FROM retrieval_index_jobs j WHERE book_id=? AND state='queued'
+                 AND (automatic=0 OR (SELECT auto_index FROM retrieval_preferences WHERE id=1)=1)
+                 AND EXISTS(SELECT 1 FROM retrieval_sources s WHERE s.source_id=j.source_id AND s.source_version=j.source_version AND s.index_version=j.index_version)
                  ORDER BY updated_at,job_id LIMIT 1",
                 [book_id],
                 |row| {
@@ -367,6 +374,10 @@ impl Database {
             params![work.index_version, work.embedding_fingerprint, work.source_id, work.book_id, work.source_version],
         )?;
         tx.execute(
+            "DELETE FROM retrieval_dirty_sources WHERE source_id=? AND source_version=?",
+            params![work.source_id, work.source_version],
+        )?;
+        tx.execute(
             "UPDATE retrieval_index_jobs SET state='completed',last_error=NULL,updated_at=? WHERE job_id=? AND state='indexing'",
             params![time, work.job_id],
         )?;
@@ -454,6 +465,12 @@ impl Database {
             ],
         )?;
         let source_status = if state == "queued" { "queued" } else { "stale" };
+        if state == "queued" {
+            tx.execute(
+                "UPDATE retrieval_index_jobs SET automatic=0 WHERE job_id=?",
+                [job_id],
+            )?;
+        }
         tx.execute(
             "UPDATE retrieval_sources SET index_status=? WHERE source_id=?
              AND source_version=(SELECT source_version FROM retrieval_index_jobs WHERE job_id=?)",

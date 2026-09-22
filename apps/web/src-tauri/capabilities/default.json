@@ -22,7 +22,7 @@
     "allow-local-read-preferences", "allow-local-save-preferences",
     "allow-local-read-brainstorm", "allow-local-save-brainstorm",
     "allow-local-sync-retrieval-sources", "allow-local-list-retrieval-sources", "allow-local-list-retrieval-chunks",
-    "allow-local-embedding-status", "allow-local-queue-retrieval-index", "allow-local-list-retrieval-index-jobs",
+    "allow-local-embedding-status", "allow-local-index-schedule-status", "allow-local-save-index-preferences", "allow-local-queue-retrieval-index", "allow-local-list-retrieval-index-jobs",
     "allow-local-pause-retrieval-index-job", "allow-local-cancel-retrieval-index-job", "allow-local-retry-retrieval-index-job",
     "allow-local-search-retrieval",
     "core:event:allow-listen",

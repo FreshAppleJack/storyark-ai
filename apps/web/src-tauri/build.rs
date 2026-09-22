@@ -58,6 +58,8 @@ fn main() {
             "local_list_retrieval_sources",
             "local_list_retrieval_chunks",
             "local_embedding_status",
+            "local_index_schedule_status",
+            "local_save_index_preferences",
             "local_queue_retrieval_index",
             "local_list_retrieval_index_jobs",
             "local_pause_retrieval_index_job",

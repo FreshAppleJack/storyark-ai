@@ -17,6 +17,13 @@ pub fn run() {
             let storage = std::thread::spawn(move || storage::Storage::open(&directory))
                 .join()
                 .map_err(|_| std::io::Error::other("Storage initialization worker failed"))??;
+            app.state::<rag::indexing::RetrievalIndexRuntime>()
+                .coordinate(
+                    storage.clone(),
+                    app.state::<rag::embeddings::EmbeddingRuntime>()
+                        .inner()
+                        .clone(),
+                );
             app.manage(storage);
             Ok(())
         })
@@ -70,6 +77,8 @@ fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri
         retrieval_commands::local_list_retrieval_sources,
         retrieval_commands::local_list_retrieval_chunks,
         retrieval_commands::local_embedding_status,
+        retrieval_commands::local_index_schedule_status,
+        retrieval_commands::local_save_index_preferences,
         retrieval_commands::local_queue_retrieval_index,
         retrieval_commands::local_list_retrieval_index_jobs,
         retrieval_commands::local_pause_retrieval_index_job,

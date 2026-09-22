@@ -167,6 +167,19 @@ pub async fn local_search_retrieval(
     embedding: tauri::State<'_, EmbeddingRuntime>,
     input: RetrievalSearchRequest,
 ) -> Result<Reply, ()> {
+    let wait_ms = input
+        .freshness_policy
+        .as_ref()
+        .map_or(0, |policy| policy.max_wait_ms);
+    if wait_ms > 2_000 {
+        return Ok(Reply::Failure {
+            ok: false,
+            error: StorageError::new(
+                "INVALID_INPUT",
+                "Index wait budget must not exceed 2000 milliseconds",
+            ),
+        });
+    }
     let requested_mode = input.mode.clone();
     let (query_vector, degradation_reason) =
         if matches!(requested_mode, RetrievalSearchMode::Lexical) {
@@ -181,11 +194,7 @@ pub async fn local_search_retrieval(
         } else {
             let embedding = embedding.inner().clone();
             let query = input.query.clone();
-            match tauri::async_runtime::spawn_blocking(move || {
-                embedding.with_provider(|provider| provider.embed_query(&query))
-            })
-            .await
-            {
+            match tauri::async_runtime::spawn_blocking(move || embedding.query(&query)).await {
                 Ok(Ok(vector)) => (Some(vector), None),
                 Ok(Err(error)) => (None, Some(error)),
                 Err(_) => (
@@ -194,8 +203,49 @@ pub async fn local_search_retrieval(
                 ),
             }
         };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(wait_ms);
+    loop {
+        let request = input.clone();
+        let vector = query_vector.clone();
+        let reason = degradation_reason.clone();
+        let result = storage
+            .run(move |db| db.search_retrieval(request, vector, reason))
+            .await;
+        let waiting = result.as_ref().is_ok_and(|value| value["degraded"] == true);
+        if !waiting || query_vector.is_none() || std::time::Instant::now() >= deadline {
+            return Ok(result.into());
+        }
+        tokio::time::sleep(
+            std::time::Duration::from_millis(100)
+                .min(deadline.saturating_duration_since(std::time::Instant::now())),
+        )
+        .await;
+    }
+}
+
+#[tauri::command]
+pub async fn local_index_schedule_status(
+    storage: tauri::State<'_, Storage>,
+    runtime: tauri::State<'_, RetrievalIndexRuntime>,
+    input: crate::storage::IndexScheduleScope,
+) -> Result<Reply, ()> {
+    let book = input.book_id.clone();
+    let result = storage
+        .run(move |db| db.index_schedule_status(input.book_id.as_deref()))
+        .await;
+    if result.is_ok() {
+        runtime.focus(book);
+    }
+    Ok(result.into())
+}
+
+#[tauri::command]
+pub async fn local_save_index_preferences(
+    storage: tauri::State<'_, Storage>,
+    input: crate::storage::SaveIndexPreferences,
+) -> Result<Reply, ()> {
     Ok(storage
-        .run(move |db| db.search_retrieval(input, query_vector, degradation_reason))
+        .run(move |db| db.save_index_preferences(input))
         .await
         .into())
 }

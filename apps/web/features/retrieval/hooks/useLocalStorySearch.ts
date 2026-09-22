@@ -253,7 +253,7 @@ export function useLocalStorySearch(
     }, [bookId, enabled, refreshStatus]);
 
     useEffect(() => {
-        if (!enabled || !indexStatus || !['queued', 'indexing'].includes(indexStatus)) return;
+        if (!enabled) return;
         const timer = window.setInterval(() => void refreshStatus(), INDEX_POLL_INTERVAL_MS);
         return () => window.clearInterval(timer);
     }, [enabled, indexStatus, refreshStatus]);

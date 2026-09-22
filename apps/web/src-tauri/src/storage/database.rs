@@ -14,7 +14,8 @@ const MIGRATION_0008: &str = include_str!("../../migrations/0008_retrieval_chunk
 const MIGRATION_0009: &str = include_str!("../../migrations/0009_retrieval_indexing.sql");
 const MIGRATION_0010: &str = include_str!("../../migrations/0010_retrieval_audit.sql");
 const MIGRATION_0011: &str = include_str!("../../migrations/0011_retrieval_search_task.sql");
-const LATEST_VERSION: i64 = 11;
+const MIGRATION_0012: &str = include_str!("../../migrations/0012_retrieval_scheduler.sql");
+const LATEST_VERSION: i64 = 12;
 const RETRIEVAL_SEARCH_TASK_REPAIR: &str =
     "ALTER TABLE retrieval_search_events ADD COLUMN task TEXT NOT NULL DEFAULT 'generic' CHECK(length(trim(task)) BETWEEN 1 AND 64);";
 
@@ -77,6 +78,7 @@ impl Database {
             9 => {}
             10 => {}
             11 => {}
+            12 => {}
             _ => {
                 return Err(StorageError::new(
                     "STORAGE_FAILURE",
@@ -119,6 +121,15 @@ impl Database {
             }
             tx.pragma_update(None, "user_version", 11)?;
         }
+        if version < 12 {
+            tx.execute_batch(MIGRATION_0012)?;
+            tx.pragma_update(None, "user_version", 12)?;
+        }
+        tx.prepare("SELECT auto_index,database_version FROM retrieval_preferences LIMIT 0")?;
+        tx.execute(
+            "INSERT OR IGNORE INTO retrieval_preferences(id) VALUES(1)",
+            [],
+        )?;
         tx.prepare("SELECT credential_mode FROM ai_model_configs LIMIT 0")?;
         tx.prepare("SELECT credential_ref FROM ai_credential_cleanup LIMIT 0")?;
         tx.prepare("SELECT c.config_version,s.default_config_id FROM ai_model_configs c,ai_generation_settings s LIMIT 0")?;

@@ -209,7 +209,10 @@ impl EmbeddingStatus {
 }
 
 #[derive(Clone, Default)]
-pub struct EmbeddingRuntime(Arc<Mutex<EmbeddingRuntimeState>>);
+pub struct EmbeddingRuntime(
+    Arc<Mutex<EmbeddingRuntimeState>>,
+    Arc<std::sync::atomic::AtomicUsize>,
+);
 
 struct EmbeddingRuntimeState {
     provider: Option<LocalFastEmbedProvider>,
@@ -226,6 +229,16 @@ impl Default for EmbeddingRuntimeState {
 }
 
 impl EmbeddingRuntime {
+    pub fn queries_waiting(&self) -> bool {
+        self.1.load(std::sync::atomic::Ordering::SeqCst) > 0
+    }
+
+    pub fn query(&self, text: &str) -> Result<Vec<f32>, String> {
+        self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let result = self.with_provider(|provider| provider.embed_query(text));
+        self.1.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        result
+    }
     pub fn status(&self) -> EmbeddingStatus {
         let mut state = self.0.lock().expect("embedding runtime lock poisoned");
         if let Some(status) = &state.status {

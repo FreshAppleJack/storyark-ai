@@ -851,6 +851,17 @@ fn sync_book_sources(db: &Connection, book_id: &str) -> Result<()> {
                 metadata,
             ],
         )?;
+        if !unchanged
+            && draft.source_status == RetrievalSourceStatus::Active
+            && !draft.source_text.trim().is_empty()
+        {
+            super::retrieval_scheduler::mark_dirty(
+                db,
+                book_id,
+                &draft.source_id,
+                draft.source_version,
+            )?;
+        }
     }
     let existing_ids = db
         .prepare("SELECT source_id FROM retrieval_sources WHERE book_id=?")?
@@ -1133,7 +1144,16 @@ impl Database {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let scope = resolve_scope(&tx, input.scope)?;
-        sync_book_sources(&tx, &scope.book_id)?;
+        // Saves maintain the registry transactionally. Only bootstrap books
+        // predating the registry; status polling must not re-chunk a whole book.
+        let registered: bool = tx.query_row(
+            "SELECT EXISTS(SELECT 1 FROM retrieval_sources WHERE book_id=?)",
+            [&scope.book_id],
+            |row| row.get(0),
+        )?;
+        if !registered {
+            sync_book_sources(&tx, &scope.book_id)?;
+        }
         let sources = read_sources(&tx, &scope.book_id)?
             .into_iter()
             .filter(|source| source_is_visible(source, &scope))

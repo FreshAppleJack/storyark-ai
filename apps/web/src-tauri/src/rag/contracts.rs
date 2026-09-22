@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub const RETRIEVAL_VERSION: &str = "p1-d-v1";
+pub const RETRIEVAL_VERSION: &str = "p1-r0-v1";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -379,6 +379,8 @@ pub enum RetrievalSearchStatus {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RetrievalSearchRequest {
+    #[serde(default)]
+    pub freshness_policy: Option<RetrievalFreshnessPolicy>,
     pub scope: RetrievalScope,
     pub query: String,
     #[serde(default = "default_search_mode")]
@@ -399,6 +401,16 @@ pub struct RetrievalSearchRequest {
     /// remains authoritative when the search status is calculated.
     #[serde(default)]
     pub index_status: Option<RetrievalIndexStatus>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RetrievalFreshnessPolicy {
+    pub fresh_only: bool,
+    pub allow_lexical_fallback: bool,
+    /// Index waiting budget only; never starts indexing or generation.
+    #[serde(default)]
+    pub max_wait_ms: u64,
 }
 
 fn default_search_mode() -> RetrievalSearchMode {

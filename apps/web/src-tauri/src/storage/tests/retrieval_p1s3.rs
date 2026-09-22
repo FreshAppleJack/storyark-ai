@@ -10,6 +10,7 @@ use std::time::Instant;
 
 fn semantic_request(book_id: &str, query: &str) -> RetrievalSearchRequest {
     RetrievalSearchRequest {
+        freshness_policy: None,
         scope: RetrievalScope {
             book_id: book_id.to_owned(),
             allowed_source_kinds: vec![RetrievalSourceKind::Manuscript],

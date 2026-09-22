@@ -59,7 +59,7 @@ fn upgrade_from_v1_preserves_work_data_and_creates_a_prior_backup() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 11);
+    assert_eq!(version, 12);
     let loaded = db.read_book(&book_id).unwrap();
     let chapter = &loaded["chapters"][0];
     // Content, original recovery copy, ids, unknown note fields and the lock
@@ -164,7 +164,7 @@ fn version_eight_database_runs_the_retrieval_index_migration() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 11);
+    assert_eq!(version, 12);
     db.connection
         .prepare("SELECT * FROM retrieval_index_jobs LIMIT 0")
         .unwrap();
@@ -225,7 +225,7 @@ fn a_fresh_database_initializes_at_the_latest_version_with_all_tables() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 11);
+    assert_eq!(version, 12);
     for table in [
         "books",
         "volumes",
@@ -284,6 +284,9 @@ fn version_ten_audit_database_without_task_column_is_repaired() {
              DROP TABLE retrieval_search_events_v10;
              CREATE INDEX retrieval_search_events_book_time_idx
                  ON retrieval_search_events(book_id, created_at, event_id);
+             DROP TABLE retrieval_dirty_sources;
+             DROP TABLE retrieval_preferences;
+             ALTER TABLE retrieval_index_jobs DROP COLUMN automatic;
              PRAGMA user_version = 10;",
         )
         .unwrap();
@@ -294,7 +297,7 @@ fn version_ten_audit_database_without_task_column_is_repaired() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 11);
+    assert_eq!(version, 12);
     repaired
         .connection
         .prepare("SELECT task FROM retrieval_search_events LIMIT 0")

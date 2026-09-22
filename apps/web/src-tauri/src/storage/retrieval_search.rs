@@ -594,7 +594,18 @@ impl Database {
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let scope = resolve_scope(&tx, input.scope)?;
+        let mut scope = resolve_scope(&tx, input.scope)?;
+        if input
+            .freshness_policy
+            .as_ref()
+            .is_some_and(|policy| policy.fresh_only)
+            || !matches!(
+                input.task,
+                crate::rag::contracts::RetrievalTaskStrategy::Generic
+            )
+        {
+            scope.include_stale = false;
+        }
         sync_sources_in_transaction(&tx, &scope.book_id)?;
         let chunks = read_chunks(&tx, &scope)?;
         let chunk_by_id = chunks
@@ -632,8 +643,22 @@ impl Database {
         } else {
             Vec::new()
         };
+        let require_current_scope = input
+            .freshness_policy
+            .as_ref()
+            .is_some_and(|policy| policy.fresh_only)
+            || !matches!(input.task, RetrievalTaskStrategy::Generic);
         let semantic_index_ready =
-            semantic_index_ready(&chunk_by_id, &sources, fingerprint.as_deref());
+            semantic_index_ready(&chunk_by_id, &sources, fingerprint.as_deref())
+                && (!require_current_scope
+                    || sources
+                        .values()
+                        .filter(|source| !source.source_text.trim().is_empty())
+                        .all(|source| {
+                            source.index_status == RetrievalIndexStatus::Ready
+                                && source.index_version == Some(CHUNK_INDEX_VERSION)
+                                && source.embedding_fingerprint == fingerprint
+                        }));
         let effective_mode = match requested_mode {
             RetrievalSearchMode::Lexical => RetrievalSearchMode::Lexical,
             RetrievalSearchMode::Semantic if !semantic_index_ready => RetrievalSearchMode::Lexical,
@@ -658,6 +683,14 @@ impl Database {
         .filter(|candidate| !is_excluded(&candidate.chunk.chunk_id, &excluded))
         .collect::<Vec<_>>();
         primary.truncate(limit);
+        if degraded
+            && input
+                .freshness_policy
+                .as_ref()
+                .is_some_and(|policy| !policy.allow_lexical_fallback)
+        {
+            primary.clear();
+        }
         let adjacent =
             add_adjacent_candidates(&primary, &chunk_by_id, &sources, &excluded, adjacent_count);
         primary.extend(adjacent);

@@ -118,6 +118,7 @@ export interface EmbeddingStatus {
 }
 
 export interface RetrievalSearchRequest {
+    freshnessPolicy?: { freshOnly: boolean; allowLexicalFallback: boolean; maxWaitMs: number };
     scope: RetrievalScope;
     query: string;
     mode: RetrievalSearchMode;
