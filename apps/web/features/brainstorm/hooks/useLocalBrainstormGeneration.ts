@@ -4,7 +4,9 @@ import {
     type GenerationEvent,
     type GenerationRequest,
 } from '../../../data/local/aiGenerationRepository';
+import { retrievalRepository } from '../../../data/local/retrievalRepository';
 import { aiErrorMessage, aiSettingsRepository, type AiConfigRecord } from '../../../data/local/aiSettingsRepository';
+import { generationRetrievalTrace, retrievalContextSection, retrievalStatusNotice } from '../../retrieval/retrievalContext';
 import type { BrainstormGenerationMetadata } from '../../../types';
 import {
     EMPTY_BRAINSTORM_CANDIDATE,
@@ -29,6 +31,7 @@ interface UseLocalBrainstormGenerationResult {
     discardCandidate: () => void;
     closeCandidate: () => void;
     acceptOption: (optionId: string) => boolean;
+    toggleRetrievalHit: (hitId: string) => void;
 }
 
 interface ActiveGeneration {
@@ -113,6 +116,7 @@ export function useLocalBrainstormGeneration({
     const candidateRef = useRef(candidate);
     const optionsRef = useRef({ enabled, bookId, isReadOnly, getContext });
     const sessionRef = useRef(sessionId());
+    const excludedHitIdsRef = useRef<string[]>([]);
 
     useLayoutEffect(() => {
         optionsRef.current = { enabled, bookId, isReadOnly, getContext };
@@ -226,6 +230,7 @@ export function useLocalBrainstormGeneration({
         updateCandidate({
             status: 'starting', rawText: '', options: [], errorMessage: null, metadata: null,
             sourceFingerprint: source.sourceFingerprint, draftRevision,
+            retrievalContext: null, retrievalStatus: null, retrievalNotice: null,
         });
 
         try {
@@ -237,13 +242,46 @@ export function useLocalBrainstormGeneration({
             if (config.credentialStatus === 'unavailable') throw Object.assign(new Error('CREDENTIAL_UNAVAILABLE'), { code: 'CREDENTIAL_UNAVAILABLE' }) as AiGenerationError;
             active.config = config;
 
+            let retrievalResponse: Awaited<ReturnType<typeof retrievalRepository.search>> | null = null;
+            let retrievalNotice: string | null = null;
+            try {
+                retrievalResponse = await retrievalRepository.search({
+                    scope: source.retrievalScope,
+                    query: source.retrievalQuery,
+                    mode: 'hybrid',
+                    limit: 8,
+                    excludedHitIds: excludedHitIdsRef.current,
+                    charBudget: 8_000,
+                    tokenBudget: 2_000,
+                    adjacentChunkCount: 1,
+                    task: 'brainstorm',
+                    indexStatus: undefined,
+                    freshnessPolicy: { freshOnly: true, allowLexicalFallback: true, maxWaitMs: 500 },
+                });
+                retrievalNotice = retrievalStatusNotice(retrievalResponse);
+            } catch {
+                retrievalNotice = 'Retrieval was unavailable. The explicit chapter, planning, and character context remains in use.';
+            }
+            if (!isActive(active)) return;
+            const retrievalSection = retrievalResponse ? retrievalContextSection(retrievalResponse.context) : null;
+            const sections = retrievalSection ? [...source.sections, retrievalSection] : source.sections;
+            const retrievalContext = retrievalResponse?.context ?? null;
+            const sourceVersions = source.target.kind === 'brainstorm' ? source.target.sources : [];
+            updateCandidate({
+                ...candidateRef.current,
+                retrievalContext,
+                retrievalStatus: retrievalResponse?.status ?? null,
+                retrievalNotice,
+            });
+
             const contextSnapshot = await aiGenerationRepository.prepareContext({
                 bookId: current.bookId,
                 sessionId: active.sessionId,
                 draftRevision,
-                maxChars: source.maxChars,
+                maxChars: sections.reduce((total, section) => total + Array.from(section.text).length, 0),
                 target: source.target,
-                sections: source.sections,
+                sections,
+                ...(retrievalContext ? { retrievalContext } : {}),
             });
             if (!isActive(active)) return;
             const unlisten = await aiGenerationRepository.subscribe(handleEvent);
@@ -261,6 +299,9 @@ export function useLocalBrainstormGeneration({
                 target: source.target,
                 contextSnapshotId: contextSnapshot.contextSnapshotId,
                 outputChars: source.outputChars,
+                retrievalTrace: retrievalResponse
+                    ? generationRetrievalTrace(retrievalResponse, sourceVersions)
+                    : null,
             };
             await aiGenerationRepository.start(input);
         } catch (error) {
@@ -273,15 +314,31 @@ export function useLocalBrainstormGeneration({
 
     const discardCandidate = useCallback(() => {
         if (activeRef.current) stop();
+        excludedHitIdsRef.current = [];
         updateCandidate(EMPTY_BRAINSTORM_CANDIDATE);
     }, [stop, updateCandidate]);
 
     const closeCandidate = useCallback(() => { discardCandidate(); }, [discardCandidate]);
 
     const regenerate = useCallback(async () => {
-        discardCandidate();
+        if (activeRef.current) stop();
+        updateCandidate(EMPTY_BRAINSTORM_CANDIDATE);
         await generate();
-    }, [discardCandidate, generate]);
+    }, [generate, stop, updateCandidate]);
+
+    const toggleRetrievalHit = useCallback((hitId: string) => {
+        const excluded = new Set(excludedHitIdsRef.current);
+        if (excluded.has(hitId)) excluded.delete(hitId);
+        else excluded.add(hitId);
+        excludedHitIdsRef.current = [...excluded];
+        const current = candidateRef.current;
+        if (current.retrievalContext) {
+            updateCandidate({
+                ...current,
+                retrievalContext: { ...current.retrievalContext, excludedHitIds: excludedHitIdsRef.current },
+            });
+        }
+    }, [updateCandidate]);
 
     const acceptOption = useCallback((optionId: string): boolean => {
         const snapshot = candidateRef.current;
@@ -319,5 +376,6 @@ export function useLocalBrainstormGeneration({
         discardCandidate,
         closeCandidate,
         acceptOption,
+        toggleRetrievalHit,
     };
 }

@@ -1,4 +1,5 @@
 import type { BrainstormGenerationMetadata, BrainstormOption } from '../../types';
+import type { RetrievalContext, RetrievalSearchStatus } from '../../domain/retrieval/contracts';
 
 export const BRAINSTORM_FIELD_LIMITS = {
     title: { min: 1, max: 240 },
@@ -25,6 +26,9 @@ export interface BrainstormCandidate {
     metadata: BrainstormGenerationMetadata | null;
     sourceFingerprint: string | null;
     draftRevision: number | null;
+    retrievalContext: RetrievalContext | null;
+    retrievalStatus: RetrievalSearchStatus | null;
+    retrievalNotice: string | null;
 }
 
 export const EMPTY_BRAINSTORM_CANDIDATE: BrainstormCandidate = {
@@ -35,6 +39,9 @@ export const EMPTY_BRAINSTORM_CANDIDATE: BrainstormCandidate = {
     metadata: null,
     sourceFingerprint: null,
     draftRevision: null,
+    retrievalContext: null,
+    retrievalStatus: null,
+    retrievalNotice: null,
 };
 
 function makeId(): string {
@@ -140,5 +147,8 @@ export function candidateFromOptions(
         metadata,
         sourceFingerprint,
         draftRevision,
+        retrievalContext: null,
+        retrievalStatus: null,
+        retrievalNotice: null,
     };
 }

@@ -1,6 +1,7 @@
 import { Check, Loader2, RefreshCw, Square, Trash2, X } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import type { AiContinueCandidate as AiContinueCandidateState } from '../hooks/useLocalAiContinue';
+import { RetrievalContextPanel } from '../../retrieval/components/RetrievalContextPanel';
 
 interface AiContinueCandidateProps {
     candidate: AiContinueCandidateState;
@@ -12,6 +13,7 @@ interface AiContinueCandidateProps {
     onClose: () => void;
     onDiscard: () => void;
     onRegenerate: () => void;
+    onToggleRetrievalHit: (hitId: string) => void;
 }
 
 function statusLabel(status: AiContinueCandidateState['status']): string {
@@ -37,6 +39,7 @@ export function AiContinueCandidate({
     onClose,
     onDiscard,
     onRegenerate,
+    onToggleRetrievalHit,
 }: AiContinueCandidateProps): React.ReactElement | null {
     if (candidate.status === 'idle') return null;
 
@@ -69,6 +72,14 @@ export function AiContinueCandidate({
                     {candidate.errorMessage}
                 </p>
             )}
+
+            <RetrievalContextPanel
+                context={candidate.source?.retrievalContext ?? null}
+                notice={candidate.source?.retrievalNotice ?? null}
+                excludedHitIds={candidate.source?.retrievalContext?.excludedHitIds ?? []}
+                onToggleHit={onToggleRetrievalHit}
+                disabled={isAiLoading}
+            />
 
             {candidate.status === 'completed' && !canAdopt && adoptDisabledReason && (
                 <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{adoptDisabledReason}</p>

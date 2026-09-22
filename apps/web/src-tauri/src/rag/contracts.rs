@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-pub const RETRIEVAL_VERSION: &str = "p1-r0-v1";
+pub const RETRIEVAL_VERSION: &str = "p1-r1-v1";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -455,6 +455,7 @@ pub struct RetrievalSearchHit {
 #[serde(rename_all = "camelCase")]
 pub struct RetrievalSourceVersionRecord {
     pub source_id: String,
+    pub chapter_id: Option<String>,
     pub source_version: i64,
     pub index_version: i64,
 }
@@ -466,13 +467,55 @@ pub struct RetrievalSearchTrace {
     pub retrieval_version: String,
     pub task: RetrievalTaskStrategy,
     pub created_at: i64,
+    pub book_id: String,
+    pub chapter_id: Option<String>,
+    pub scope: RetrievalScope,
+    pub excluded_hit_ids: Vec<String>,
+    pub index_version: Option<i64>,
     pub embedding_fingerprint: Option<String>,
     pub source_versions: Vec<RetrievalSourceVersionRecord>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RetrievalContextMaterial {
+    pub hit_id: String,
+    pub label: String,
+    pub source_kind: RetrievalSourceKind,
+    pub entity_id: String,
+    pub chapter_id: Option<String>,
+    pub source_version: i64,
+    pub chunk_id: String,
+    pub quote: String,
+    pub freshness: RetrievalFreshness,
+    pub recall_methods: Vec<RetrievalRecallMethod>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievalContextEvidence {
+    #[serde(flatten)]
+    pub material: RetrievalContextMaterial,
+    pub text: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RetrievalContext {
+    pub search_id: String,
+    pub retrieval_version: String,
+    pub task: RetrievalTaskStrategy,
+    pub requested_at: i64,
+    pub book_id: String,
+    pub chapter_id: Option<String>,
+    pub scope: RetrievalScope,
+    pub excluded_hit_ids: Vec<String>,
+    pub source_versions: Vec<RetrievalSourceVersionRecord>,
+    pub index_version: Option<i64>,
+    pub embedding_fingerprint: Option<String>,
+    pub budget: RetrievalContextBudget,
+    pub materials: Vec<RetrievalContextMaterial>,
+    pub evidence: Vec<RetrievalContextEvidence>,
     pub text: String,
     pub char_count: usize,
     pub token_estimate: usize,
@@ -481,6 +524,17 @@ pub struct RetrievalContext {
     pub included_hit_ids: Vec<String>,
     pub omitted_hit_ids: Vec<String>,
 }
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetrievalContextBudget {
+    pub char_budget: usize,
+    pub token_budget: Option<usize>,
+}
+
+pub type RetrievalRequest = RetrievalSearchRequest;
+pub type RetrievalHit = RetrievalSearchHit;
+pub type RetrievalTrace = RetrievalSearchTrace;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]

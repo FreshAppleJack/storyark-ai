@@ -339,6 +339,7 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
         regenerate: sources?.generation ? localGeneration.regenerate : handleGenerate,
         discardCandidate: sources?.generation ? localGeneration.discardCandidate : () => setRemoteCandidate(EMPTY_BRAINSTORM_CANDIDATE),
         closeCandidate: sources?.generation ? localGeneration.closeCandidate : () => setRemoteCandidate(EMPTY_BRAINSTORM_CANDIDATE),
+        toggleRetrievalHit: sources?.generation ? localGeneration.toggleRetrievalHit : () => undefined,
         toggleChapter, chooseOption, showAllOptions, updateFinalContent, handleGenerate, handleSave
     };
 }

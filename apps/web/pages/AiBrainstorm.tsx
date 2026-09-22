@@ -76,7 +76,8 @@ function AiBrainstormContent({ bookId, localBook, sources }: { bookId: string; l
                         generationAvailable={editor.generationAvailable} isSnapshotStale={editor.isSnapshotStale}
                         selectedChapterIds={editor.selectedChapterIds} missingSummaryChapters={editor.missingSummaryChapters}
                         errorMessage={editor.errorMessage} visibleOptions={editor.visibleOptions} hasSelectedOption={editor.hasSelectedOption} workspace={editor.workspace}
-                        chooseOption={editor.chooseOption} showAllOptions={editor.showAllOptions} updateFinalContent={editor.updateFinalContent} />
+                        chooseOption={editor.chooseOption} showAllOptions={editor.showAllOptions} updateFinalContent={editor.updateFinalContent}
+                        toggleRetrievalHit={editor.toggleRetrievalHit} />
                     <BrainstormContextPanel mentionedCharacters={editor.mentionedCharacters} />
                 </div>
             )}

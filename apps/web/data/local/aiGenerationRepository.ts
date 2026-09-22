@@ -1,5 +1,11 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { call } from './repository';
+import type {
+    RetrievalContext,
+    RetrievalScope,
+    RetrievalSourceVersionRecord,
+    RetrievalTaskStrategy,
+} from '../../domain/retrieval/contracts';
 
 export type GenerationTarget =
     | { kind: 'continue'; chapterId: string; databaseVersion: number }
@@ -12,10 +18,10 @@ export type GenerationTarget =
     };
 
 export interface SourceVersion { chapterId: string; databaseVersion: number }
-export type ContextKind = 'currentDraft' | 'writtenFact' | 'authorSetting' | 'manualSummary' | 'futurePlan';
+export type ContextKind = 'currentDraft' | 'writtenFact' | 'authorSetting' | 'manualSummary' | 'futurePlan' | 'retrievalEvidence';
 export interface ContextSection { kind: ContextKind; label: string; text: string }
 export interface ContextInput {
-    bookId: string; sessionId: string; draftRevision: number; maxChars: number; target: GenerationTarget; sections: ContextSection[];
+    bookId: string; sessionId: string; draftRevision: number; maxChars: number; target: GenerationTarget; sections: ContextSection[]; retrievalContext?: RetrievalContext | null;
 }
 export interface ContextSnapshot extends ContextInput {
     contextSnapshotId: string; charCount: number;
@@ -24,6 +30,20 @@ export interface GenerationRequest {
     requestId: string; bookId: string; sessionId: string; draftRevision: number;
     config: { id: string; expectedConfigVersion: number };
     target: GenerationTarget; contextSnapshotId: string; outputChars: number;
+    retrievalTrace?: GenerationRetrievalTrace | null;
+}
+export interface GenerationRetrievalTrace {
+    retrievalVersion: string;
+    sourceVersions: SourceVersion[];
+    retrievalSourceVersions?: RetrievalSourceVersionRecord[];
+    searchId?: string;
+    task?: RetrievalTaskStrategy;
+    requestedAt?: number;
+    scope?: RetrievalScope;
+    excludedHitIds?: string[];
+    includedHitIds?: string[];
+    indexVersion?: number | null;
+    embeddingFingerprint?: string | null;
 }
 export type GenerationPayload =
     | { kind: 'started' }

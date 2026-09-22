@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     start: vi.fn(),
     cancel: vi.fn(),
     subscribe: vi.fn(),
+    search: vi.fn(),
 }));
 
 vi.mock('../../../data/local/aiGenerationRepository', () => ({
@@ -24,6 +25,9 @@ vi.mock('../../../data/local/aiGenerationRepository', () => ({
 vi.mock('../../../data/local/aiSettingsRepository', () => ({
     aiSettingsRepository: { list: mocks.list },
     aiErrorMessage: (error: unknown) => `mapped:${error && typeof error === 'object' && 'code' in error ? String(error.code) : 'unknown'}`,
+}));
+vi.mock('../../../data/local/retrievalRepository', () => ({
+    retrievalRepository: { search: mocks.search },
 }));
 
 const anchor: AiContinueAnchor = { from: 4, to: 4, docSize: 18, selectedText: '' };
@@ -86,6 +90,7 @@ beforeEach(() => {
     mocks.start.mockResolvedValue({ requestId: 'accepted-request' });
     mocks.cancel.mockResolvedValue({ requestId: 'request', outcome: 'cancelled' });
     mocks.subscribe.mockResolvedValue(vi.fn());
+    mocks.search.mockRejectedValue(new Error('retrieval unavailable'));
 });
 
 describe('useLocalAiContinue', () => {
@@ -133,6 +138,46 @@ describe('useLocalAiContinue', () => {
         act(() => { view.result.current.closeCandidate(); });
         expect(view.result.current.candidate.status).toBe('idle');
         expect(insertCandidateAtAnchor).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows used retrieval evidence and carries excluded hits into regeneration', async () => {
+        const retrievalResponse = {
+            status: 'ready',
+            degraded: false,
+            context: {
+                searchId: 'search-1', retrievalVersion: 'p1-r1-v1', task: 'continuation', requestedAt: 1,
+                bookId: 'book-1', chapterId: 'chapter-1', scope: { bookId: 'book-1' }, excludedHitIds: [],
+                sourceVersions: [], indexVersion: 1, embeddingFingerprint: 'fingerprint',
+                budget: { charBudget: 8000, tokenBudget: 2000 }, materials: [{
+                    hitId: 'hit-1', label: 'manuscript evidence', sourceKind: 'manuscript', entityId: 'chapter-1',
+                    chapterId: 'chapter-1', sourceVersion: 7, chunkId: 'chunk-1', quote: 'A door opened.', freshness: 'fresh', recallMethods: ['semantic'],
+                }], evidence: [{
+                    hitId: 'hit-1', label: 'manuscript evidence', sourceKind: 'manuscript', entityId: 'chapter-1',
+                    chapterId: 'chapter-1', sourceVersion: 7, chunkId: 'chunk-1', quote: 'A door opened.', freshness: 'fresh', recallMethods: ['semantic'], text: 'A door opened.',
+                }], text: '[manuscript evidence]\nA door opened.', charCount: 34, tokenEstimate: 8,
+                charBudget: 8000, tokenBudget: 2000, includedHitIds: ['hit-1'], omittedHitIds: [],
+            },
+            trace: {
+                searchId: 'search-1', retrievalVersion: 'p1-r1-v1', task: 'continuation', createdAt: 1,
+                bookId: 'book-1', chapterId: 'chapter-1', scope: { bookId: 'book-1' }, excludedHitIds: [],
+                indexVersion: 1, embeddingFingerprint: 'fingerprint', sourceVersions: [],
+            },
+        };
+        mocks.search.mockResolvedValue(retrievalResponse);
+        const { view } = setup();
+
+        await act(async () => { await view.result.current.continueWriting(); });
+        expect(view.result.current.candidate.source?.retrievalContext?.includedHitIds).toEqual(['hit-1']);
+        expect(mocks.prepareContext).toHaveBeenCalledWith(expect.objectContaining({
+            retrievalContext: expect.objectContaining({ searchId: 'search-1' }),
+            sections: expect.arrayContaining([expect.objectContaining({ kind: 'retrievalEvidence' })]),
+        }));
+
+        act(() => { view.result.current.toggleRetrievalHit('hit-1'); });
+        expect(view.result.current.candidate.source?.retrievalContext?.excludedHitIds).toEqual(['hit-1']);
+        emit(view, { kind: 'completed', text: 'candidate', usage: { inputTokens: null, outputTokens: null, totalTokens: null }, finishReason: 'stop' }, 0);
+        await act(async () => { await view.result.current.regenerate(); });
+        expect(mocks.search).toHaveBeenLastCalledWith(expect.objectContaining({ excludedHitIds: ['hit-1'] }));
     });
 
     it('preserves a candidate when the draft revision changes before adoption', async () => {

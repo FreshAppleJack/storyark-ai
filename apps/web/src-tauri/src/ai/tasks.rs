@@ -106,6 +106,7 @@ impl AiRuntime {
             target: input.target,
             sections: input.sections,
             char_count,
+            retrieval_context: input.retrieval_context,
         };
         contexts.insert(
             id,
@@ -128,6 +129,29 @@ impl AiRuntime {
             || entry.snapshot.target != request.target
         {
             return Err(failure_code("CONTEXT_CHANGED"));
+        }
+        match (
+            entry.snapshot.retrieval_context.as_ref(),
+            request.retrieval_trace.as_ref(),
+        ) {
+            (Some(context), Some(trace)) => {
+                if trace.search_id.as_deref() != Some(context.search_id.as_str())
+                    || trace.retrieval_version != context.retrieval_version
+                    || trace.retrieval_source_versions != context.source_versions
+                    || trace.requested_at != Some(context.requested_at)
+                    || trace.scope.as_ref() != Some(&context.scope)
+                    || trace.task.as_ref() != Some(&context.task)
+                    || trace.excluded_hit_ids != context.excluded_hit_ids
+                    || trace.included_hit_ids != context.included_hit_ids
+                    || trace.index_version != context.index_version
+                    || trace.embedding_fingerprint.as_ref()
+                        != context.embedding_fingerprint.as_ref()
+                {
+                    return Err(failure_code("CONTEXT_CHANGED"));
+                }
+            }
+            (Some(_), None) | (None, Some(_)) => return Err(failure_code("CONTEXT_CHANGED")),
+            (None, None) => {}
         }
         Ok(entry.snapshot)
     }
@@ -227,6 +251,23 @@ fn validate_context(input: &ContextInput) -> Result<()> {
         return Err(failure_code("VALIDATION_ERROR"));
     }
     validate_target(&input.target)?;
+    if let Some(retrieval) = &input.retrieval_context {
+        if retrieval.book_id != input.book_id
+            || retrieval.scope.book_id != input.book_id
+            || retrieval.search_id.trim().is_empty()
+            || retrieval.retrieval_version.trim().is_empty()
+            || retrieval.text.chars().count() > MAX_CONTEXT_CHARS as usize
+        {
+            return Err(failure_code("VALIDATION_ERROR"));
+        }
+        if retrieval.evidence.iter().any(|evidence| {
+            !retrieval
+                .included_hit_ids
+                .contains(&evidence.material.hit_id)
+        }) {
+            return Err(failure_code("VALIDATION_ERROR"));
+        }
+    }
     let mut total = 0usize;
     for section in &input.sections {
         if section.label.trim().is_empty()
@@ -309,6 +350,7 @@ fn kind_label(kind: &ContextKind) -> &'static str {
         ContextKind::AuthorSetting => "Author settings",
         ContextKind::ManualSummary => "Manual summaries",
         ContextKind::FuturePlan => "Future plans",
+        ContextKind::RetrievalEvidence => "Retrieved evidence",
     }
 }
 fn failure() -> StorageError {
@@ -368,6 +410,7 @@ mod tests {
                     section(ContextKind::CurrentDraft, "你好"),
                     section(ContextKind::AuthorSetting, "规则"),
                 ],
+                retrieval_context: None,
             })
             .unwrap();
         assert_eq!(snapshot.char_count, 4);
@@ -391,6 +434,7 @@ mod tests {
                     database_version: 1,
                 },
                 sections: vec![section(ContextKind::CurrentDraft, "你好")],
+                retrieval_context: None,
             })
             .unwrap();
         let prompt = format_generation_prompt(
@@ -426,6 +470,7 @@ mod tests {
                     }],
                 },
                 sections: vec![section(ContextKind::WrittenFact, "事实")],
+                retrieval_context: None,
             })
             .unwrap();
         let prompt = format_generation_prompt(&snapshot, &snapshot.target, 12000);
@@ -449,6 +494,7 @@ mod tests {
                 database_version: 1,
             },
             sections: vec![section(ContextKind::WrittenFact, "bad\u{0000}text")],
+            retrieval_context: None,
         });
         assert_eq!(invalid.unwrap_err().code, "VALIDATION_ERROR");
 
@@ -463,6 +509,7 @@ mod tests {
                     database_version: 1,
                 },
                 sections: vec![],
+                retrieval_context: None,
             })
             .unwrap();
         let request = GenerateRequest {

@@ -3,8 +3,9 @@ import { BrainCircuit, CheckCircle2, Loader2, Sparkles, Wand2 } from 'lucide-rea
 import { Button } from '../../../components/ui/Button';
 import type { BrainstormCandidate } from '../brainstormCandidate';
 import type { BrainstormEditor } from '../hooks/useBrainstormWorkspace';
-type Props = Pick<BrainstormEditor, 'isGenerating' | 'isSaving' | 'handleGenerate' | 'regenerate' | 'stopGeneration' | 'discardCandidate' | 'generationAvailable' | 'selectedChapterIds' | 'missingSummaryChapters' | 'isSnapshotStale' | 'errorMessage' | 'visibleOptions' | 'hasSelectedOption' | 'workspace' | 'chooseOption' | 'showAllOptions' | 'updateFinalContent' | 'candidate' | 'isReadOnly'>;
-export function BrainstormResults({ isGenerating, isSaving, handleGenerate, regenerate, stopGeneration, discardCandidate, generationAvailable, selectedChapterIds, missingSummaryChapters, isSnapshotStale, errorMessage, visibleOptions, hasSelectedOption, workspace, chooseOption, showAllOptions, updateFinalContent, candidate, isReadOnly }: Props) {
+import { RetrievalContextPanel } from '../../retrieval/components/RetrievalContextPanel';
+type Props = Pick<BrainstormEditor, 'isGenerating' | 'isSaving' | 'handleGenerate' | 'regenerate' | 'stopGeneration' | 'discardCandidate' | 'generationAvailable' | 'selectedChapterIds' | 'missingSummaryChapters' | 'isSnapshotStale' | 'errorMessage' | 'visibleOptions' | 'hasSelectedOption' | 'workspace' | 'chooseOption' | 'showAllOptions' | 'updateFinalContent' | 'candidate' | 'isReadOnly' | 'toggleRetrievalHit'>;
+export function BrainstormResults({ isGenerating, isSaving, handleGenerate, regenerate, stopGeneration, discardCandidate, generationAvailable, selectedChapterIds, missingSummaryChapters, isSnapshotStale, errorMessage, visibleOptions, hasSelectedOption, workspace, chooseOption, showAllOptions, updateFinalContent, candidate, isReadOnly, toggleRetrievalHit }: Props) {
     const hasCandidate = candidate.status !== 'idle';
     const candidateAction = hasCandidate ? regenerate : handleGenerate;
     return (
@@ -63,6 +64,7 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, rege
                         stopGeneration={stopGeneration}
                         regenerate={regenerate}
                         discardCandidate={discardCandidate}
+                        toggleRetrievalHit={toggleRetrievalHit}
                     />
                 )}
 
@@ -131,6 +133,7 @@ function CandidatePanel({
     stopGeneration,
     regenerate,
     discardCandidate,
+    toggleRetrievalHit,
 }: {
     candidate: BrainstormCandidate;
     isGenerating: boolean;
@@ -138,6 +141,7 @@ function CandidatePanel({
     stopGeneration: () => void;
     regenerate: () => Promise<void>;
     discardCandidate: () => void;
+    toggleRetrievalHit: (hitId: string) => void;
 }) {
     const status = candidate.status === 'starting'
         ? 'Preparing the frozen chapter, planning, and relationship context...'
@@ -172,6 +176,13 @@ function CandidatePanel({
             {candidate.rawText && (
                 <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-brand-100 bg-white px-4 py-3 text-xs leading-5 text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">{candidate.rawText}</pre>
             )}
+            <RetrievalContextPanel
+                context={candidate.retrievalContext}
+                notice={candidate.retrievalNotice}
+                excludedHitIds={candidate.retrievalContext?.excludedHitIds ?? []}
+                onToggleHit={toggleRetrievalHit}
+                disabled={isGenerating || isSaving}
+            />
         </section>
     );
 }

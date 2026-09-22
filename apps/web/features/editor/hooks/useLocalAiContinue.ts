@@ -4,7 +4,10 @@ import {
     type GenerationEvent,
     type GenerationRequest,
 } from '../../../data/local/aiGenerationRepository';
+import { retrievalRepository } from '../../../data/local/retrievalRepository';
 import { aiErrorMessage, aiSettingsRepository, type AiConfigRecord } from '../../../data/local/aiSettingsRepository';
+import { continueRetrievalScope, type RetrievalContext, type RetrievalSearchStatus } from '../../../domain/retrieval/contracts';
+import { generationRetrievalTrace, retrievalContextSection, retrievalStatusNotice } from '../../retrieval/retrievalContext';
 import type { AiContinueAnchor } from '../types/aiContinue';
 
 export type AiContinueCandidateStatus =
@@ -28,6 +31,9 @@ export interface AiContinueSource {
     outputChars: number;
     anchor: AiContinueAnchor;
     lockWasValid: boolean;
+    retrievalContext: RetrievalContext | null;
+    retrievalStatus: RetrievalSearchStatus | null;
+    retrievalNotice: string | null;
 }
 
 export interface AiContinueCandidate {
@@ -47,6 +53,7 @@ interface UseLocalAiContinueOptions {
     isReadOnly: boolean;
     contextChars: number;
     outputChars: number;
+    chapterOrder?: number;
     getContextText: () => string;
     captureAnchor: () => AiContinueAnchor | null;
     insertCandidateAtAnchor: (candidate: string, anchor: AiContinueAnchor) => boolean;
@@ -63,6 +70,7 @@ interface UseLocalAiContinueResult {
     closeCandidate: () => void;
     discardCandidate: () => void;
     regenerate: () => Promise<void>;
+    toggleRetrievalHit: (hitId: string) => void;
 }
 
 interface ActiveGeneration {
@@ -130,7 +138,8 @@ function sourceMatchesCurrent(source: AiContinueSource, options: UseLocalAiConti
     return source.bookId === options.bookId
         && source.chapterId === options.chapterId
         && source.sessionId === options.sessionId
-        && source.draftRevision === options.draftRevision;
+        && source.draftRevision === options.draftRevision
+        && source.databaseVersion === options.databaseVersion;
 }
 
 function findDefaultConfig(configs: Awaited<ReturnType<typeof aiSettingsRepository.list>>): AiConfigRecord {
@@ -146,6 +155,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
     const activeRef = useRef<ActiveGeneration | null>(null);
     const candidateRef = useRef(candidate);
     const optionsRef = useRef(options);
+    const excludedHitIdsRef = useRef<string[]>([]);
 
     useLayoutEffect(() => {
         optionsRef.current = options;
@@ -298,6 +308,9 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
                 outputChars: current.outputChars,
                 anchor,
                 lockWasValid: !current.isReadOnly,
+                retrievalContext: null,
+                retrievalStatus: null,
+                retrievalNotice: null,
             },
         });
 
@@ -305,21 +318,60 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
             const configs = await aiSettingsRepository.list();
             if (!isActive(active)) return;
             const config = findDefaultConfig(configs);
+            let retrievalResponse: Awaited<ReturnType<typeof retrievalRepository.search>> | null = null;
+            let retrievalNotice: string | null = null;
+            try {
+                const retrievalScope = continueRetrievalScope(current.bookId, {
+                    chapterId: current.chapterId,
+                    textOffset: anchor.from,
+                });
+                retrievalScope.beforeChapterOrder = current.chapterOrder;
+                retrievalResponse = await retrievalRepository.search({
+                    scope: retrievalScope,
+                    query: contextText,
+                    mode: 'hybrid',
+                    limit: 8,
+                    excludedHitIds: excludedHitIdsRef.current,
+                    charBudget: 8_000,
+                    tokenBudget: 2_000,
+                    adjacentChunkCount: 1,
+                    task: 'continuation',
+                    indexStatus: undefined,
+                    freshnessPolicy: { freshOnly: true, allowLexicalFallback: true, maxWaitMs: 500 },
+                });
+                retrievalNotice = retrievalStatusNotice(retrievalResponse);
+            } catch {
+                retrievalNotice = 'Retrieval was unavailable. The current in-memory draft remains the generation context.';
+            }
+            if (!isActive(active)) return;
+            const retrievalContext = retrievalResponse?.context ?? null;
+            const retrievalSection = retrievalResponse ? retrievalContextSection(retrievalResponse.context) : null;
+            const sections = retrievalSection
+                ? [{ kind: 'currentDraft' as const, label: 'Current in-memory draft', text: contextText }, retrievalSection]
+                : [{ kind: 'currentDraft' as const, label: 'Current in-memory draft', text: contextText }];
+            updateCandidate({
+                ...candidateRef.current,
+                source: candidateRef.current.source
+                    ? {
+                        ...candidateRef.current.source,
+                        retrievalContext,
+                        retrievalStatus: retrievalResponse?.status ?? null,
+                        retrievalNotice,
+                    }
+                    : null,
+            });
             const contextSnapshot = await aiGenerationRepository.prepareContext({
                 bookId: current.bookId,
                 sessionId: current.sessionId,
                 draftRevision: current.draftRevision,
-                maxChars: current.contextChars,
+                maxChars: sections.reduce((total, section) => total + Array.from(section.text).length, 0),
                 target: {
                     kind: 'continue',
                     chapterId: current.chapterId,
                     databaseVersion: current.databaseVersion,
                 },
-                sections: [{
-                    kind: 'currentDraft',
-                    label: 'Current in-memory draft',
-                    text: contextText,
-                }],
+                sections,
+                ...(retrievalContext ? { retrievalContext } : {}),
             });
             if (!isActive(active)) return;
 
@@ -346,6 +398,12 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
                 },
                 contextSnapshotId: contextSnapshot.contextSnapshotId,
                 outputChars: current.outputChars,
+                retrievalTrace: retrievalResponse
+                    ? generationRetrievalTrace(retrievalResponse, [{
+                        chapterId: current.chapterId,
+                        databaseVersion: current.databaseVersion,
+                    }])
+                    : null,
             };
             await aiGenerationRepository.start(input);
         } catch (error) {
@@ -359,19 +417,41 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
         }
     }, [cleanupActive, handleEvent, isActive, updateCandidate]);
 
-    const closeCandidate = useCallback(() => {
+    const clearCandidate = useCallback((resetExcludedHits: boolean) => {
         if (activeRef.current) stop();
+        if (resetExcludedHits) excludedHitIdsRef.current = [];
         updateCandidate(INITIAL_CANDIDATE);
     }, [stop, updateCandidate]);
+
+    const closeCandidate = useCallback(() => {
+        clearCandidate(true);
+    }, [clearCandidate]);
 
     const discardCandidate = useCallback(() => {
         closeCandidate();
     }, [closeCandidate]);
 
     const regenerate = useCallback(async () => {
-        discardCandidate();
+        clearCandidate(false);
         await continueWriting();
-    }, [continueWriting, discardCandidate]);
+    }, [clearCandidate, continueWriting]);
+
+    const toggleRetrievalHit = useCallback((hitId: string) => {
+        const excluded = new Set(excludedHitIdsRef.current);
+        if (excluded.has(hitId)) excluded.delete(hitId);
+        else excluded.add(hitId);
+        excludedHitIdsRef.current = [...excluded];
+        const current = candidateRef.current;
+        if (current.source?.retrievalContext) {
+            updateCandidate({
+                ...current,
+                source: {
+                    ...current.source,
+                    retrievalContext: { ...current.source.retrievalContext, excludedHitIds: excludedHitIdsRef.current },
+                },
+            });
+        }
+    }, [updateCandidate]);
 
     const adoptCandidate = useCallback(() => {
         const current = optionsRef.current;
@@ -449,5 +529,6 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
         closeCandidate,
         discardCandidate,
         regenerate,
+        toggleRetrievalHit,
     };
 }

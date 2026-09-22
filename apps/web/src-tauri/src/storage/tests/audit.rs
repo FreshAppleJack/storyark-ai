@@ -26,11 +26,12 @@ fn generation_audit_records_versions_and_model_without_prompt_or_credentials() {
         context_snapshot_id: Uuid::new_v4().to_string(),
         output_chars: 300,
         retrieval_trace: Some(GenerationRetrievalTrace {
-            retrieval_version: "p1-d-v1".into(),
+            retrieval_version: "p1-r1-v1".into(),
             source_versions: vec![SourceVersion {
                 chapter_id: chapter.chapter_id.clone(),
                 database_version: 1,
             }],
+            ..Default::default()
         }),
     };
     db.record_ai_generation_start(&request, "local-test-model")
@@ -45,7 +46,7 @@ fn generation_audit_records_versions_and_model_without_prompt_or_credentials() {
         )
         .unwrap();
     assert_eq!(row.0, "ai-tasks-v1");
-    assert_eq!(row.1.as_deref(), Some("p1-d-v1"));
+    assert_eq!(row.1.as_deref(), Some("p1-r1-v1"));
     assert_eq!(row.2, config_id);
     assert_eq!(row.3, "local-test-model");
     let columns = db

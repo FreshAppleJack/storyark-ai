@@ -3,8 +3,10 @@ import type {
     ContextSection,
     GenerationTarget,
 } from '../../data/local/aiGenerationRepository';
+import type { RetrievalScope } from '../../domain/retrieval/contracts';
 import {
     buildContextSnapshot,
+    boundedChapterText,
     validateBrainstormSources,
     type BrainstormRelationship,
     type BrainstormSourceVersions,
@@ -23,6 +25,8 @@ export interface BrainstormGenerationContext {
     draftRevision: number;
     sourceFingerprint: string;
     sourceSnapshot: Record<string, unknown>;
+    retrievalScope: RetrievalScope;
+    retrievalQuery: string;
 }
 
 function boundedText(value: string, maxChars: number): string {
@@ -96,6 +100,28 @@ export function buildBrainstormGenerationContext(
         },
     ];
 
+    const retrievalQuery = boundedText([
+        planning.storySummary,
+        ...selectedChapters.map(chapter => `${chapter.title}\n${chapter.summary}\n${boundedChapterText(chapter.content, 1200)}`),
+        ...mentionedCharacters.map(character => `${character.name} ${character.description}`),
+    ].filter(Boolean).join('\n\n'), 6_000);
+    const retrievalScope: RetrievalScope = {
+        bookId: book.id,
+        allowedSourceKinds: [
+            'manuscript',
+            'chapter_summary',
+            'planning',
+            'confirmed_setting',
+            'character',
+            'relationship',
+            'foreshadowing_note',
+        ],
+        allowedChapterIds: selectedChapters.map(chapter => chapter.id),
+        includeFuturePlan: false,
+        includeGenerated: false,
+        includeStale: false,
+    };
+
     const fingerprint = JSON.stringify({ bookId: book.id, draftRevision, target, sourceSnapshot });
     return {
         target,
@@ -105,5 +131,7 @@ export function buildBrainstormGenerationContext(
         draftRevision,
         sourceFingerprint: fingerprint,
         sourceSnapshot,
+        retrievalScope,
+        retrievalQuery,
     };
 }

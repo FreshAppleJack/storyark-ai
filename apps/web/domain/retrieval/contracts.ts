@@ -117,7 +117,7 @@ export interface EmbeddingStatus {
     errorMessage: string | null;
 }
 
-export interface RetrievalSearchRequest {
+export interface RetrievalRequest {
     freshnessPolicy?: { freshOnly: boolean; allowLexicalFallback: boolean; maxWaitMs: number };
     scope: RetrievalScope;
     query: string;
@@ -129,8 +129,11 @@ export interface RetrievalSearchRequest {
     adjacentChunkCount: number;
     task: RetrievalTaskStrategy;
     /** Client-observed status is diagnostic only; Rust derives the authoritative status. */
-    indexStatus: RetrievalIndexStatus;
+    indexStatus?: RetrievalIndexStatus;
 }
+
+/** Backward-compatible name used by the search UI. Generation uses RetrievalRequest. */
+export type RetrievalSearchRequest = RetrievalRequest;
 
 export type RetrievalTaskStrategy =
     | 'generic'
@@ -151,7 +154,7 @@ export type RetrievalSearchStatus =
     | 'lexical_no_match'
     | 'budget_exhausted';
 
-export interface RetrievalSearchHit {
+export interface RetrievalHit {
     hitId: string;
     bookId: string;
     sourceKind: RetrievalSourceKind;
@@ -171,22 +174,70 @@ export interface RetrievalSearchHit {
     semanticScore: number | null;
 }
 
+/** Backward-compatible name used by the result list. */
+export type RetrievalSearchHit = RetrievalHit;
+
 export interface RetrievalSourceVersionRecord {
     sourceId: string;
+    chapterId: string | null;
     sourceVersion: number;
     indexVersion: number;
 }
 
-export interface RetrievalSearchTrace {
+export interface RetrievalTrace {
     searchId: string;
     retrievalVersion: string;
     task: RetrievalTaskStrategy;
     createdAt: number;
+    bookId: string;
+    chapterId: string | null;
+    scope: RetrievalScope;
+    excludedHitIds: string[];
+    indexVersion: number | null;
     embeddingFingerprint: string | null;
     sourceVersions: RetrievalSourceVersionRecord[];
 }
 
+/** Backward-compatible name used by the search response. */
+export type RetrievalSearchTrace = RetrievalTrace;
+
+export interface RetrievalContextBudget {
+    charBudget: number;
+    tokenBudget: number | null;
+}
+
+export interface RetrievalContextMaterial {
+    hitId: string;
+    label: string;
+    sourceKind: RetrievalSourceKind;
+    entityId: string;
+    chapterId: string | null;
+    sourceVersion: number;
+    chunkId: string;
+    quote: string;
+    freshness: RetrievalFreshness;
+    recallMethods: RetrievalRecallMethod[];
+}
+
+export interface RetrievalContextEvidence extends RetrievalContextMaterial {
+    text: string;
+}
+
 export interface RetrievalContext {
+    searchId: string;
+    retrievalVersion: string;
+    task: RetrievalTaskStrategy;
+    requestedAt: number;
+    bookId: string;
+    chapterId: string | null;
+    scope: RetrievalScope;
+    excludedHitIds: string[];
+    sourceVersions: RetrievalSourceVersionRecord[];
+    indexVersion: number | null;
+    embeddingFingerprint: string | null;
+    budget: RetrievalContextBudget;
+    materials: RetrievalContextMaterial[];
+    evidence: RetrievalContextEvidence[];
     text: string;
     charCount: number;
     tokenEstimate: number;

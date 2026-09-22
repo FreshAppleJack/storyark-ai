@@ -143,7 +143,7 @@ export function isContextSnapshotStale(snapshot: Record<string, unknown>, chapte
     });
 }
 
-function boundedChapterText(content: string, maxChars: number): string {
+export function boundedChapterText(content: string, maxChars: number): string {
     const text = getEditorPlainText(content);
     const characters = Array.from(text);
     if (characters.length <= maxChars) return text;

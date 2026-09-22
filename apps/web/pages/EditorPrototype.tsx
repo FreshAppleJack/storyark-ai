@@ -52,6 +52,9 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
     // 2. Find current active volume and chapter
     const activeVolume = book?.volumes.find(v => v.chapters.some(c => c.id === activeChapterId));
     const activeChapter = activeVolume?.chapters.find(c => c.id === activeChapterId);
+    const activeChapterOrder = book
+        ? book.volumes.flatMap(volume => volume.chapters).findIndex(chapter => chapter.id === activeChapterId)
+        : -1;
 
     // 3. State Management
     // The chapter draft (values + revision + dirty tracking) lives in a hook;
@@ -340,6 +343,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         sessionId: chapterDraft.sessionKey,
         draftRevision: chapterDraft.revision,
         databaseVersion: activeChapter?.databaseVersion ?? 0,
+        chapterOrder: activeChapterOrder >= 0 ? activeChapterOrder : undefined,
         isReadOnly: chapterDraft.isReadOnly || chapterLock.isChangingLock,
         contextChars: aiContinueSettings.contextChars,
         outputChars: aiContinueSettings.outputChars,
@@ -524,6 +528,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     onClose={aiContinue.closeCandidate}
                     onDiscard={aiContinue.discardCandidate}
                     onRegenerate={aiContinue.regenerate}
+                    onToggleRetrievalHit={aiContinue.toggleRetrievalHit}
                 />
 
                 <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100 dark:bg-slate-900">

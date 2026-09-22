@@ -292,7 +292,7 @@ fn lexical_search_uses_cjk_fts_and_returns_locators() {
     assert_eq!(response["effectiveMode"], "lexical");
     assert_eq!(response["status"], "ready");
     assert_eq!(response["scoreSemantics"], "ranking_only");
-    assert_eq!(response["retrievalVersion"], "p1-r0-v1");
+    assert_eq!(response["retrievalVersion"], "p1-r1-v1");
     assert_eq!(response["trace"]["task"], "generic");
     assert_eq!(response["degraded"], false);
     assert!(!response["hits"].as_array().unwrap().is_empty());

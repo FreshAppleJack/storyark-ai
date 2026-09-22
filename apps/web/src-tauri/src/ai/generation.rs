@@ -8,11 +8,29 @@ pub struct SourceVersion {
     pub database_version: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GenerationRetrievalTrace {
     pub retrieval_version: String,
     pub source_versions: Vec<SourceVersion>,
+    #[serde(default)]
+    pub retrieval_source_versions: Vec<crate::rag::contracts::RetrievalSourceVersionRecord>,
+    #[serde(default)]
+    pub search_id: Option<String>,
+    #[serde(default)]
+    pub task: Option<crate::rag::contracts::RetrievalTaskStrategy>,
+    #[serde(default)]
+    pub requested_at: Option<i64>,
+    #[serde(default)]
+    pub scope: Option<crate::rag::contracts::RetrievalScope>,
+    #[serde(default)]
+    pub excluded_hit_ids: Vec<String>,
+    #[serde(default)]
+    pub included_hit_ids: Vec<String>,
+    #[serde(default)]
+    pub index_version: Option<i64>,
+    #[serde(default)]
+    pub embedding_fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -157,6 +175,7 @@ pub enum ContextKind {
     AuthorSetting,
     ManualSummary,
     FuturePlan,
+    RetrievalEvidence,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -168,6 +187,8 @@ pub struct ContextInput {
     pub max_chars: u32,
     pub target: GenerationTarget,
     pub sections: Vec<ContextSection>,
+    #[serde(default)]
+    pub retrieval_context: Option<crate::rag::contracts::RetrievalContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -180,6 +201,8 @@ pub struct ContextSnapshot {
     pub target: GenerationTarget,
     pub sections: Vec<ContextSection>,
     pub char_count: u32,
+    #[serde(default)]
+    pub retrieval_context: Option<crate::rag::contracts::RetrievalContext>,
 }
 
 #[cfg(test)]

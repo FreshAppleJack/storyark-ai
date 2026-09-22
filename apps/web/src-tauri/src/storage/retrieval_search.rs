@@ -399,6 +399,7 @@ fn source_versions(hits: &[RetrievalSearchHit]) -> Vec<RetrievalSourceVersionRec
             seen.insert(key.clone())
                 .then_some(RetrievalSourceVersionRecord {
                     source_id: key.0,
+                    chapter_id: hit.chapter_id.clone(),
                     source_version: key.1,
                     index_version: key.2,
                 })
@@ -479,6 +480,7 @@ fn response_context(
     char_budget: usize,
     token_budget: Option<usize>,
     task: &RetrievalTaskStrategy,
+    trace: &RetrievalSearchTrace,
 ) -> crate::rag::contracts::RetrievalContext {
     let items = hits
         .iter()
@@ -496,7 +498,78 @@ fn response_context(
         })
         .collect::<Vec<_>>();
     let context = assemble_context(&items, char_budget, token_budget);
+    let included = context
+        .included_hit_ids
+        .iter()
+        .cloned()
+        .collect::<HashSet<_>>();
+    let materials = hits
+        .iter()
+        .filter(|hit| included.contains(&hit.hit_id))
+        .map(|hit| crate::rag::contracts::RetrievalContextMaterial {
+            hit_id: hit.hit_id.clone(),
+            label: format!(
+                "{} evidence / {} / entity {} / chapter {} / source v{}",
+                task.as_str(),
+                hit.source_kind.as_str(),
+                hit.entity_id,
+                hit.chapter_id.as_deref().unwrap_or("book"),
+                hit.source_version
+            ),
+            source_kind: hit.source_kind.clone(),
+            entity_id: hit.entity_id.clone(),
+            chapter_id: hit.chapter_id.clone(),
+            source_version: hit.source_version,
+            chunk_id: hit.chunk_id.clone(),
+            quote: hit.quote.clone(),
+            freshness: hit.freshness.clone(),
+            recall_methods: hit.recall_methods.clone(),
+        })
+        .collect::<Vec<_>>();
+    let evidence = hits
+        .iter()
+        .filter(|hit| included.contains(&hit.hit_id))
+        .map(|hit| crate::rag::contracts::RetrievalContextEvidence {
+            material: crate::rag::contracts::RetrievalContextMaterial {
+                hit_id: hit.hit_id.clone(),
+                label: format!(
+                    "{} evidence / {} / entity {} / chapter {} / source v{}",
+                    task.as_str(),
+                    hit.source_kind.as_str(),
+                    hit.entity_id,
+                    hit.chapter_id.as_deref().unwrap_or("book"),
+                    hit.source_version
+                ),
+                source_kind: hit.source_kind.clone(),
+                entity_id: hit.entity_id.clone(),
+                chapter_id: hit.chapter_id.clone(),
+                source_version: hit.source_version,
+                chunk_id: hit.chunk_id.clone(),
+                quote: hit.quote.clone(),
+                freshness: hit.freshness.clone(),
+                recall_methods: hit.recall_methods.clone(),
+            },
+            text: hit.chunk.source_text.clone(),
+        })
+        .collect::<Vec<_>>();
     crate::rag::contracts::RetrievalContext {
+        search_id: trace.search_id.clone(),
+        retrieval_version: trace.retrieval_version.clone(),
+        task: trace.task.clone(),
+        requested_at: trace.created_at,
+        book_id: trace.book_id.clone(),
+        chapter_id: trace.chapter_id.clone(),
+        scope: trace.scope.clone(),
+        excluded_hit_ids: trace.excluded_hit_ids.clone(),
+        source_versions: trace.source_versions.clone(),
+        index_version: trace.index_version,
+        embedding_fingerprint: trace.embedding_fingerprint.clone(),
+        budget: crate::rag::contracts::RetrievalContextBudget {
+            char_budget,
+            token_budget,
+        },
+        materials,
+        evidence,
         text: context.text,
         char_count: context.char_count,
         token_estimate: context.token_estimate,
@@ -695,7 +768,6 @@ impl Database {
             add_adjacent_candidates(&primary, &chunk_by_id, &sources, &excluded, adjacent_count);
         primary.extend(adjacent);
         let hits = primary.into_iter().map(search_hit).collect::<Vec<_>>();
-        let context = response_context(&hits, char_budget, token_budget, &input.task);
         let mut status = if let Some(status) = non_current_hit_status(&hits) {
             status
         } else if hits.is_empty() {
@@ -723,18 +795,27 @@ impl Database {
         } else {
             RetrievalSearchStatus::Ready
         };
-        if !hits.is_empty() && context.included_hit_ids.is_empty() {
-            status = RetrievalSearchStatus::BudgetExhausted;
-        }
         let source_versions = source_versions(&hits);
         let trace = RetrievalSearchTrace {
             search_id: Uuid::new_v4().to_string(),
             retrieval_version: RETRIEVAL_VERSION.to_owned(),
             task: input.task.clone(),
             created_at: now()?,
+            book_id: scope.book_id.clone(),
+            chapter_id: scope
+                .before_anchor
+                .as_ref()
+                .map(|anchor| anchor.chapter_id.clone()),
+            scope: scope.clone(),
+            excluded_hit_ids: input.excluded_hit_ids.clone(),
+            index_version: Some(CHUNK_INDEX_VERSION),
             embedding_fingerprint: fingerprint,
             source_versions,
         };
+        let context = response_context(&hits, char_budget, token_budget, &input.task, &trace);
+        if !hits.is_empty() && context.included_hit_ids.is_empty() {
+            status = RetrievalSearchStatus::BudgetExhausted;
+        }
         let hit_ids = hits
             .iter()
             .map(|hit| hit.hit_id.clone())

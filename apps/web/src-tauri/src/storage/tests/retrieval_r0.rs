@@ -159,6 +159,45 @@ fn fresh_policy_controls_lexical_fallback_without_building_vectors() {
 }
 
 #[test]
+fn generation_context_preserves_scope_trace_budget_and_used_evidence() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let chapter = fixture(&mut db);
+    db.save_chapter(chapter.clone()).unwrap();
+    let response = db
+        .search_retrieval(
+            serde_json::from_value(json!({
+                "scope":{"bookId":chapter.book_id},"query":"Alice","task":"continuation",
+                "limit":4,"charBudget":2000,"tokenBudget":500,
+                "excludedHitIds":["hit:excluded"],
+                "freshnessPolicy":{"freshOnly":true,"allowLexicalFallback":true,"maxWaitMs":0}
+            }))
+            .unwrap(),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(response["context"]["bookId"], chapter.book_id);
+    assert_eq!(response["context"]["task"], "continuation");
+    assert_eq!(response["context"]["scope"]["bookId"], chapter.book_id);
+    assert_eq!(response["context"]["excludedHitIds"][0], "hit:excluded");
+    assert_eq!(response["context"]["budget"]["charBudget"], 2000);
+    assert_eq!(response["context"]["budget"]["tokenBudget"], 500);
+    assert_eq!(
+        response["trace"]["searchId"],
+        response["context"]["searchId"]
+    );
+    assert!(!response["context"]["evidence"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    assert!(!response["context"]["materials"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn only_changed_sources_are_queued_and_books_stay_isolated() {
     let temp = TempDirectory::new();
     let mut db = Database::open(&temp.0).unwrap();
