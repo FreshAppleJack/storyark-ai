@@ -191,6 +191,7 @@ export function useLocalStorySearch(
         sourceKinds: [...DEFAULT_FILTERS.sourceKinds],
     }));
     const statusRequestRef = useRef(0);
+    const statusLoadedRef = useRef(false);
     const searchRequestRef = useRef(0);
     const chapterIds = options.chapterIds ?? EMPTY_CHAPTER_IDS;
     const scope = useMemo(
@@ -201,7 +202,7 @@ export function useLocalStorySearch(
     const refreshStatus = useCallback(async () => {
         if (!enabled || !bookId) return;
         const requestId = ++statusRequestRef.current;
-        setIsStatusLoading(true);
+        if (!statusLoadedRef.current) setIsStatusLoading(true);
         setStatusError(null);
 
         if (!isTauri()) {
@@ -209,6 +210,7 @@ export function useLocalStorySearch(
             setIndexStatus(null);
             setIndexProgress(null);
             setStatusError('Semantic search is available in the StoryArk desktop app.');
+            statusLoadedRef.current = true;
             setIsStatusLoading(false);
             return;
         }
@@ -242,12 +244,16 @@ export function useLocalStorySearch(
             if (requestId !== statusRequestRef.current) return;
             setStatusError(errorMessage(error, 'Local semantic search status could not be loaded.'));
         } finally {
-            if (requestId === statusRequestRef.current) setIsStatusLoading(false);
+            if (requestId === statusRequestRef.current) {
+                statusLoadedRef.current = true;
+                setIsStatusLoading(false);
+            }
         }
     }, [bookId, enabled, scope]);
 
     useEffect(() => {
         if (!enabled) return;
+        statusLoadedRef.current = false;
         const timer = window.setTimeout(() => void refreshStatus(), 0);
         return () => window.clearTimeout(timer);
     }, [bookId, enabled, refreshStatus]);
@@ -256,7 +262,7 @@ export function useLocalStorySearch(
         if (!enabled) return;
         const timer = window.setInterval(() => void refreshStatus(), INDEX_POLL_INTERVAL_MS);
         return () => window.clearInterval(timer);
-    }, [enabled, indexStatus, refreshStatus]);
+    }, [enabled, refreshStatus]);
 
     const queueIndex = useCallback(async () => {
         if (!enabled || !bookId || !embeddingStatus?.available) return;
