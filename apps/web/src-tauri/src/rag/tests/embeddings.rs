@@ -29,9 +29,7 @@ fn vector_storage_round_trip_preserves_dimension_and_values() {
 
 #[test]
 fn bundled_local_model_emits_normalized_bilingual_vectors() {
-    let model_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("resources")
-        .join(BUNDLED_MODEL_RESOURCE_PATH);
+    let model_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(BUNDLED_MODEL_RESOURCE_PATH);
     assert!(model_dir.is_dir(), "bundled model resource is missing");
     let runtime = EmbeddingRuntime::with_model_dir(Some(model_dir));
     let status = runtime.status();

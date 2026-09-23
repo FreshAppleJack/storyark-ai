@@ -21,7 +21,7 @@ pub const DOCUMENT_PREFIX: &str = "passage: ";
 pub const QUERY_PREFIX: &str = "query: ";
 pub const POOLING: &str = "mean";
 pub const NORMALIZATION: &str = "l2";
-pub const BUNDLED_MODEL_RESOURCE_PATH: &str = "embedding/multilingual-e5-small";
+pub const BUNDLED_MODEL_RESOURCE_PATH: &str = "resources/embedding/multilingual-e5-small";
 
 const MODEL_RESOURCE_SHA256: [(&str, &str); 5] = [
     (
