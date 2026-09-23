@@ -4,7 +4,7 @@ use crate::rag::contracts::{
     RetrievalTaskStrategy,
 };
 use crate::rag::embeddings::{
-    configured_model_dir, current_fingerprint, EmbeddingRuntime, DIMENSION,
+    current_fingerprint, development_model_dir, EmbeddingRuntime, DIMENSION,
 };
 use crate::storage::{
     CharacterInput, CreateCharacter, ListRetrievalIndexJobs, QueueRetrievalIndex,
@@ -525,18 +525,14 @@ fn reopening_storage_recovers_interrupted_index_jobs_without_resetting_data() {
 }
 
 #[test]
-fn local_semantic_path_records_p1e_baseline_when_model_is_configured() {
-    let Some(model_dir) = configured_model_dir() else {
-        eprintln!(
-            "P1E_BASELINE {{\"semanticPath\":\"not_configured\",\"lexicalPath\":\"covered\"}}"
-        );
-        return;
-    };
+fn local_semantic_path_records_p1e_baseline_with_bundled_model() {
+    let model_dir = development_model_dir();
+    assert!(model_dir.is_dir(), "bundled embedding model is missing");
     let temp = TempDirectory::new();
     let mut db = Database::open(&temp.0).unwrap();
     let chapter = fixture(&mut db);
     db.save_chapter(chapter.clone()).unwrap();
-    let runtime = EmbeddingRuntime::default();
+    let runtime = EmbeddingRuntime::with_model_dir(Some(model_dir.clone()));
     let started = Instant::now();
     let fingerprint = current_fingerprint();
     db.queue_retrieval_index(

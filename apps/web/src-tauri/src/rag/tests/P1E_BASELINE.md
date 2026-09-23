@@ -39,13 +39,18 @@ or an unavailable/not-ready status instead of claiming semantic freshness.
 
 Remote embedding is not part of this baseline or the local-first P1
 implementation. No network call is needed for the semantic test when the local
-model directory is configured.
+model resource is available.
+
+Development runtime now resolves the model from this repository's
+`resources/embedding/multilingual-e5-small` directory. Packaged desktop builds
+resolve the corresponding Tauri application resource. The recorded 2026-09-21
+measurements above remain historical observations from their original run.
 
 ## Verification commands
 
 ```text
 cargo test --lib
-cargo test --lib storage::tests::retrieval_p1e::local_semantic_path_records_p1e_baseline_when_model_is_configured -- --nocapture --test-threads=1
+cargo test --no-default-features --lib storage::tests::retrieval_p1e::local_semantic_path_records_p1e_baseline_with_bundled_model -- --nocapture --test-threads=1
 ```
 
 The Tauri retrieval IPC is registered and has one retrieval contract. The real

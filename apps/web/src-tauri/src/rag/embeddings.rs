@@ -247,12 +247,6 @@ struct EmbeddingRuntimeState {
     status: Option<EmbeddingStatus>,
 }
 
-impl Default for EmbeddingRuntime {
-    fn default() -> Self {
-        Self::with_model_dir(configured_model_dir())
-    }
-}
-
 impl Default for EmbeddingRuntimeState {
     fn default() -> Self {
         Self {
@@ -367,33 +361,8 @@ pub fn dot(left: &[f32], right: &[f32]) -> f32 {
     left.iter().zip(right).map(|(a, b)| a * b).sum()
 }
 
-pub fn configured_model_dir() -> Option<PathBuf> {
-    if let Some(value) =
-        std::env::var_os("STORYARK_EMBEDDING_MODEL_DIR").filter(|value| !value.is_empty())
-    {
-        return Some(PathBuf::from(value));
-    }
-
-    if !cfg!(debug_assertions) {
-        return None;
-    }
-
-    let mut roots = ["OneDrive", "OneDriveConsumer", "OneDriveCommercial"]
-        .iter()
-        .filter_map(|name| std::env::var_os(name).filter(|value| !value.is_empty()))
-        .map(PathBuf::from)
-        .collect::<Vec<_>>();
-    if let Some(profile) = std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()) {
-        roots.push(PathBuf::from(profile).join("OneDrive"));
-    }
-    roots
-        .into_iter()
-        .map(|root| {
-            root.join("StoryArk_OutsideDocs")
-                .join("Embedding_Model")
-                .join("multilingual-e5-small")
-        })
-        .find(|directory| directory.is_dir())
+pub fn development_model_dir() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(BUNDLED_MODEL_RESOURCE_PATH)
 }
 
 fn model_resources_exist(directory: &Path) -> bool {

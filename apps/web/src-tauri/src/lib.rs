@@ -5,18 +5,18 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             app.manage(ai::tasks::AiRuntime::default());
-            let bundled_model_dir = if cfg!(mobile) {
-                None
-            } else {
+            let bundled_model_dir = if cfg!(mobile) || !cfg!(debug_assertions) {
                 app.path()
                     .resolve(
                         rag::embeddings::BUNDLED_MODEL_RESOURCE_PATH,
                         tauri::path::BaseDirectory::Resource,
                     )
                     .ok()
+            } else {
+                Some(rag::embeddings::development_model_dir())
             };
             app.manage(rag::embeddings::EmbeddingRuntime::with_model_dir(
-                rag::embeddings::configured_model_dir().or(bundled_model_dir),
+                bundled_model_dir,
             ));
             app.manage(rag::indexing::RetrievalIndexRuntime::default());
             // STORYARK_DATA_DIR redirects the database directory for controlled

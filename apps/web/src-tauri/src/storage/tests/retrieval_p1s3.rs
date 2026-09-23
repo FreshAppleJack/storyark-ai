@@ -3,7 +3,7 @@ use crate::rag::contracts::{
     RetrievalScope, RetrievalSearchMode, RetrievalSearchRequest, RetrievalSourceKind,
     RetrievalTaskStrategy,
 };
-use crate::rag::embeddings::{configured_model_dir, current_fingerprint, EmbeddingRuntime};
+use crate::rag::embeddings::{current_fingerprint, development_model_dir, EmbeddingRuntime};
 use crate::storage::QueueRetrievalIndex;
 use serde_json::json;
 use std::time::Instant;
@@ -36,10 +36,8 @@ fn semantic_request(book_id: &str, query: &str) -> RetrievalSearchRequest {
 
 #[test]
 fn p1s3_records_semantic_score_separation_for_a_no_answer_case() {
-    if configured_model_dir().is_none() {
-        eprintln!("P1S3_SCORE {{\"semanticPath\":\"not_configured\"}}");
-        return;
-    }
+    let model_dir = development_model_dir();
+    assert!(model_dir.is_dir(), "bundled embedding model is missing");
 
     let temp = TempDirectory::new();
     let mut db = Database::open(&temp.0).unwrap();
@@ -58,7 +56,7 @@ fn p1s3_records_semantic_score_separation_for_a_no_answer_case() {
     chapter.word_count = 71;
     db.save_chapter(chapter.clone()).unwrap();
 
-    let runtime = EmbeddingRuntime::default();
+    let runtime = EmbeddingRuntime::with_model_dir(Some(model_dir));
     let fingerprint = current_fingerprint();
     let index_started = Instant::now();
     db.queue_retrieval_index(

@@ -3,7 +3,8 @@
 - Model: `intfloat/multilingual-e5-small` (ONNX, 384 dimensions)
 - Upstream: <https://huggingface.co/intfloat/multilingual-e5-small>
 - License: MIT, as identified by the upstream model repository. The license text is included beside the model files.
-- Packaging: shipped as a Tauri application resource for Windows and macOS. Rust reads it from the application resource directory; it is not compiled into the executable and StoryArk does not modify it.
+- Packaging: shipped as a Tauri application resource for Windows and macOS. Desktop development loads the copy in this repository; packaged builds read the same relative resource path from the application resource directory. It is not compiled into the executable and StoryArk does not modify it.
+- Developer checkout: `onnx/model.onnx` is tracked with Git LFS. Install Git LFS and hydrate the checkout before running or packaging; no external OneDrive model directory or model download is required.
 
 The runtime verifies SHA-256 for every required model and tokenizer file before loading. If any resource differs, local embedding reports unavailable rather than loading an unverified file. Update the pinned checksums in `src/rag/embeddings.rs` whenever deliberately replacing these artifacts. If the embedding behavior or model changes, update the embedding fingerprint contract as well so existing vectors are rebuilt.
 
