@@ -4,7 +4,10 @@ use fastembed::{
     InitOptionsUserDefined, Pooling, TextEmbedding, TokenizerFiles, UserDefinedEmbeddingModel,
 };
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::{
+    fs::File,
+    io::Read,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -18,6 +21,30 @@ pub const DOCUMENT_PREFIX: &str = "passage: ";
 pub const QUERY_PREFIX: &str = "query: ";
 pub const POOLING: &str = "mean";
 pub const NORMALIZATION: &str = "l2";
+pub const BUNDLED_MODEL_RESOURCE_PATH: &str = "embedding/multilingual-e5-small";
+
+const MODEL_RESOURCE_SHA256: [(&str, &str); 5] = [
+    (
+        "config.json",
+        "69137736cab8b8903a07fe8afaafdda25aac55415a12a55d1bffa9f581abf959",
+    ),
+    (
+        "tokenizer.json",
+        "0b44a9d7b51c3c62626640cda0e2c2f70fdacdc25bbbd68038369d14ebdf4c39",
+    ),
+    (
+        "special_tokens_map.json",
+        "d05497f1da52c5e09554c0cd874037a083e1dc1b9cfd48034d1c717f1afc07a7",
+    ),
+    (
+        "tokenizer_config.json",
+        "a1d6bc8734a6f635dc158508bef000f8e2e5a759c7d92f984b2c86e5ff53425b",
+    ),
+    (
+        "onnx/model.onnx",
+        "ca456c06b3a9505ddfd9131408916dd79290368331e7d76bb621f1cba6bc8665",
+    ),
+];
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -208,15 +235,22 @@ impl EmbeddingStatus {
     }
 }
 
-#[derive(Clone, Default)]
-pub struct EmbeddingRuntime(
-    Arc<Mutex<EmbeddingRuntimeState>>,
-    Arc<std::sync::atomic::AtomicUsize>,
-);
+#[derive(Clone)]
+pub struct EmbeddingRuntime {
+    state: Arc<Mutex<EmbeddingRuntimeState>>,
+    queries_waiting: Arc<std::sync::atomic::AtomicUsize>,
+    model_dir: Option<PathBuf>,
+}
 
 struct EmbeddingRuntimeState {
     provider: Option<LocalFastEmbedProvider>,
     status: Option<EmbeddingStatus>,
+}
+
+impl Default for EmbeddingRuntime {
+    fn default() -> Self {
+        Self::with_model_dir(configured_model_dir())
+    }
 }
 
 impl Default for EmbeddingRuntimeState {
@@ -229,24 +263,36 @@ impl Default for EmbeddingRuntimeState {
 }
 
 impl EmbeddingRuntime {
+    pub fn with_model_dir(model_dir: Option<PathBuf>) -> Self {
+        Self {
+            state: Arc::default(),
+            queries_waiting: Arc::default(),
+            model_dir,
+        }
+    }
+
     pub fn queries_waiting(&self) -> bool {
-        self.1.load(std::sync::atomic::Ordering::SeqCst) > 0
+        self.queries_waiting
+            .load(std::sync::atomic::Ordering::SeqCst)
+            > 0
     }
 
     pub fn query(&self, text: &str) -> Result<Vec<f32>, String> {
-        self.1.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.queries_waiting
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let result = self.with_provider(|provider| provider.embed_query(text));
-        self.1.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        self.queries_waiting
+            .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
         result
     }
     pub fn status(&self) -> EmbeddingStatus {
-        let mut state = self.0.lock().expect("embedding runtime lock poisoned");
+        let mut state = self.state.lock().expect("embedding runtime lock poisoned");
         if let Some(status) = &state.status {
             return status.clone();
         }
-        let status = match configured_model_dir() {
-            Some(directory) if model_resources_exist(&directory) => {
-                match LocalFastEmbedProvider::load(&directory) {
+        let status = match self.model_dir.as_deref() {
+            Some(directory) if model_resources_exist(directory) => {
+                match LocalFastEmbedProvider::load(directory) {
                     Ok(provider) => {
                         let fingerprint = provider.fingerprint.clone();
                         state.provider = Some(provider);
@@ -257,11 +303,11 @@ impl EmbeddingRuntime {
             }
             Some(_) => EmbeddingStatus::unavailable(
                 "MODEL_INCOMPLETE",
-                "The configured local embedding model resources are incomplete".to_owned(),
+                "The bundled local embedding model resources are missing or failed integrity checks".to_owned(),
             ),
             None => EmbeddingStatus::unavailable(
-                "MODEL_NOT_CONFIGURED",
-                "Set STORYARK_EMBEDDING_MODEL_DIR to the local model directory".to_owned(),
+                "MODEL_RESOURCE_UNAVAILABLE",
+                "The bundled local embedding model resource could not be located".to_owned(),
             ),
         };
         state.status = Some(status.clone());
@@ -273,15 +319,15 @@ impl EmbeddingRuntime {
         operation: impl FnOnce(&mut dyn EmbeddingProvider) -> Result<T, String>,
     ) -> Result<T, String> {
         let mut state = self
-            .0
+            .state
             .lock()
             .map_err(|_| "Embedding runtime unavailable".to_owned())?;
         if state.provider.is_none() {
-            let directory = configured_model_dir().ok_or_else(|| {
-                "Local embedding model is not configured; lexical search remains available"
+            let directory = self.model_dir.as_deref().ok_or_else(|| {
+                "Bundled local embedding model resource is unavailable; lexical search remains available"
                     .to_owned()
             })?;
-            let provider = LocalFastEmbedProvider::load(&directory)?;
+            let provider = LocalFastEmbedProvider::load(directory)?;
             state.status = Some(EmbeddingStatus::available(provider.fingerprint.clone()));
             state.provider = Some(provider);
         }
@@ -369,7 +415,32 @@ fn validate_model_resources(directory: &Path) -> Result<(), String> {
     if !model_resources_exist(directory) {
         return Err("Local embedding model resources are incomplete".to_owned());
     }
+    for (relative_path, expected_hash) in MODEL_RESOURCE_SHA256 {
+        let actual_hash = sha256_file(&directory.join(relative_path))?;
+        if actual_hash != expected_hash {
+            return Err(format!(
+                "Local embedding resource failed SHA-256 verification: {relative_path}"
+            ));
+        }
+    }
     Ok(())
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let mut file = File::open(path)
+        .map_err(|_| "Unable to read a local embedding model resource".to_owned())?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 1024 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|_| "Unable to verify a local embedding model resource".to_owned())?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 fn read_model_file(directory: &Path, relative: &str) -> Result<Vec<u8>, String> {

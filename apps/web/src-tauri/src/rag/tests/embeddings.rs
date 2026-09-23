@@ -1,8 +1,9 @@
 use crate::rag::embeddings::{
-    configured_model_dir, current_fingerprint, decode_vector, encode_vector, EmbeddingRuntime,
-    DIMENSION,
+    current_fingerprint, decode_vector, encode_vector, EmbeddingRuntime,
+    BUNDLED_MODEL_RESOURCE_PATH, DIMENSION,
 };
 use serde_json::Value;
+use std::path::PathBuf;
 
 #[test]
 fn fingerprint_contains_the_full_local_embedding_contract() {
@@ -27,11 +28,12 @@ fn vector_storage_round_trip_preserves_dimension_and_values() {
 }
 
 #[test]
-fn configured_local_model_emits_normalized_bilingual_vectors() {
-    if configured_model_dir().is_none() {
-        return;
-    }
-    let runtime = EmbeddingRuntime::default();
+fn bundled_local_model_emits_normalized_bilingual_vectors() {
+    let model_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join(BUNDLED_MODEL_RESOURCE_PATH);
+    assert!(model_dir.is_dir(), "bundled model resource is missing");
+    let runtime = EmbeddingRuntime::with_model_dir(Some(model_dir));
     let status = runtime.status();
     assert!(status.available, "local model status failed: {status:?}");
     let result = runtime.with_provider(|provider| {
