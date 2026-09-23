@@ -23,6 +23,7 @@ fn main() {
             "ai_prepare_context",
             "ai_start_generation",
             "ai_cancel_generation",
+            "ai_validate_adoption",
             "local_list_books",
             "local_read_book",
             "local_read_work_export_snapshot",

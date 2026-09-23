@@ -8,7 +8,7 @@
   "permissions": [
     "allow-ai-list-configs", "allow-ai-save-config", "allow-ai-set-default",
     "allow-ai-delete-config", "allow-ai-test-connection",
-    "allow-ai-prepare-context", "allow-ai-start-generation", "allow-ai-cancel-generation",
+    "allow-ai-prepare-context", "allow-ai-start-generation", "allow-ai-cancel-generation", "allow-ai-validate-adoption",
     "allow-local-save-work-export",
     "allow-local-reorder-characters",
     "dialog:allow-open", "dialog:allow-save",
