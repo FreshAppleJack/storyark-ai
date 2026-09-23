@@ -11,6 +11,55 @@ fn sample_work(book_id: &str, title: &str) -> Value {
     let edge_id = Uuid::new_v4().to_string();
     let now = 1_700_000_000_000_i64;
     let note_id = "legacy-note";
+    let character_source_id = format!("{}:character:{}", book_id, character_id);
+    let chapter_summary = json!({
+        "chapterId": chapter_id,
+        "summary": "Chapter summary",
+        "sourceChapterVersion": 3,
+        "updatedAt": now,
+        "provenance": "ai-adopted",
+        "sourceSnapshot": {
+            "chapterId": chapter_id,
+            "chapterDatabaseVersion": 3,
+            "chapterTitle": "Chapter 1",
+            "contentFormat": "tiptap-json",
+            "contentVersion": 1,
+            "fingerprintAlgorithm": "fnv1a64-utf16-v1",
+            "bodyFingerprint": "0123456789abcdef",
+            "structuredFingerprint": "fedcba9876543210",
+            "blockFingerprints": ["fedcba9876543210"],
+            "mentionedCharacterIds": [character_id],
+            "foreshadowingIds": [note_id],
+            "foreshadowingNoteFingerprints": [{"noteId": note_id, "fingerprint": "fedcba9876543210"}],
+            "capturedAt": now
+        },
+        "generationMetadata": {
+            "providerId": "provider-a",
+            "configId": "00000000-0000-4000-8000-000000000080",
+            "protocol": "openai-compatible",
+            "modelId": "model-a",
+            "generatedAt": now,
+            "promptVersion": "chapter-summary-v1",
+            "source": {
+                "bookId": book_id,
+                "chapterId": chapter_id,
+                "chapterDatabaseVersion": 3,
+                "sourceBodyFingerprint": "0123456789abcdef",
+                "planningDatabaseVersion": 1,
+                "allowedSources": [{"sourceId": character_source_id, "entityId": character_id, "sourceKind": "character", "sourceVersion": 2, "indexVersion": null}],
+                "retrievalTrace": {
+                    "searchId": "search-1",
+                    "retrievalVersion": "p1-r1-v1",
+                    "requestedAt": now,
+                    "sourceVersions": [{"sourceId": character_source_id, "chapterId": null, "sourceVersion": 2, "indexVersion": 1}],
+                    "includedHitIds": ["hit-1"],
+                    "indexVersion": 1,
+                    "embeddingFingerprint": "local-e5-fingerprint"
+                },
+                "includesFuturePlan": false
+            }
+        }
+    });
     json!({
         "schemaVersion": 1,
         "exportId": Uuid::new_v4(),
@@ -30,7 +79,7 @@ fn sample_work(book_id: &str, title: &str) -> Value {
             "edges":[{"id":edge_id,"sourceNodeKey":node_a,"targetNodeKey":node_b,"sourceHandle":"right-source","targetHandle":"left-target","label":"knows"}]
         }],
         "foreshadowings":[{"id":note_id,"chapterId":chapter_id,"excerpt":"Alice","note":"Return later","databaseVersion":3,"createdAt":now,"updatedAt":now,"unknownField":{"keep":true}}],
-        "planning":{"bookId":book_id,"databaseVersion":1,"storySummary":"Summary","storyBackground":"Background","chapterSummaries":[{"chapterId":chapter_id,"summary":"Chapter summary","sourceChapterVersion":3,"updatedAt":now}],"plotSettings":[{"id":"plot-1","title":"Plot","details":"Details","chapterIds":[chapter_id],"missingChapterIds":[],"createdAt":now,"updatedAt":now}]},
+        "planning":{"bookId":book_id,"databaseVersion":1,"storySummary":"Summary","storyBackground":"Background","chapterSummaries":[chapter_summary],"plotSettings":[{"id":"plot-1","title":"Plot","details":"Details","chapterIds":[chapter_id],"missingChapterIds":[],"createdAt":now,"updatedAt":now}]},
         "brainstormWorkspaces":[{"bookId":book_id,"databaseVersion":1,"createdAt":now,"updatedAt":now,"selectedChapterIds":[chapter_id],"contextSnapshot":{"bookId":book_id,"chapterIds":[chapter_id],"selectedChapters":[{"id":chapter_id,"title":"Chapter 1"}],"appearingCharacters":[{"id":character_id,"name":"Alice"}],"relationships":[{"sourceCharacterId":character_id,"targetCharacterId":character_id,"sourceNodeKey":node_a,"targetNodeKey":node_b}]},"generatedOptions":[{"id":"option-1","title":"Option","conflict":"Conflict","motivation":"Motivation","consequences":"Consequences","development":"Development"}],"selectedOptionId":"option-1","finalContent":"Draft"}],
         "assets": []
     })
@@ -99,6 +148,41 @@ fn fresh_import_persists_the_complete_work_and_copy_rewrites_instance_ids() {
         copied_planning["chapterSummaries"][0]["sourceChapterVersion"],
         1
     );
+    let copied_summary = &copied_planning["chapterSummaries"][0];
+    assert_eq!(copied_summary["provenance"], "ai-adopted");
+    assert_eq!(
+        copied_summary["sourceSnapshot"]["chapterId"],
+        copied_chapter
+    );
+    assert_eq!(
+        copied_summary["sourceSnapshot"]["chapterDatabaseVersion"],
+        3
+    );
+    assert_eq!(
+        copied_summary["sourceSnapshot"]["mentionedCharacterIds"][0],
+        copied_character
+    );
+    assert_eq!(
+        copied_summary["generationMetadata"]["source"]["bookId"],
+        copied_id
+    );
+    assert_eq!(
+        copied_summary["generationMetadata"]["source"]["chapterId"],
+        copied_chapter
+    );
+    assert_eq!(
+        copied_summary["generationMetadata"]["source"]["allowedSources"][0]["entityId"],
+        copied_character
+    );
+    assert_eq!(
+        copied_summary["generationMetadata"]["source"]["allowedSources"][0]["sourceId"],
+        format!("{}:character:{}", copied_id, copied_character)
+    );
+    assert_eq!(
+        copied_summary["generationMetadata"]["source"]["retrievalTrace"]["sourceVersions"][0]
+            ["sourceId"],
+        format!("{}:character:{}", copied_id, copied_character)
+    );
     let copied_node_char: String = db
         .connection
         .query_row(
@@ -129,6 +213,14 @@ fn fresh_import_persists_the_complete_work_and_copy_rewrites_instance_ids() {
         )
         .unwrap();
     assert_ne!(copied_note, "legacy-note");
+    assert_eq!(
+        copied_summary["sourceSnapshot"]["foreshadowingIds"][0],
+        copied_note
+    );
+    assert_eq!(
+        copied_summary["sourceSnapshot"]["foreshadowingNoteFingerprints"][0]["noteId"],
+        copied_note
+    );
     assert!(copied_mark.contains(&copied_note));
     let copied_context: String = db
         .connection

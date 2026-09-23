@@ -16,6 +16,24 @@ fn source<'a>(sources: &'a Value, kind: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("missing source kind {kind}"))
 }
 
+fn current_summary_snapshot(chapter: &SaveChapter, version: i64) -> Value {
+    json!({
+        "chapterId": chapter.chapter_id,
+        "chapterDatabaseVersion": version,
+        "chapterTitle": chapter.title,
+        "contentFormat": "tiptap-json",
+        "contentVersion": 1,
+        "fingerprintAlgorithm": "fnv1a64-utf16-v1",
+        "bodyFingerprint": "0123456789abcdef",
+        "structuredFingerprint": "fedcba9876543210",
+        "blockFingerprints": ["fedcba9876543210"],
+        "mentionedCharacterIds": [],
+        "foreshadowingIds": [],
+        "foreshadowingNoteFingerprints": [],
+        "capturedAt": 2
+    })
+}
+
 #[test]
 fn source_registry_keeps_display_text_separate_and_invalidates_changed_versions() {
     let temp = TempDirectory::new();
@@ -53,6 +71,36 @@ fn source_registry_keeps_display_text_separate_and_invalidates_changed_versions(
 }
 
 #[test]
+fn legacy_summary_without_a_source_snapshot_is_not_marked_as_current_retrieval_evidence() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let chapter = fixture(&mut db);
+    db.save_chapter(chapter.clone()).unwrap();
+    db.save_planning(SavePlanning {
+        book_id: chapter.book_id.clone(),
+        expected_database_version: 0,
+        story_summary: String::new(),
+        story_background: String::new(),
+        chapter_summaries: json!([{
+            "chapterId": chapter.chapter_id,
+            "summary": "An older summary with a matching version number.",
+            "sourceChapterVersion": 2,
+            "updatedAt": 2
+        }]),
+        plot_settings: json!([]),
+        session_key: "legacy-summary-freshness".into(),
+        revision: 1,
+    })
+    .unwrap();
+
+    let sources = db.sync_retrieval_sources(&chapter.book_id).unwrap();
+    assert_eq!(
+        source(&sources, "chapter_summary")["sourceStatus"],
+        "pending"
+    );
+}
+
+#[test]
 fn retrieval_scope_filters_by_book_kind_and_future_plan_before_results() {
     let temp = TempDirectory::new();
     let mut db = Database::open(&temp.0).unwrap();
@@ -67,6 +115,7 @@ fn retrieval_scope_filters_by_book_kind_and_future_plan_before_results() {
             "chapterId": chapter.chapter_id,
             "summary": "A saved summary",
             "sourceChapterVersion": 2,
+            "sourceSnapshot": current_summary_snapshot(&chapter, 2),
             "updatedAt": 2
         }]),
         plot_settings: json!([{

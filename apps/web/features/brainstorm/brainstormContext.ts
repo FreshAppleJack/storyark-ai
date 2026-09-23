@@ -1,6 +1,7 @@
 import type { Book, Chapter, Character, StoryPlanning, BrainstormOption } from '../../types';
 import { extractContentSignals, getEditorPlainText } from '../../domain/chapterContent';
 import { escapeRegex, getCharacterMatchTerms } from '../../domain/characters';
+import { assessChapterSummaryFreshness, createCurrentAllowedSourceVersions } from '../../domain/chapterSummarySource';
 
 export interface BrainstormRelationship {
     /** Display names are resolved only when the context snapshot is built. */
@@ -64,16 +65,18 @@ export const formatOptionAsEditableText = (option: BrainstormOption) => (
 export function getBrainstormChapters(book: Book | undefined, planning: StoryPlanning): ChapterOption[] {
     if (!book) return [];
     const summaryMap = new Map(planning.chapterSummaries.map(item => [item.chapterId, item]));
+    const currentAllowedSourceVersions = createCurrentAllowedSourceVersions({
+        bookId: book.id,
+        planningDatabaseVersion: planning.databaseVersion,
+        characters: book.characters,
+        chapters: book.volumes.flatMap(volume => volume.chapters),
+    });
     return book.volumes.flatMap(volume => (
         volume.chapters.map((chapter: Chapter) => {
             const summary = summaryMap.get(chapter.id);
-            const hasCurrentChapterVersion = Number.isSafeInteger(chapter.databaseVersion)
-                && (chapter.databaseVersion ?? 0) > 0;
-            const summaryStatus = !summary?.summary.trim()
-                ? 'missing'
-                : hasCurrentChapterVersion && summary.sourceChapterVersion !== chapter.databaseVersion
-                    ? 'stale'
-                    : 'current';
+            const freshness = assessChapterSummaryFreshness(summary, chapter, currentAllowedSourceVersions);
+            const summaryStatus = freshness.status === 'missing' ? 'missing'
+                : freshness.status === 'current' ? 'current' : 'stale';
             return {
                 id: chapter.id,
                 title: chapter.title,

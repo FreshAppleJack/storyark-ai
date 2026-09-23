@@ -85,6 +85,7 @@ const NO_CHARACTERS: Book['characters'] = [];
 export function projectCharacter(record: LocalCharacter): Character {
     return {
         id: record.id, bookId: record.bookId, name: record.name, aliases: record.aliases,
+        databaseVersion: record.databaseVersion,
         role: record.role, description: record.description, color: record.color,
         tags: record.tags, avatar: record.avatar ?? undefined,
         handleConfig: record.handleConfig ? normalizeHandleConfig(record.handleConfig) : undefined,
@@ -103,6 +104,7 @@ export function projectBook(book: LocalBook, detail?: LocalBookDetail, character
             id: volume.id, title: volume.title,
             chapters: detail.chapters.filter(ch => ch.volumeId === volume.id).map(ch => ({
                 id: ch.id, title: ch.title, status: ch.status, content: ch.body.content, databaseVersion: ch.databaseVersion,
+                contentFormat: ch.body.format, contentVersion: ch.body.version,
                 wordCount: ch.wordCount, foreshadowings: ch.foreshadowings,
                 isEditable: !book.isReadOnly && !volume.isReadOnly && !ch.isReadOnly
                     && (ch.body.contentState ?? 'editable') === 'editable'

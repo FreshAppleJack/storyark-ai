@@ -51,10 +51,18 @@ chapter.
 ### Story planning — `planning` table
 
 storySummary, storyBackground, chapterSummaries (each `{chapterId, summary,
-updatedAt, sourceChapterVersion}`), plotSettings (each `{id, title, details,
-chapterIds, createdAt, updatedAt}`) persist as Rust-validated JSON inside one
-per-book row with its own `databaseVersion`. Chapter references are validated
-in the write transaction. AI never auto-fills; summaries are human-authored.
+updatedAt, provenance?, sourceChapterVersion?, sourceSnapshot?,
+generationMetadata?}`), and plotSettings persist as Rust-validated JSON inside
+one per-book row with its own `databaseVersion`. Legacy summaries without a
+provenance field are treated as author-written. A source snapshot stores the
+chapter ID/title, content format/version, chapter database-version snapshot,
+FNV-1a change fingerprints, block fingerprints, Mention character IDs, and
+foreshadowing note fingerprints; it does not duplicate the chapter body.
+Generation metadata is retained only for an adopted AI summary. Unaccepted
+suggestions remain candidate state and are not written to the planning row.
+Chapter references and metadata shapes are validated in the write transaction.
+P1-SUM1 establishes this contract and freshness review; it does not add a
+chapter-summary generation action.
 
 ### Application preferences — `application_preferences` (single row, id = 1)
 
@@ -256,10 +264,18 @@ fields survive. Live chapter references must belong to this book. No new SQL
 migration is needed: these fields use the existing schema version 2 tables.
 
 Story background holds author-defined setting; plot settings hold future
-intent; chapter summaries describe existing chapters. Editing a summary records
-its sourceChapterVersion. A later chapter version mismatch (including a note
-edit) produces a conservative stale-source hint, never an automatic rewrite.
-Missing source versions are also treated as unverified. No model is called.
+intent; chapter summaries describe existing chapters. Explicitly editing a
+summary captures its source snapshot and provenance. Freshness compares
+structured block fingerprints, Mention identities, foreshadowing-note content,
+and recorded allowed-source versions; it never uses net character count or a
+fixed percentage threshold. A database-version advance alone does not rebase a
+summary. Legacy summaries without a verifiable snapshot require author review;
+editing one establishes a new baseline. A possible-staleness hint never
+rewrites or deletes the summary. FNV fingerprints are change detectors, not
+cryptographic integrity checks. On import/copy, `sourceChapterVersion` is
+rebased to the receiving database while `sourceSnapshot.chapterDatabaseVersion`
+and generation-time versions remain historical provenance; remapped entity IDs
+may therefore require review. No model is called in this step.
 Planning drafts drain newer edits after pending saves; route departure and
 normal native close wait for successful commits. Load failures, storage errors
 and version conflicts cannot replace drafts with empty defaults.

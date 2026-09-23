@@ -156,6 +156,69 @@ export interface ExchangeChapterSummary {
     summary: string;
     sourceChapterVersion?: number;
     updatedAt: Timestamp;
+    provenance?: 'author' | 'ai-adopted';
+    sourceSnapshot?: ExchangeChapterSummarySourceSnapshot;
+    generationMetadata?: ExchangeChapterSummaryGenerationMetadata;
+    extensions?: ExchangeExtensions;
+}
+
+export interface ExchangeChapterSummarySourceSnapshot {
+    chapterId: UUID;
+    chapterDatabaseVersion: number | null;
+    chapterTitle: string;
+    contentFormat: ExchangeContentFormat;
+    contentVersion: number | null;
+    fingerprintAlgorithm: 'fnv1a64-utf16-v1';
+    bodyFingerprint: string;
+    structuredFingerprint: string;
+    blockFingerprints: string[];
+    mentionedCharacterIds: UUID[];
+    foreshadowingIds: string[];
+    foreshadowingNoteFingerprints: Array<{ noteId: string; fingerprint: string }>;
+    capturedAt: Timestamp;
+    extensions?: ExchangeExtensions;
+}
+
+export type ExchangeChapterSummarySourceKind = 'planning' | 'confirmed_setting' | 'character' | 'relationship' | 'foreshadowing_note';
+
+export interface ExchangeChapterSummaryGenerationSource {
+    bookId: UUID;
+    chapterId: UUID;
+    chapterDatabaseVersion: number;
+    sourceBodyFingerprint: string;
+    planningDatabaseVersion: number | null;
+    allowedSources: Array<{
+        sourceId: string;
+        entityId: string;
+        sourceKind: ExchangeChapterSummarySourceKind;
+        sourceVersion: number;
+        indexVersion: number | null;
+    }>;
+    retrievalTrace: {
+        searchId: string;
+        retrievalVersion: string;
+        requestedAt: Timestamp;
+        sourceVersions: Array<{
+            sourceId: string;
+            chapterId: UUID | null;
+            sourceVersion: number;
+            indexVersion: number;
+        }>;
+        includedHitIds: string[];
+        indexVersion: number | null;
+        embeddingFingerprint: string | null;
+    } | null;
+    includesFuturePlan: false;
+}
+
+export interface ExchangeChapterSummaryGenerationMetadata {
+    providerId: string;
+    configId: UUID;
+    protocol: string;
+    modelId: string;
+    generatedAt: Timestamp;
+    promptVersion: string;
+    source: ExchangeChapterSummaryGenerationSource;
     extensions?: ExchangeExtensions;
 }
 

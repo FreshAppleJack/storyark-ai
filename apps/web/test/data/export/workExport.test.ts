@@ -238,6 +238,95 @@ describe('whole-work export construction', () => {
         });
     });
 
+    it('preserves summary provenance, source snapshot, and retrieval trace through JSON round-trip', () => {
+        const snapshot = exportSnapshot();
+        const fingerprint = '0123456789abcdef';
+        snapshot.planning.chapterSummaries[0] = {
+            chapterId,
+            summary: 'Adopted summary',
+            sourceChapterVersion: 3,
+            updatedAt: 1_700_000_000_100,
+            provenance: 'ai-adopted',
+            sourceSnapshot: {
+                chapterId,
+                chapterDatabaseVersion: 3,
+                chapterTitle: 'Chapter',
+                contentFormat: 'tiptap-json',
+                contentVersion: 1,
+                fingerprintAlgorithm: 'fnv1a64-utf16-v1',
+                bodyFingerprint: fingerprint,
+                structuredFingerprint: 'fedcba9876543210',
+                blockFingerprints: ['fedcba9876543210'],
+                mentionedCharacterIds: [characterId],
+                foreshadowingIds: ['legacy-note'],
+                foreshadowingNoteFingerprints: [{ noteId: 'legacy-note', fingerprint: 'fedcba9876543210' }],
+                capturedAt: 1_700_000_000_000,
+            },
+            generationMetadata: {
+                providerId: 'provider-a',
+                configId: '00000000-0000-4000-8000-000000000060',
+                protocol: 'openai-compatible',
+                modelId: 'model-a',
+                generatedAt: 1_700_000_000_100,
+                promptVersion: 'chapter-summary-v1',
+                source: {
+                    bookId,
+                    chapterId,
+                    chapterDatabaseVersion: 3,
+                    sourceBodyFingerprint: fingerprint,
+                    planningDatabaseVersion: 1,
+                    allowedSources: [{
+                        sourceId: `${bookId}:character:${characterId}`,
+                        entityId: characterId,
+                        sourceKind: 'character',
+                        sourceVersion: 1,
+                        indexVersion: null,
+                    }],
+                    retrievalTrace: {
+                        searchId: 'search-1',
+                        retrievalVersion: 'p1-r1-v1',
+                        requestedAt: 1_700_000_000_050,
+                        sourceVersions: [{ sourceId: `${bookId}:character:${characterId}`, chapterId: null, sourceVersion: 1, indexVersion: 1 }],
+                        includedHitIds: ['hit-1'],
+                        indexVersion: 1,
+                        embeddingFingerprint: 'local-e5-fingerprint',
+                    },
+                    includesFuturePlan: false,
+                },
+            },
+        };
+
+        const exported = buildStoryArkWorkExport(snapshot, {
+            exportId: '00000000-0000-4000-8000-000000000001',
+            exportedAt: '2026-09-17T00:00:00.000Z',
+            producer: { appVersion: 'test', platform: 'windows' },
+        });
+        expect(validateExport(exported)).toBe(true);
+        const parsed = parseStoryArkWorkExport(serializeStoryArkWorkExport(exported));
+        expect(parsed.valid).toBe(true);
+        if (!parsed.valid) throw new Error('The generated work export did not round-trip.');
+        expect(parsed.value.planning.chapterSummaries[0]).toMatchObject({
+            provenance: 'ai-adopted',
+            sourceSnapshot: { bodyFingerprint: fingerprint, chapterDatabaseVersion: 3 },
+            generationMetadata: {
+                source: {
+                    allowedSources: [{ sourceVersion: 1 }],
+                    retrievalTrace: { includedHitIds: ['hit-1'] },
+                    includesFuturePlan: false,
+                },
+            },
+        });
+
+        const remappedToNewDatabase = structuredClone(exported);
+        remappedToNewDatabase.chapters[0].databaseVersion = 1;
+        remappedToNewDatabase.planning.chapterSummaries[0].sourceChapterVersion = 1;
+        remappedToNewDatabase.brainstormWorkspaces[0].generationMetadata!.source.selectedChapters[0].databaseVersion = 1;
+        expect(validateExport(remappedToNewDatabase)).toBe(true);
+
+        exported.planning.chapterSummaries[0].generationMetadata!.source.includesFuturePlan = true;
+        expect(parseStoryArkWorkExport(JSON.stringify(exported)).valid).toBe(false);
+    });
+
     it('exports pending content with unknown marks and attributes for safe preservation', () => {
         const snapshot = exportSnapshot();
         snapshot.chapters[0].body.contentState = 'pending-migration';

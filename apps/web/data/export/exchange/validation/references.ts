@@ -86,7 +86,14 @@ export function validateReferences(
     planning.chapterSummaries.forEach((summary, index) => {
         const chapter = chapterById.get(summary.chapterId);
         if (!chapter) context.add(`$.planning.chapterSummaries[${index}].chapterId`, 'REFERENCE_NOT_FOUND', 'Planning summary references a missing chapter.');
-        else if (summary.sourceChapterVersion !== undefined && summary.sourceChapterVersion > chapter.databaseVersion) context.add(`$.planning.chapterSummaries[${index}].sourceChapterVersion`, 'REFERENCE_MISMATCH', 'sourceChapterVersion cannot be newer than the exported chapter snapshot.');
+        else {
+            if (summary.sourceChapterVersion !== undefined && summary.sourceChapterVersion > chapter.databaseVersion) context.add(`$.planning.chapterSummaries[${index}].sourceChapterVersion`, 'REFERENCE_MISMATCH', 'sourceChapterVersion cannot be newer than the exported chapter snapshot.');
+            if (summary.generationMetadata) {
+                if (summary.generationMetadata.source.bookId !== book.id) {
+                    context.add(`$.planning.chapterSummaries[${index}].generationMetadata.source.bookId`, 'REFERENCE_MISMATCH', 'Summary generation metadata must belong to book.id.');
+                }
+            }
+        }
     });
     planning.plotSettings.forEach((plot, index) => {
         [...plot.chapterIds, ...(plot.missingChapterIds ?? [])].forEach((chapterId, chapterIndexValue) => {

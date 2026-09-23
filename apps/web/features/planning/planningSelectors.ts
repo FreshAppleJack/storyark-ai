@@ -1,4 +1,10 @@
 import type { Book, StoryPlanning, PlotSetting } from '../../types';
+import {
+    assessChapterSummaryFreshness,
+    createCurrentAllowedSourceVersions,
+    type ChapterSummaryFreshness,
+    type ChapterSummaryProvenance,
+} from '../../domain/chapterSummarySource';
 import { getFuzzyScore } from '../../utils/search';
 
 export interface ChapterOption {
@@ -8,22 +14,35 @@ export interface ChapterOption {
     volumeTitle: string;
     summary: string;
     sourceChanged?: boolean;
+    summaryProvenance?: ChapterSummaryProvenance;
+    summaryFreshness?: ChapterSummaryFreshness;
 }
 
 export function getPlanningChapters(book: Book, planning: StoryPlanning): ChapterOption[] {
     if (!book) return [];
-    const summaryMap = new Map(planning.chapterSummaries.map(item => [item.chapterId, item.summary]));
+    const summaryMap = new Map(planning.chapterSummaries.map(item => [item.chapterId, item]));
+    const currentAllowedSourceVersions = createCurrentAllowedSourceVersions({
+        bookId: book.id,
+        planningDatabaseVersion: planning.databaseVersion,
+        characters: book.characters,
+        chapters: book.volumes.flatMap(volume => volume.chapters),
+    });
 
     return book.volumes.flatMap(volume => (
-        volume.chapters.map(chapter => ({
-            id: chapter.id,
-            title: chapter.title,
-            volumeId: volume.id,
-            volumeTitle: volume.title,
-            summary: summaryMap.get(chapter.id) || '',
-            sourceChanged: !!summaryMap.get(chapter.id) && chapter.databaseVersion !== undefined
-                && planning.chapterSummaries.find(item => item.chapterId === chapter.id)?.sourceChapterVersion !== chapter.databaseVersion,
-        }))
+        volume.chapters.map(chapter => {
+            const summary = summaryMap.get(chapter.id);
+            const summaryFreshness = assessChapterSummaryFreshness(summary, chapter, currentAllowedSourceVersions);
+            return {
+                id: chapter.id,
+                title: chapter.title,
+                volumeId: volume.id,
+                volumeTitle: volume.title,
+                summary: summary?.summary ?? '',
+                summaryProvenance: summary?.provenance,
+                summaryFreshness,
+                sourceChanged: summaryFreshness.status === 'possibly-stale' || summaryFreshness.status === 'needs-review',
+            };
+        })
     ));
 }
 

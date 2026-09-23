@@ -1,6 +1,39 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, Search, X } from 'lucide-react';
 import { filterChapters, type ChapterOption } from '../planningSelectors';
+
+const FRESHNESS_REASON_LABELS: Record<string, string> = {
+    'paragraph-content-or-structure-changed': 'Chapter text or paragraph structure changed.',
+    'paragraphs-added': 'Paragraphs were added.',
+    'paragraphs-removed': 'Paragraphs were removed.',
+    'character-mentions-changed': 'Character mentions changed.',
+    'foreshadowing-links-changed': 'Foreshadowing links changed.',
+    'foreshadowing-note-content-changed': 'Foreshadowing notes changed.',
+    'chapter-title-changed': 'The chapter title changed.',
+    'content-format-changed': 'The chapter content format changed.',
+    'content-format-version-changed': 'The chapter content format version changed.',
+    'structured-source-metadata-changed': 'Tracked source structure changed.',
+    'allowed-setting-or-character-source-changed': 'A setting or character source changed or is no longer available.',
+    'allowed-source-baseline-unavailable': 'The original setting or character source versions cannot be checked.',
+    'generation-metadata-unavailable': 'This summary is marked AI-adopted, but its generation record is missing or invalid.',
+};
+
+function summaryFreshnessMessage(chapter: ChapterOption): string | null {
+    const freshness = chapter.summaryFreshness;
+    if (!chapter.summary || !freshness || freshness.status === 'missing') return null;
+    if (freshness.status === 'needs-review') {
+        if (freshness.reasons.includes('generation-metadata-unavailable')) {
+            return FRESHNESS_REASON_LABELS['generation-metadata-unavailable'];
+        }
+        return 'No verifiable source snapshot is recorded for this summary. Review it and edit it to establish a baseline.';
+    }
+    if (freshness.status === 'current' && freshness.sourceVersionChanged) {
+        return 'The chapter database version differs from this snapshot, but no tracked text, structure, or reference change was detected.';
+    }
+    if (freshness.status !== 'possibly-stale') return null;
+    return freshness.reasons.map(reason => FRESHNESS_REASON_LABELS[reason] ?? 'A tracked source changed.').join(' ');
+}
+
 interface Props {
     chapterOptions: ChapterOption[]; targetChapterId: string | null;
     updateChapterSummary: (id: string, summary: string) => void;
@@ -84,6 +117,13 @@ export function ChapterSummariesPanel({ chapterOptions, targetChapterId, updateC
                             <p className="truncate text-[11px] font-semibold uppercase tracking-wide text-slate-400">{chapter.volumeTitle}</p>
                             <h3 className="mt-0.5 truncate text-sm font-bold text-slate-900 dark:text-white">{chapter.title}</h3>
                         </div>
+                        {chapter.summary.trim() && <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                                {chapter.summaryProvenance === 'ai-adopted' ? 'AI adopted' : 'Author written'}
+                            </span>
+                            {chapter.summaryFreshness?.status === 'possibly-stale' && <span className="font-medium text-amber-600 dark:text-amber-400">Possible changes — review</span>}
+                            {chapter.summaryFreshness?.status === 'needs-review' && <span className="font-medium text-amber-600 dark:text-amber-400">Source snapshot unavailable</span>}
+                        </div>}
                         <textarea
                             id={`outline-summary-${chapter.id}`}
                             value={chapter.summary}
@@ -91,7 +131,9 @@ export function ChapterSummariesPanel({ chapterOptions, targetChapterId, updateC
                             placeholder="Chapter plot summary..."
                             className="h-28 w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-700 outline-none transition focus:border-brand-400 focus:bg-white dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:focus:border-brand-500 dark:focus:bg-slate-950"
                         />
-                        {chapter.sourceChanged && <p className="mt-1 text-xs text-amber-600">Source chapter changed or was not versioned. Review this summary.</p>}
+                        {summaryFreshnessMessage(chapter) && <p className={`mt-1 text-xs leading-5 ${chapter.sourceChanged ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}`}>
+                            {summaryFreshnessMessage(chapter)}
+                        </p>}
                     </section>
                 ))}
             </div>

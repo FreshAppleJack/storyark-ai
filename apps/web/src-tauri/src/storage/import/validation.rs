@@ -2,6 +2,7 @@ use super::{
     ImportCounts, Result, StorageError, EXCHANGE_CONTENT_VERSION, EXCHANGE_SCHEMA_VERSION,
 };
 use crate::storage::content;
+use crate::storage::planning_validation::validate_summary_metadata;
 use crate::storage::validation::MAX_INTEGER;
 use serde_json::{Map, Value};
 use std::collections::{HashMap, HashSet};
@@ -565,11 +566,15 @@ pub(super) fn validate_work(work: &Value) -> Result<ImportCounts> {
     }
     let summaries = array(planning, "chapterSummaries")?;
     for summary in summaries {
-        if !chapter_ids.contains(&uuid_field(summary, "chapterId")?)
+        let summary_chapter_id = uuid_field(summary, "chapterId")?;
+        if !chapter_ids.contains(&summary_chapter_id)
             || string(summary, "summary")?.len() > 1_048_576
         {
             return Err(import_invalid("A planning summary references another work"));
         }
+        validate_summary_metadata(summary, &book_id, &summary_chapter_id).map_err(|_| {
+            import_invalid("A chapter summary source snapshot or generation record is invalid")
+        })?;
         if let Some(version) = summary.get("sourceChapterVersion") {
             if version.as_i64().is_none() {
                 return Err(import_invalid("A planning source version is invalid"));

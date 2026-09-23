@@ -1,3 +1,10 @@
+import type {
+    ChapterSummaryContentFormat,
+    ChapterSummaryGenerationMetadata,
+    ChapterSummaryProvenance,
+    ChapterSummarySourceSnapshot,
+} from './domain/chapterSummarySource';
+
 export interface User {
   id: string;
   username: string;
@@ -59,6 +66,8 @@ export const AI_CONTINUE_LIMITS = {
 } as const;
 
 export interface Chapter {
+  contentFormat?: ChapterSummaryContentFormat;
+  contentVersion?: number;
   databaseVersion?: number;
   id: string;
   title: string;
@@ -84,6 +93,9 @@ export interface ChapterSummary {
   chapterId: string;
   summary: string;
   updatedAt: number;
+  provenance?: ChapterSummaryProvenance;
+  sourceSnapshot?: ChapterSummarySourceSnapshot;
+  generationMetadata?: ChapterSummaryGenerationMetadata;
 }
 
 export interface PlotSetting {
@@ -101,6 +113,7 @@ export interface StoryPlanning {
   storyBackground: string;
   chapterSummaries: ChapterSummary[];
   plotSettings: PlotSetting[];
+  databaseVersion?: number;
   updatedAt?: number;
 }
 
@@ -162,6 +175,7 @@ export interface HandleConfig {
 export interface Character {
   id: string;
   bookId: string;
+  databaseVersion?: number;
   name: string;
   aliases: string[];
   role: CharacterRole;

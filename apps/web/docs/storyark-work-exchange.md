@@ -256,8 +256,22 @@ chapterSummaries, plotSettings
 
 `bookId` must equal `book.id`. The two story text fields are each limited to
 1,048,576 characters. A chapter summary requires `chapterId`, `summary`, and
-`updatedAt`; `sourceChapterVersion` is optional but, when present, cannot be
-newer than the exported chapter record. A plot setting requires `id`, `title`,
+`updatedAt`; `sourceChapterVersion`, `provenance` (`author` or `ai-adopted`),
+`sourceSnapshot`, and `generationMetadata` are optional for legacy
+compatibility. A source snapshot records the chapter/version and deterministic
+body/block fingerprints, content format, Mention identities, and foreshadowing
+note fingerprints; it does not carry a duplicate chapter body. When present,
+its chapter ID must equal the summary's chapter ID. Its chapter database
+version is a historical source snapshot and may differ from the receiving
+device's chapter version. The optional `sourceChapterVersion` is rebased for
+the imported local record; it is not the sole freshness or concurrency test.
+An adopted AI summary
+requires generation metadata containing provider/config/model IDs, generation
+time, prompt version, allowed source IDs and versions, and an optional retrieval
+trace. Secrets, prompts, and full network payloads are not included.
+Generation metadata must explicitly set `includesFuturePlan: false`; future-plan
+source kinds are rejected. Recorded source versions are provenance snapshots,
+not concurrency tokens on another device. A plot setting requires `id`, `title`,
 `details`, `chapterIds`, `createdAt`, and `updatedAt`; `missingChapterIds` is
 optional. All planning chapter references must resolve to this book.
 

@@ -44,11 +44,15 @@ it('saves newer planning edits in order and keeps the chapter source version', a
     expect(save.mock.calls.map(([input]) => input.expectedDatabaseVersion)).toEqual([0, 1]);
     expect(save.mock.calls[1][0].storyBackground).toBe('New world rule');
     expect(save.mock.calls[1][0].chapterSummaries[0].sourceChapterVersion).toBe(1);
+    expect(save.mock.calls[1][0].chapterSummaries[0]).toMatchObject({
+        provenance: 'author',
+        sourceSnapshot: { chapterId: chapter.id, chapterDatabaseVersion: 1, fingerprintAlgorithm: 'fnv1a64-utf16-v1' },
+    });
     expect(result.current.isDirty).toBe(false);
     expect(legacy.save).not.toHaveBeenCalled();
 });
 
-it('clears stale chapter summary prompts after a successful planning save', async () => {
+it('keeps a stale legacy summary flagged until the author explicitly edits it', async () => {
     const currentChapter = { ...chapter, databaseVersion: 2 };
     const currentDetail: LocalBookDetail = { ...detail, chapters: [currentChapter, { ...chapter, id: 'other-chapter' }] };
     const currentBook = projectBook(book, currentDetail);
@@ -69,9 +73,21 @@ it('clears stale chapter summary prompts after a successful planning save', asyn
     await act(async () => { await result.current.handleSave(); });
 
     expect(save).toHaveBeenCalledWith(expect.objectContaining({
-        chapterSummaries: [expect.objectContaining({ sourceChapterVersion: 2 })],
+        chapterSummaries: [expect.objectContaining({ sourceChapterVersion: 1 })],
     }));
+    expect(result.current.chapterOptions[0].sourceChanged).toBe(true);
+    expect(result.current.chapterOptions[0].summaryFreshness?.status).toBe('needs-review');
+
+    act(() => result.current.updateChapterSummary(currentChapter.id, 'Reviewed against the current chapter.'));
+    await act(async () => { await result.current.flush(); });
+
+    expect(save.mock.calls.at(-1)?.[0].chapterSummaries[0]).toMatchObject({
+        sourceChapterVersion: 2,
+        provenance: 'author',
+        sourceSnapshot: { chapterId: currentChapter.id, chapterDatabaseVersion: 2 },
+    });
     expect(result.current.chapterOptions[0].sourceChanged).toBe(false);
+    expect(result.current.chapterOptions[0].summaryFreshness?.status).toBe('current');
 });
 
 it('retains planning on conflict and does not advance the expected version', async () => {

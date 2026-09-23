@@ -344,8 +344,15 @@ fn planning_sources(
             continue;
         }
         let recorded_version = summary.get("sourceChapterVersion").and_then(Value::as_i64);
+        let snapshot_version = summary
+            .get("sourceSnapshot")
+            .filter(|snapshot| snapshot["chapterId"].as_str() == Some(chapter_id))
+            .and_then(|snapshot| snapshot["chapterDatabaseVersion"].as_i64());
         let source_status = match recorded_version {
-            Some(value) if value == chapter.source_version => RetrievalSourceStatus::Active,
+            Some(value) if value == chapter.source_version && snapshot_version == Some(value) => {
+                RetrievalSourceStatus::Active
+            }
+            Some(value) if value == chapter.source_version => RetrievalSourceStatus::Pending,
             Some(value) if value > 0 => RetrievalSourceStatus::Stale,
             _ => RetrievalSourceStatus::Pending,
         };

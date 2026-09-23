@@ -111,6 +111,78 @@ fn planning_round_trip_retains_order_and_rejects_stale_or_foreign_references() {
 }
 
 #[test]
+fn adopted_summary_provenance_round_trips_and_future_plan_sources_are_rejected() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let chapter = fixture(&mut db);
+    db.save_chapter(chapter.clone()).unwrap();
+    let chapter_version = 2;
+    let body_fingerprint = "0123456789abcdef";
+    let mut input = planning_input(&chapter, 0);
+    input.chapter_summaries = json!([{
+        "chapterId": chapter.chapter_id,
+        "summary": "The adopted summary.",
+        "sourceChapterVersion": chapter_version,
+        "updatedAt": 10,
+        "provenance": "ai-adopted",
+        "sourceSnapshot": {
+            "chapterId": chapter.chapter_id,
+            "chapterDatabaseVersion": chapter_version,
+            "chapterTitle": "Chapter",
+            "contentFormat": "tiptap-json",
+            "contentVersion": 1,
+            "fingerprintAlgorithm": "fnv1a64-utf16-v1",
+            "bodyFingerprint": body_fingerprint,
+            "structuredFingerprint": "fedcba9876543210",
+            "blockFingerprints": ["fedcba9876543210"],
+            "mentionedCharacterIds": [],
+            "foreshadowingIds": [],
+            "foreshadowingNoteFingerprints": [],
+            "capturedAt": 9
+        },
+        "generationMetadata": {
+            "providerId": "provider-a",
+            "configId": "00000000-0000-4000-8000-000000000080",
+            "protocol": "openai-compatible",
+            "modelId": "model-a",
+            "generatedAt": 10,
+            "promptVersion": "chapter-summary-v1",
+            "source": {
+                "bookId": chapter.book_id,
+                "chapterId": chapter.chapter_id,
+                "chapterDatabaseVersion": chapter_version,
+                "sourceBodyFingerprint": body_fingerprint,
+                "planningDatabaseVersion": null,
+                "allowedSources": [],
+                "retrievalTrace": null,
+                "includesFuturePlan": false
+            }
+        }
+    }]);
+    let mut malicious_summaries = input.chapter_summaries.clone();
+    let saved = db.save_planning(input).unwrap();
+    assert_eq!(
+        saved["planning"]["chapterSummaries"][0]["provenance"],
+        "ai-adopted"
+    );
+    assert_eq!(
+        saved["planning"]["chapterSummaries"][0]["generationMetadata"]["source"]
+            ["sourceBodyFingerprint"],
+        body_fingerprint
+    );
+    assert_eq!(
+        db.read_planning(&chapter.book_id).unwrap()["chapterSummaries"][0]["sourceSnapshot"]
+            ["chapterDatabaseVersion"],
+        chapter_version
+    );
+
+    malicious_summaries[0]["generationMetadata"]["source"]["includesFuturePlan"] = json!(true);
+    let mut invalid = planning_input(&chapter, 1);
+    invalid.chapter_summaries = malicious_summaries;
+    assert_eq!(db.save_planning(invalid).unwrap_err().code, "INVALID_INPUT");
+}
+
+#[test]
 fn deleting_chapters_cleans_live_references_atomically_but_preserves_plot_and_snapshot_text() {
     let temp = TempDirectory::new();
     let mut db = Database::open(&temp.0).unwrap();

@@ -4,30 +4,13 @@ import { showSaveSuccessToast } from '../../../components/ui/saveToast';
 import type { Book, PlotSetting, StoryPlanning } from '../../../types';
 import { useBooks } from '../../../InteractionContent/BooksContext';
 import { createEmptyPlanning, createPlotSetting, sanitizePlanning } from '../../../domain/storyPlanning';
+import { createChapterSummarySourceSnapshot, type ChapterSummarySourceSnapshot } from '../../../domain/chapterSummarySource';
 import { getPlanningChapters } from '../planningSelectors';
 import { registerWorkDraftFlush } from '../../../services/workDraftFlushRegistry';
 
 export interface PlanningPersistence {
     load: () => Promise<StoryPlanning>;
     save: (planning: StoryPlanning, revision: number) => Promise<boolean>;
-}
-
-function acknowledgeChapterVersions(planning: StoryPlanning, book: Book | undefined): StoryPlanning {
-    if (!book) return planning;
-    const chapterVersions = new Map(book.volumes.flatMap(volume => volume.chapters)
-        .filter(chapter => chapter.databaseVersion !== undefined)
-        .map(chapter => [chapter.id, chapter.databaseVersion as number]));
-    if (chapterVersions.size === 0) return planning;
-
-    return {
-        ...planning,
-        chapterSummaries: planning.chapterSummaries.map(summary => {
-            const currentVersion = chapterVersions.get(summary.chapterId);
-            return currentVersion === undefined || currentVersion === summary.sourceChapterVersion
-                ? summary
-                : { ...summary, sourceChapterVersion: currentVersion };
-        }),
-    };
 }
 
 /** Owns a page draft, not a second server cache. Key the page by bookId. */
@@ -51,6 +34,15 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
     const latest = useRef(planning);
     useLayoutEffect(() => { latest.current = planning; }, [planning]);
     const revision = useRef(0);
+    const summarySourceSnapshots = useRef(new Map<string, {
+        title: string;
+        content: string;
+        databaseVersion?: number;
+        contentFormat?: Book['volumes'][number]['chapters'][number]['contentFormat'];
+        contentVersion?: number;
+        foreshadowings: Book['volumes'][number]['chapters'][number]['foreshadowings'];
+        snapshot: ChapterSummarySourceSnapshot;
+    }>());
     useEffect(() => {
         mounted.current = true;
         return () => { mounted.current = false; };
@@ -85,12 +77,37 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
     const updatePlanningField = (field: 'storySummary' | 'storyBackground', value: string) => edit(prev => ({ ...prev, [field]: value }));
     const updateChapterSummary = (chapterId: string, summary: string) => {
         const updatedAt = Date.now();
-        const sourceChapterVersion = book?.volumes.flatMap(volume => volume.chapters).find(chapter => chapter.id === chapterId)?.databaseVersion;
-        const source = sourceChapterVersion ? { sourceChapterVersion } : {};
+        const chapter = book?.volumes.flatMap(volume => volume.chapters).find(item => item.id === chapterId);
+        let sourceSnapshot: ChapterSummarySourceSnapshot | undefined;
+        if (chapter) {
+            const cacheKey = `${bookId}:${chapter.id}`;
+            const cached = summarySourceSnapshots.current.get(cacheKey);
+            sourceSnapshot = cached && cached.title === chapter.title && cached.content === chapter.content
+                && cached.databaseVersion === chapter.databaseVersion && cached.contentFormat === chapter.contentFormat
+                && cached.contentVersion === chapter.contentVersion && cached.foreshadowings === chapter.foreshadowings
+                ? cached.snapshot
+                : createChapterSummarySourceSnapshot(chapter, updatedAt);
+            summarySourceSnapshots.current.set(cacheKey, {
+                title: chapter.title,
+                content: chapter.content,
+                databaseVersion: chapter.databaseVersion,
+                contentFormat: chapter.contentFormat,
+                contentVersion: chapter.contentVersion,
+                foreshadowings: chapter.foreshadowings,
+                snapshot: sourceSnapshot,
+            });
+        }
+        const sourceChapterVersion = sourceSnapshot?.chapterDatabaseVersion;
+        const source = {
+            ...(sourceChapterVersion !== null && sourceChapterVersion !== undefined ? { sourceChapterVersion } : {}),
+            ...(sourceSnapshot ? { sourceSnapshot } : {}),
+        };
         edit(prev => ({
             ...prev, chapterSummaries: prev.chapterSummaries.some(item => item.chapterId === chapterId)
-                ? prev.chapterSummaries.map(item => item.chapterId === chapterId ? { ...item, ...source, summary, updatedAt } : item)
-                : [...prev.chapterSummaries, { chapterId, ...source, summary, updatedAt }]
+                ? prev.chapterSummaries.map(item => item.chapterId === chapterId
+                    ? { ...item, ...source, provenance: 'author', generationMetadata: undefined, summary, updatedAt }
+                    : item)
+                : [...prev.chapterSummaries, { chapterId, ...source, provenance: 'author', summary, updatedAt }]
         }));
     };
     const updateSelectedPlot = (patch: Partial<PlotSetting>) => {
@@ -127,16 +144,13 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
                     const snapshotRevision = revision.current;
                     const rawSnapshot = adapter.current ? latest.current
                         : sanitizePlanning(latest.current, new Set(chapterOptions.map(chapter => chapter.id)));
-                    const snapshot = acknowledgeChapterVersions(rawSnapshot, book);
+                    const snapshot = rawSnapshot;
                     const ok = adapter.current ? await adapter.current.save(snapshot, snapshotRevision)
                         : await saveStoryPlanning(bookId, snapshot);
                     if (!mounted.current) return false;
                     if (!ok) throw new Error('Failed to save planning. Your draft is still available.');
                     savedRevision.current = snapshotRevision;
                     if (revision.current === snapshotRevision) {
-                        const acknowledged = acknowledgeChapterVersions(latest.current, book);
-                        latest.current = acknowledged;
-                        setPlanning(acknowledged);
                         // The indicator persists like the editor's: it only
                         // leaves when the next edit marks the page dirty.
                         setSaveState('saved');
