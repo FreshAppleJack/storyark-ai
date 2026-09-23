@@ -17,7 +17,7 @@ export function useLocalPlanningPersistence(initial: LocalPlanning): PlanningPer
             if (response.sessionKey !== session.current || response.revision !== revision) throw new Error('Planning acknowledgement mismatch. Keep your draft and reload before retrying.');
             version.current = response.planning.databaseVersion;
             client.setQueryData(planningKey(loaded.current.bookId), response.planning);
-            return true;
+            return { databaseVersion: response.planning.databaseVersion };
         },
     }), [client]);
 }

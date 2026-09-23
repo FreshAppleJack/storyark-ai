@@ -1,6 +1,7 @@
 use super::*;
 use crate::rag::contracts::{
     RetrievalAnchor, RetrievalScope, RetrievalSearchMode, RetrievalSearchRequest,
+    RetrievalTaskStrategy,
 };
 use crate::rag::embeddings::{current_fingerprint, DIMENSION};
 use crate::storage::{
@@ -98,6 +99,101 @@ fn legacy_summary_without_a_source_snapshot_is_not_marked_as_current_retrieval_e
         source(&sources, "chapter_summary")["sourceStatus"],
         "pending"
     );
+}
+
+#[test]
+fn chapter_summary_retrieval_rejects_future_plan_and_cross_chapter_scopes() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let chapter = fixture(&mut db);
+    db.save_chapter(chapter.clone()).unwrap();
+    let book_id = chapter.book_id.clone();
+    let chapter_id = chapter.chapter_id.clone();
+    let unsafe_scope = |allowed_chapter_ids: Vec<String>,
+                        include_future_plan: bool,
+                        allowed_source_kinds| RetrievalScope {
+        book_id: book_id.clone(),
+        allowed_source_kinds,
+        allowed_chapter_ids,
+        before_chapter_order: None,
+        before_anchor: None,
+        include_future_plan,
+        include_generated: false,
+        include_stale: false,
+        time_range: None,
+    };
+    let request = |scope| RetrievalSearchRequest {
+        freshness_policy: None,
+        scope,
+        query: "chapter summary".into(),
+        mode: RetrievalSearchMode::Lexical,
+        limit: 5,
+        excluded_hit_ids: Vec::new(),
+        char_budget: 1000,
+        token_budget: None,
+        adjacent_chunk_count: 0,
+        task: RetrievalTaskStrategy::ChapterSummary,
+        index_status: None,
+    };
+
+    assert_eq!(
+        db.search_retrieval(
+            request(unsafe_scope(
+                vec![chapter_id.clone()],
+                true,
+                vec![crate::rag::contracts::RetrievalSourceKind::Character],
+            )),
+            None,
+            None
+        )
+        .unwrap_err()
+        .code,
+        "INVALID_INPUT"
+    );
+    assert_eq!(
+        db.search_retrieval(
+            request(unsafe_scope(
+                vec![chapter_id.clone(), Uuid::new_v4().to_string()],
+                false,
+                vec![crate::rag::contracts::RetrievalSourceKind::Character],
+            )),
+            None,
+            None
+        )
+        .unwrap_err()
+        .code,
+        "INVALID_INPUT"
+    );
+
+    assert_eq!(
+        db.search_retrieval(
+            request(unsafe_scope(
+                vec![chapter_id.clone()],
+                false,
+                vec![crate::rag::contracts::RetrievalSourceKind::ForeshadowingNote],
+            )),
+            None,
+            None
+        )
+        .unwrap_err()
+        .code,
+        "INVALID_INPUT"
+    );
+
+    let response = db
+        .search_retrieval(
+            request(unsafe_scope(
+                vec![chapter_id.clone()],
+                false,
+                vec![crate::rag::contracts::RetrievalSourceKind::Character],
+            )),
+            None,
+            None,
+        )
+        .unwrap();
+    assert_eq!(response["context"]["task"], "chapter_summary");
+    assert_eq!(response["context"]["chapterId"], chapter_id);
+    assert_eq!(response["context"]["scope"]["includeFuturePlan"], false);
 }
 
 #[test]

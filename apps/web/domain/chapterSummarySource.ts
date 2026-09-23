@@ -1,3 +1,5 @@
+import type { RetrievalContext, RetrievalSearchStatus } from './retrieval/contracts';
+
 export type ChapterSummaryProvenance = 'author' | 'ai-adopted';
 export type ChapterSummaryContentFormat = 'tiptap-json' | 'legacy-json' | 'legacy-html' | 'unrecognized';
 export type ChapterSummaryAllowedSourceKind = 'planning' | 'confirmed_setting' | 'character' | 'relationship' | 'foreshadowing_note';
@@ -26,10 +28,27 @@ export interface ChapterSummaryAllowedSource {
     indexVersion: number | null;
 }
 
+export type ChapterSummaryRetrievalSourceKind = Extract<ChapterSummaryAllowedSourceKind, 'confirmed_setting' | 'character'>;
+
+export interface ChapterSummaryRetrievalScope {
+    bookId: string;
+    allowedSourceKinds: ChapterSummaryRetrievalSourceKind[];
+    allowedChapterIds: string[];
+    beforeChapterOrder: number | null;
+    beforeAnchor: { chapterId: string; paragraphOrdinal: number | null; textOffset: number | null } | null;
+    includeFuturePlan: false;
+    includeGenerated: false;
+    includeStale: false;
+    timeRange: { updatedAfter: number | null; updatedBefore: number | null } | null;
+}
+
 export interface ChapterSummaryRetrievalTrace {
     searchId: string;
     retrievalVersion: string;
+    task: 'chapter_summary';
     requestedAt: number;
+    scope: ChapterSummaryRetrievalScope;
+    excludedHitIds: string[];
     sourceVersions: Array<{
         sourceId: string;
         chapterId: string | null;
@@ -37,6 +56,8 @@ export interface ChapterSummaryRetrievalTrace {
         indexVersion: number;
     }>;
     includedHitIds: string[];
+    omittedHitIds: string[];
+    budget: { charBudget: number; tokenBudget: number | null };
     indexVersion: number | null;
     embeddingFingerprint: string | null;
 }
@@ -62,13 +83,29 @@ export interface ChapterSummaryGenerationMetadata {
 
 /** Ephemeral state only. Suggestions are not part of persisted StoryPlanning until explicitly adopted. */
 export interface ChapterSummarySuggestion {
-    status: 'starting' | 'streaming' | 'candidate' | 'invalid' | 'failed' | 'stale';
+    status: 'starting' | 'streaming' | 'candidate' | 'invalid' | 'failed' | 'cancelled' | 'stale' | 'adopting' | 'save-failed';
     chapterId: string;
     rawText: string;
     suggestedSummary: string | null;
     errorMessage: string | null;
+    previousSummary: string;
+    sourcePreview: string;
+    sourceFingerprint: string | null;
+    draftRevision: number | null;
     sourceSnapshot: ChapterSummarySourceSnapshot | null;
     generationMetadata: ChapterSummaryGenerationMetadata | null;
+    retrievalContext: RetrievalContext | null;
+    retrievalStatus: RetrievalSearchStatus | null;
+    retrievalNotice: string | null;
+    lastAttempt?: {
+        status: 'invalid' | 'failed' | 'cancelled' | 'stale';
+        rawText: string;
+        errorMessage: string;
+        generationMetadata: ChapterSummaryGenerationMetadata | null;
+        retrievalContext: RetrievalContext | null;
+        retrievalStatus: RetrievalSearchStatus | null;
+        retrievalNotice: string | null;
+    };
 }
 
 export interface ChapterSummaryFreshness {
@@ -460,9 +497,19 @@ export function parseChapterSummaryGenerationMetadata(value: unknown, chapterId:
     if (new Set(allowedSources.map(item => (item as JsonRecord).sourceId)).size !== allowedSources.length) return undefined;
     const trace = source.retrievalTrace;
     if (trace !== null && (!isRecord(trace) || !nonEmptyText(trace.searchId, 128) || !nonEmptyText(trace.retrievalVersion, 128)
+        || trace.task !== 'chapter_summary' || !isChapterSummaryRetrievalScope(trace.scope, source.bookId, chapterId)
         || !nonNegativeInteger(trace.requestedAt) || !Array.isArray(trace.sourceVersions) || trace.sourceVersions.length > 512
+        || !Array.isArray(trace.excludedHitIds) || trace.excludedHitIds.length > 200
+        || trace.excludedHitIds.some(id => !nonEmptyText(id, 8192))
+        || new Set(trace.excludedHitIds).size !== trace.excludedHitIds.length
         || !Array.isArray(trace.includedHitIds) || trace.includedHitIds.length > 200
         || trace.includedHitIds.some(id => !nonEmptyText(id, 8192))
+        || new Set(trace.includedHitIds).size !== trace.includedHitIds.length
+        || !Array.isArray(trace.omittedHitIds) || trace.omittedHitIds.length > 200
+        || trace.omittedHitIds.some(id => !nonEmptyText(id, 8192))
+        || new Set(trace.omittedHitIds).size !== trace.omittedHitIds.length
+        || !isRecord(trace.budget) || !positiveInteger(trace.budget.charBudget)
+        || !(trace.budget.tokenBudget === null || positiveInteger(trace.budget.tokenBudget))
         || !(trace.indexVersion === null || positiveInteger(trace.indexVersion))
         || !(trace.embeddingFingerprint === null || nonEmptyText(trace.embeddingFingerprint, 1024))
         || trace.sourceVersions.some(item => !isRecord(item) || !nonEmptyText(item.sourceId, 512)
@@ -484,4 +531,22 @@ function nonNegativeInteger(value: unknown): value is number {
 
 function positiveInteger(value: unknown): value is number {
     return Number.isSafeInteger(value) && (value as number) > 0;
+}
+
+function isChapterSummaryRetrievalScope(value: unknown, bookId: string, chapterId: string): value is ChapterSummaryRetrievalScope {
+    const allowedKinds = new Set(['confirmed_setting', 'character']);
+    return isRecord(value)
+        && value.bookId === bookId
+        && Array.isArray(value.allowedChapterIds)
+        && value.allowedChapterIds.length === 1
+        && value.allowedChapterIds[0] === chapterId
+        && Array.isArray(value.allowedSourceKinds)
+        && value.allowedSourceKinds.length > 0
+        && value.allowedSourceKinds.every(kind => typeof kind === 'string' && allowedKinds.has(kind))
+        && value.includeFuturePlan === false
+        && value.includeGenerated === false
+        && value.includeStale === false
+        && value.beforeAnchor === null
+        && value.beforeChapterOrder === null
+        && value.timeRange === null;
 }

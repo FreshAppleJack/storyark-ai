@@ -29,6 +29,7 @@ fn adoption_rechecks_saved_chapter_version_lock_and_retrieved_source_versions() 
         book_id: chapter.book_id.clone(),
         chapter_id: chapter.chapter_id.clone(),
         database_version: 2,
+        planning_database_version: None,
         retrieval_source_versions: vec![source_version.clone()],
     };
 
@@ -81,6 +82,7 @@ fn adoption_rejects_cross_book_retrieval_sources() {
         book_id: first.book_id,
         chapter_id: first.chapter_id,
         database_version: 2,
+        planning_database_version: None,
         retrieval_source_versions: vec![RetrievalSourceVersionRecord {
             source_id: foreign_source["sourceId"].as_str().unwrap().to_owned(),
             chapter_id: Some(second.chapter_id),
@@ -90,6 +92,52 @@ fn adoption_rejects_cross_book_retrieval_sources() {
     };
     assert_eq!(
         db.validate_ai_adoption(request).unwrap_err().code,
+        "CONTEXT_CHANGED"
+    );
+}
+
+#[test]
+fn summary_adoption_rechecks_the_planning_aggregate_version() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let chapter = fixture(&mut db);
+    db.save_chapter(chapter.clone()).unwrap();
+    db.save_planning(SavePlanning {
+        book_id: chapter.book_id.clone(),
+        expected_database_version: 0,
+        story_summary: String::new(),
+        story_background: String::new(),
+        chapter_summaries: json!([]),
+        plot_settings: json!([]),
+        session_key: "summary-adoption".into(),
+        revision: 1,
+    })
+    .unwrap();
+    let adoption = ValidateAiAdoption {
+        book_id: chapter.book_id.clone(),
+        chapter_id: chapter.chapter_id.clone(),
+        database_version: 2,
+        planning_database_version: Some(1),
+        retrieval_source_versions: Vec::new(),
+    };
+    assert_eq!(
+        db.validate_ai_adoption(adoption.clone()).unwrap()["validated"],
+        true
+    );
+
+    db.save_planning(SavePlanning {
+        book_id: chapter.book_id.clone(),
+        expected_database_version: 1,
+        story_summary: "Changed in another planning draft".into(),
+        story_background: String::new(),
+        chapter_summaries: json!([]),
+        plot_settings: json!([]),
+        session_key: "summary-adoption-other-session".into(),
+        revision: 2,
+    })
+    .unwrap();
+    assert_eq!(
+        db.validate_ai_adoption(adoption).unwrap_err().code,
         "CONTEXT_CHANGED"
     );
 }

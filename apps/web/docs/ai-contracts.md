@@ -260,3 +260,24 @@ the context may contain only a bounded excerpt of the currently loaded chapter
 text and never triggers a hidden model call. Relationship edges retain their
 source and target node instance keys, so duplicate nodes for one character are
 not merged.
+
+## P1-SUM2: chapter summary suggestion boundary
+
+Story Outline keeps summary generation beside each chapter card. The local
+provider path captures the current chapter and planning versions, sends only
+the selected chapter body as the event source, and requests a chapter-scoped
+retrieval context for confirmed settings and character profiles. Relationships
+and foreshadowing notes are excluded from summary retrieval. Future plans,
+other chapters, stale sources, and generated sources are
+excluded. Retrieved evidence is presented as terminology context, not evidence
+that an event happened.
+
+The previous summary remains untouched while the suggestion streams into
+temporary state. Review shows the saved text beside the suggestion and identifies
+the selected chapter excerpt and actual retrieval evidence. Invalid, empty,
+truncated, cancelled, failed, or late responses never enter the planning row.
+Accept rechecks the chapter, planning version and retrieved source versions,
+then persists as one normal optimistic planning save with AI provenance. A
+conflict keeps the draft and does not retry against a newer version. No default
+model or retrieval source leaves reading and manual editing/saving available;
+no alternate model is invoked.

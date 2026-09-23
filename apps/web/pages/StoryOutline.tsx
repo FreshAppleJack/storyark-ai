@@ -13,6 +13,7 @@ import { SaveStatusIndicator } from '../components/ui/SaveStatusIndicator';
 import { useBooks } from '../InteractionContent/BooksContext';
 import { useStoryPlanning } from '../features/planning/hooks/useStoryPlanning';
 import { ChapterSummariesPanel } from '../features/planning/components/ChapterSummariesPanel';
+import { useChapterSummarySuggestions } from '../features/planning/hooks/useChapterSummarySuggestions';
 import { StoryOverviewPanel } from '../features/planning/components/StoryOverviewPanel';
 import { PlotSettingsPanel } from '../features/planning/components/PlotSettingsPanel';
 
@@ -23,6 +24,19 @@ function StoryOutlineContent({ bookId, localBook, persistence }: { bookId: strin
     const book = localBook ?? getBook(bookId);
     const editor = useStoryPlanning(bookId, book, persistence);
     const { isLoading, loadError, isSaving, saveState, handleSave } = editor;
+    const summarySuggestions = useChapterSummarySuggestions({
+        enabled: Boolean(persistence && book && !loadError),
+        bookId,
+        book,
+        planning: editor.planning,
+        draftRevision: editor.draftRevision,
+        flushPlanning: editor.flush,
+        getPlanningSnapshot: editor.getPlanningSnapshot,
+        getDraftRevision: editor.getDraftRevision,
+        isReadOnly: Boolean(book?.isReadOnly),
+        updateManualSummary: editor.updateChapterSummary,
+        adoptSummary: editor.adoptChapterSummarySuggestion,
+    });
     const openAiBrainstorm = () => {
         const chapterId = searchParams.get('chapterId');
         navigate(`/books/${bookId}/ai-brainstorm${chapterId ? `?chapterId=${chapterId}` : ''}`);
@@ -70,7 +84,18 @@ function StoryOutlineContent({ bookId, localBook, persistence }: { bookId: strin
             ) : (
                 <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[340px_minmax(420px,1fr)_380px] overflow-hidden">
                     <ChapterSummariesPanel chapterOptions={editor.chapterOptions} targetChapterId={searchParams.get('chapterId')}
-                        updateChapterSummary={editor.updateChapterSummary} />
+                        updateChapterSummary={editor.updateChapterSummary}
+                        suggestions={summarySuggestions.suggestions}
+                        activeSuggestionChapterId={summarySuggestions.activeChapterId}
+                        modelAvailability={summarySuggestions.modelAvailability}
+                        modelNotice={summarySuggestions.modelNotice}
+                        isReadOnly={Boolean(book.isReadOnly)}
+                        isSuggestionCurrent={summarySuggestions.isCurrent}
+                        generateSuggestion={chapterId => { void summarySuggestions.generate(chapterId); }}
+                        stopSuggestion={summarySuggestions.stop}
+                        acceptSuggestion={chapterId => { void summarySuggestions.accept(chapterId); }}
+                        keepManual={summarySuggestions.keepManual}
+                        toggleSuggestionHit={summarySuggestions.toggleRetrievalHit} />
                     <StoryOverviewPanel planning={editor.planning} updatePlanningField={editor.updatePlanningField} />
                     <PlotSettingsPanel planning={editor.planning} selectedPlot={editor.selectedPlot} selectedPlotId={editor.selectedPlotId}
                         setSelectedPlotId={editor.setSelectedPlotId} chapterOptions={editor.chapterOptions} addPlotSetting={editor.addPlotSetting}

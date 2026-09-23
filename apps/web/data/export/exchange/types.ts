@@ -181,6 +181,23 @@ export interface ExchangeChapterSummarySourceSnapshot {
 
 export type ExchangeChapterSummarySourceKind = 'planning' | 'confirmed_setting' | 'character' | 'relationship' | 'foreshadowing_note';
 
+export interface ExchangeChapterSummaryRetrievalScope {
+    bookId: UUID;
+    allowedSourceKinds: Array<Extract<ExchangeChapterSummarySourceKind, 'confirmed_setting' | 'character'>>;
+    allowedChapterIds: UUID[];
+    beforeChapterOrder: number | null;
+    beforeAnchor: { chapterId: UUID; paragraphOrdinal?: number | null; textOffset?: number | null } | null;
+    includeFuturePlan: false;
+    includeGenerated: false;
+    includeStale: false;
+    timeRange: { updatedAfter?: Timestamp | null; updatedBefore?: Timestamp | null } | null;
+}
+
+export interface ExchangeChapterSummaryRetrievalBudget {
+    charBudget: number;
+    tokenBudget: number | null;
+}
+
 export interface ExchangeChapterSummaryGenerationSource {
     bookId: UUID;
     chapterId: UUID;
@@ -197,7 +214,10 @@ export interface ExchangeChapterSummaryGenerationSource {
     retrievalTrace: {
         searchId: string;
         retrievalVersion: string;
+        task: 'chapter_summary';
         requestedAt: Timestamp;
+        scope: ExchangeChapterSummaryRetrievalScope;
+        excludedHitIds: string[];
         sourceVersions: Array<{
             sourceId: string;
             chapterId: UUID | null;
@@ -205,6 +225,8 @@ export interface ExchangeChapterSummaryGenerationSource {
             indexVersion: number;
         }>;
         includedHitIds: string[];
+        omittedHitIds: string[];
+        budget: ExchangeChapterSummaryRetrievalBudget;
         indexVersion: number | null;
         embeddingFingerprint: string | null;
     } | null;

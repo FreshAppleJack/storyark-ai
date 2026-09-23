@@ -74,6 +74,7 @@ export interface Chapter {
   wordCount: number;
   status: 'draft' | 'published';
   content: string;
+  isReadOnly?: boolean;
   isEditable: boolean;
   foreshadowings: ForeshadowingNote[];
   lastModified?: number;

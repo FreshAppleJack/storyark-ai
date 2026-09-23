@@ -31,6 +31,20 @@ fn adoption_request(
             book_id,
             chapter_id: chapter_id.clone(),
             database_version: *database_version,
+            planning_database_version: None,
+            retrieval_source_versions: retrieval
+                .map(|context| context.source_versions.clone())
+                .unwrap_or_default(),
+        }),
+        GenerationTarget::ChapterSummary {
+            chapter_id,
+            database_version,
+            planning_database_version,
+        } => Some(ValidateAiAdoption {
+            book_id,
+            chapter_id: chapter_id.clone(),
+            database_version: *database_version,
+            planning_database_version: Some(*planning_database_version),
             retrieval_source_versions: retrieval
                 .map(|context| context.source_versions.clone())
                 .unwrap_or_default(),

@@ -1,10 +1,11 @@
-import type { Book, StoryPlanning, PlotSetting } from '../../types';
+import type { Book, Chapter, StoryPlanning, PlotSetting } from '../../types';
 import {
     assessChapterSummaryFreshness,
     createCurrentAllowedSourceVersions,
     type ChapterSummaryFreshness,
     type ChapterSummaryProvenance,
 } from '../../domain/chapterSummarySource';
+import { getEditorPlainText } from '../../domain/chapterContent';
 import { getFuzzyScore } from '../../utils/search';
 
 export interface ChapterOption {
@@ -13,9 +14,21 @@ export interface ChapterOption {
     volumeId: string;
     volumeTitle: string;
     summary: string;
+    hasWrittenText: boolean;
+    isReadOnly: boolean;
     sourceChanged?: boolean;
     summaryProvenance?: ChapterSummaryProvenance;
     summaryFreshness?: ChapterSummaryFreshness;
+}
+
+const chapterTextCache = new WeakMap<Chapter, { content: string; hasText: boolean }>();
+
+function hasChapterText(chapter: Chapter): boolean {
+    const cached = chapterTextCache.get(chapter);
+    if (cached?.content === chapter.content) return cached.hasText;
+    const hasText = Boolean(getEditorPlainText(chapter.content).trim());
+    chapterTextCache.set(chapter, { content: chapter.content, hasText });
+    return hasText;
 }
 
 export function getPlanningChapters(book: Book, planning: StoryPlanning): ChapterOption[] {
@@ -38,6 +51,8 @@ export function getPlanningChapters(book: Book, planning: StoryPlanning): Chapte
                 volumeId: volume.id,
                 volumeTitle: volume.title,
                 summary: summary?.summary ?? '',
+                hasWrittenText: hasChapterText(chapter),
+                isReadOnly: Boolean(chapter.isReadOnly),
                 summaryProvenance: summary?.provenance,
                 summaryFreshness,
                 sourceChanged: summaryFreshness.status === 'possibly-stale' || summaryFreshness.status === 'needs-review',

@@ -16,6 +16,14 @@ fn target_source_versions(target: &GenerationTarget) -> Vec<SourceVersion> {
             chapter_id: chapter_id.clone(),
             database_version: *database_version,
         }],
+        GenerationTarget::ChapterSummary {
+            chapter_id,
+            database_version,
+            ..
+        } => vec![SourceVersion {
+            chapter_id: chapter_id.clone(),
+            database_version: *database_version,
+        }],
         GenerationTarget::Brainstorm { sources, .. } => sources.clone(),
     }
 }

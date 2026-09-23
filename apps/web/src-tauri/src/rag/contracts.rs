@@ -331,6 +331,7 @@ pub enum RetrievalTaskStrategy {
     Generic,
     Continuation,
     Brainstorm,
+    ChapterSummary,
     ConsistencyCheck,
 }
 
@@ -340,6 +341,7 @@ impl RetrievalTaskStrategy {
             Self::Generic => "generic",
             Self::Continuation => "continuation",
             Self::Brainstorm => "brainstorm",
+            Self::ChapterSummary => "chapter_summary",
             Self::ConsistencyCheck => "consistency_check",
         }
     }

@@ -5,6 +5,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { planningRepository, type LocalPlanning } from '../../../data/local/planningRepository';
 import { localKeys, projectBook, type LocalBookDetail } from '../../../data/local/repository';
 import { useStoryPlanning } from '../../../features/planning/hooks/useStoryPlanning';
+import { createChapterSummarySourceSnapshot } from '../../../domain/chapterSummarySource';
 import { useLocalPlanningPersistence } from '../../../features/planning/hooks/useLocalPlanningPersistence';
 import { useLocalNoteDrafts } from '../../../features/foreshadowing/hooks/useLocalNoteDrafts';
 import { collectForeshadowingCards, foreshadowingCardKey } from '../../../features/foreshadowing/foreshadowingSelectors';
@@ -48,6 +49,7 @@ it('saves newer planning edits in order and keeps the chapter source version', a
         provenance: 'author',
         sourceSnapshot: { chapterId: chapter.id, chapterDatabaseVersion: 1, fingerprintAlgorithm: 'fnv1a64-utf16-v1' },
     });
+    expect(result.current.planning.databaseVersion).toBe(2);
     expect(result.current.isDirty).toBe(false);
     expect(legacy.save).not.toHaveBeenCalled();
 });
@@ -88,6 +90,50 @@ it('keeps a stale legacy summary flagged until the author explicitly edits it', 
     });
     expect(result.current.chapterOptions[0].sourceChanged).toBe(false);
     expect(result.current.chapterOptions[0].summaryFreshness?.status).toBe('current');
+});
+
+it('keeps an accepted AI summary in the planning draft when the optimistic save conflicts', async () => {
+    const save = vi.spyOn(planningRepository, 'save').mockRejectedValue(new Error('VERSION_CONFLICT'));
+    const { result } = renderHook(() => useStoryPlanning(book.id, projected, useLocalPlanningPersistence(initial)), wrapper());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const sourceSnapshot = createChapterSummarySourceSnapshot(projected.volumes[0].chapters[0], 100);
+    const generationMetadata = {
+        providerId: 'api.example.invalid',
+        configId: '00000000-0000-4000-8000-000000000080',
+        protocol: 'openai-responses',
+        modelId: 'model-a',
+        generatedAt: 100,
+        promptVersion: 'chapter-summary-v1',
+        source: {
+            bookId: book.id,
+            chapterId: chapter.id,
+            chapterDatabaseVersion: 1,
+            sourceBodyFingerprint: sourceSnapshot.bodyFingerprint,
+            planningDatabaseVersion: 0,
+            allowedSources: [],
+            retrievalTrace: null,
+            includesFuturePlan: false as const,
+        },
+    };
+
+    await act(async () => {
+        expect(await result.current.adoptChapterSummarySuggestion({
+            chapterId: chapter.id,
+            summary: 'Accepted candidate kept in the draft.',
+            sourceSnapshot,
+            generationMetadata,
+            expectedDraftRevision: 0,
+        })).toBe('save-failed');
+    });
+
+    expect(result.current.planning.chapterSummaries[0]).toMatchObject({
+        summary: 'Accepted candidate kept in the draft.',
+        provenance: 'ai-adopted',
+        generationMetadata: { modelId: 'model-a' },
+    });
+    expect(result.current.isDirty).toBe(true);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][0].expectedDatabaseVersion).toBe(0);
 });
 
 it('retains planning on conflict and does not advance the expected version', async () => {

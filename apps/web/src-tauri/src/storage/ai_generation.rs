@@ -55,6 +55,22 @@ impl Database {
                     return Err(changed());
                 }
             }
+            GenerationTarget::ChapterSummary {
+                chapter_id,
+                database_version,
+                planning_database_version,
+            } => {
+                valid_id(chapter_id)?;
+                let chapter = record(&self.connection, "chapters", chapter_id)?;
+                ownership(&chapter, "bookId", book_id)?;
+                if chapter["databaseVersion"].as_i64() != i64::try_from(*database_version).ok() {
+                    return Err(changed());
+                }
+                match_version(
+                    aggregate_version(&self.connection, "planning", book_id)?,
+                    *planning_database_version,
+                )?;
+            }
             GenerationTarget::Brainstorm {
                 workspace_database_version,
                 planning_database_version,

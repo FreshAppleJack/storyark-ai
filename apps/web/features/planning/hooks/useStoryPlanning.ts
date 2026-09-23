@@ -10,7 +10,7 @@ import { registerWorkDraftFlush } from '../../../services/workDraftFlushRegistry
 
 export interface PlanningPersistence {
     load: () => Promise<StoryPlanning>;
-    save: (planning: StoryPlanning, revision: number) => Promise<boolean>;
+    save: (planning: StoryPlanning, revision: number) => Promise<boolean | { databaseVersion: number }>;
 }
 
 /** Owns a page draft, not a second server cache. Key the page by bookId. */
@@ -27,6 +27,7 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
     const [loadAttempt, setLoadAttempt] = useState(0);
     const [isSaving, setIsSaving] = useState(false);
     const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saved'>('idle');
+    const [currentDraftRevision, setCurrentDraftRevision] = useState(0);
     const mounted = useRef(false);
     const pendingSave = useRef<Promise<boolean> | null>(null);
     const savedRevision = useRef(0);
@@ -71,7 +72,10 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
     const selectedPlot = planning.plotSettings.find(plot => plot.id === selectedPlotId) || null;
     const edit = (update: (previous: StoryPlanning) => StoryPlanning) => {
         revision.current++;
-        setPlanning(update);
+        setCurrentDraftRevision(revision.current);
+        const next = update(latest.current);
+        latest.current = next;
+        setPlanning(next);
         setSaveState('dirty');
     };
     const updatePlanningField = (field: 'storySummary' | 'storyBackground', value: string) => edit(prev => ({ ...prev, [field]: value }));
@@ -145,10 +149,14 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
                     const rawSnapshot = adapter.current ? latest.current
                         : sanitizePlanning(latest.current, new Set(chapterOptions.map(chapter => chapter.id)));
                     const snapshot = rawSnapshot;
-                    const ok = adapter.current ? await adapter.current.save(snapshot, snapshotRevision)
+                    const result = adapter.current ? await adapter.current.save(snapshot, snapshotRevision)
                         : await saveStoryPlanning(bookId, snapshot);
                     if (!mounted.current) return false;
-                    if (!ok) throw new Error('Failed to save planning. Your draft is still available.');
+                    if (!result) throw new Error('Failed to save planning. Your draft is still available.');
+                    if (typeof result === 'object' && Number.isSafeInteger(result.databaseVersion)) {
+                        latest.current = { ...latest.current, databaseVersion: result.databaseVersion };
+                        setPlanning(previous => ({ ...previous, databaseVersion: result.databaseVersion }));
+                    }
                     savedRevision.current = snapshotRevision;
                     if (revision.current === snapshotRevision) {
                         // The indicator persists like the editor's: it only
@@ -174,15 +182,65 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
         pendingSave.current = operation();
         return pendingSave.current;
     }, [book, bookId, isLoading, loadError, chapterOptions, saveStoryPlanning]);
+
+    const adoptChapterSummarySuggestion = async (input: {
+        chapterId: string;
+        summary: string;
+        sourceSnapshot: ChapterSummarySourceSnapshot;
+        generationMetadata: NonNullable<StoryPlanning['chapterSummaries'][number]['generationMetadata']>;
+        expectedDraftRevision: number;
+    }): Promise<'saved' | 'stale' | 'save-failed'> => {
+        if (input.expectedDraftRevision !== revision.current || !input.summary.trim()) return 'stale';
+        const chapter = book?.volumes.flatMap(volume => volume.chapters).find(item => item.id === input.chapterId);
+        if (!chapter) return 'stale';
+        const currentSnapshot = createChapterSummarySourceSnapshot(chapter, input.sourceSnapshot.capturedAt);
+        if (input.sourceSnapshot.chapterId !== chapter.id
+            || currentSnapshot.bodyFingerprint !== input.sourceSnapshot.bodyFingerprint
+            || currentSnapshot.structuredFingerprint !== input.sourceSnapshot.structuredFingerprint
+            || input.generationMetadata.source.bookId !== bookId
+            || input.generationMetadata.source.chapterId !== chapter.id
+            || (input.sourceSnapshot.chapterDatabaseVersion !== null
+                && input.generationMetadata.source.chapterDatabaseVersion !== input.sourceSnapshot.chapterDatabaseVersion)
+            || input.generationMetadata.source.sourceBodyFingerprint !== input.sourceSnapshot.bodyFingerprint
+            || input.generationMetadata.source.includesFuturePlan) return 'stale';
+        edit(previous => ({
+            ...previous,
+            chapterSummaries: previous.chapterSummaries.some(item => item.chapterId === input.chapterId)
+                ? previous.chapterSummaries.map(item => item.chapterId === input.chapterId ? {
+                    ...item,
+                    summary: input.summary.trim(),
+                    sourceChapterVersion: input.sourceSnapshot.chapterDatabaseVersion ?? undefined,
+                    sourceSnapshot: input.sourceSnapshot,
+                    provenance: 'ai-adopted',
+                    generationMetadata: input.generationMetadata,
+                    updatedAt: Date.now(),
+                } : item)
+                : [...previous.chapterSummaries, {
+                    chapterId: input.chapterId,
+                    summary: input.summary.trim(),
+                    sourceChapterVersion: input.sourceSnapshot.chapterDatabaseVersion ?? undefined,
+                    sourceSnapshot: input.sourceSnapshot,
+                    provenance: 'ai-adopted',
+                    generationMetadata: input.generationMetadata,
+                    updatedAt: Date.now(),
+                }],
+        }));
+        return await flush(true) ? 'saved' : 'save-failed';
+    };
     useEffect(() => {
         if (!persistence) return undefined;
         return registerWorkDraftFlush(bookId, 'planning', flush);
     }, [bookId, flush, persistence]);
     const handleSave = async () => { await flush(true); };
+    const getPlanningSnapshot = useCallback(() => latest.current, []);
+    const getDraftRevision = useCallback(() => revision.current, []);
     return {
-        flush, saveError, isDirty: saveState === 'dirty', planning, selectedPlotId, setSelectedPlotId, selectedPlot, chapterOptions,
+        flush, saveError, isDirty: saveState === 'dirty', planning, draftRevision: currentDraftRevision,
+        getPlanningSnapshot, getDraftRevision,
+        selectedPlotId, setSelectedPlotId, selectedPlot, chapterOptions,
         isLoading, loadError, isSaving, saveState, retry: () => setLoadAttempt(attempt => attempt + 1),
-        updatePlanningField, updateChapterSummary, updateSelectedPlot, addPlotSetting, deleteSelectedPlot, togglePlotChapter, handleSave
+        updatePlanningField, updateChapterSummary, adoptChapterSummarySuggestion,
+        updateSelectedPlot, addPlotSetting, deleteSelectedPlot, togglePlotChapter, handleSave
     };
 }
 export type StoryPlanningEditor = ReturnType<typeof useStoryPlanning>;

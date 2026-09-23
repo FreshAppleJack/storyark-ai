@@ -42,6 +42,14 @@ pub enum GenerationTarget {
         #[serde(rename = "databaseVersion")]
         database_version: u64,
     },
+    ChapterSummary {
+        #[serde(rename = "chapterId")]
+        chapter_id: String,
+        #[serde(rename = "databaseVersion")]
+        database_version: u64,
+        #[serde(rename = "planningDatabaseVersion")]
+        planning_database_version: u64,
+    },
     Brainstorm {
         #[serde(rename = "workspaceDatabaseVersion")]
         workspace_database_version: u64,
@@ -82,6 +90,8 @@ pub struct ValidateAiAdoption {
     pub book_id: String,
     pub chapter_id: String,
     pub database_version: u64,
+    #[serde(default)]
+    pub planning_database_version: Option<u64>,
     #[serde(default)]
     pub retrieval_source_versions: Vec<crate::rag::contracts::RetrievalSourceVersionRecord>,
 }
@@ -237,6 +247,20 @@ mod tests {
             "kind":"continue", "chapterId":"chapter"
         }))
         .is_err());
+        assert!(matches!(
+            serde_json::from_value::<GenerationTarget>(json!({
+                "kind":"chapterSummary",
+                "chapterId":"chapter",
+                "databaseVersion":7,
+                "planningDatabaseVersion":3
+            }))
+            .unwrap(),
+            GenerationTarget::ChapterSummary {
+                database_version: 7,
+                planning_database_version: 3,
+                ..
+            }
+        ));
         let event = GenerationEvent {
             request_id: "request".into(),
             session_id: "session".into(),

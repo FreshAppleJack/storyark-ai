@@ -40,6 +40,21 @@ impl Database {
         if expected_version <= 0 || chapter["databaseVersion"].as_i64() != Some(expected_version) {
             return Err(changed());
         }
+        if let Some(expected_planning_version) = input.planning_database_version {
+            let actual_planning_version = tx
+                .query_row(
+                    "SELECT database_version FROM planning WHERE book_id=?",
+                    [&input.book_id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .optional()?
+                .unwrap_or(0);
+            if actual_planning_version < 0
+                || u64::try_from(actual_planning_version).ok() != Some(expected_planning_version)
+            {
+                return Err(changed());
+            }
+        }
 
         let mut seen = HashSet::new();
         for source in &input.retrieval_source_versions {

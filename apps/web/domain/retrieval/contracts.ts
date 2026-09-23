@@ -139,6 +139,7 @@ export type RetrievalTaskStrategy =
     | 'generic'
     | 'continuation'
     | 'brainstorm'
+    | 'chapter_summary'
     | 'consistency_check';
 
 export type RetrievalRecallMethod = 'lexical' | 'alias' | 'semantic' | 'adjacent';

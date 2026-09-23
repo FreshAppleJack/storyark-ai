@@ -1,7 +1,8 @@
 # P1-R1: Shared retrieval context for generation
 
-The continuation and brainstorm flows now use the same retrieval contract. A
-page does not read retrieval tables or assemble database rows directly.
+AI Continue, Brainstorm, and chapter-summary suggestions use the same retrieval
+contract. A page does not read retrieval tables or assemble database rows
+directly.
 
 ## Contract
 
@@ -32,6 +33,16 @@ chapter order is known. `useLocalBrainstormGeneration` searches using the
 selected chapter, summary, character, and story context, while keeping its
 selected chapters, relationships, and planning sections separate.
 
+Story Outline's chapter-summary suggestion searches only fresh confirmed
+settings and character profiles, scoped to the selected chapter and book.
+Relationships and foreshadowing notes are omitted from summary retrieval
+because they may carry implications beyond the selected chapter. The selected chapter text is the only source for
+events; retrieval evidence may clarify terminology, never add events. Future
+plans, other chapters, stale sources, and generated sources are excluded by
+request scope and validated by Rust. If no supporting source is available, the
+candidate states that and uses only the selected chapter text; no alternate
+summarizer is called.
+
 The retrieved context is passed to `ai_prepare_context` and its trace is passed
 to `ai_start_generation`. Rust validates that the retrieval context belongs to
 the request book and that the trace still matches the prepared snapshot. The
@@ -54,4 +65,3 @@ Candidate identity still comes from the existing session, draft revision,
 chapter/workspace versions, insertion anchor, and read-only checks. Retrieval
 context is transient candidate data and is not written into the saved manuscript
 or brainstorm workspace by this change.
-

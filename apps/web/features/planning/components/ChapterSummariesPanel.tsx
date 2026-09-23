@@ -1,6 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, Search, X } from 'lucide-react';
 import { filterChapters, type ChapterOption } from '../planningSelectors';
+import { ChapterSummarySuggestionReview } from './ChapterSummarySuggestionReview';
+import type { ChapterSummarySuggestion } from '../../../domain/chapterSummarySource';
+import type { SummaryModelAvailability } from '../hooks/useChapterSummarySuggestions';
 
 const FRESHNESS_REASON_LABELS: Record<string, string> = {
     'paragraph-content-or-structure-changed': 'Chapter text or paragraph structure changed.',
@@ -37,8 +40,23 @@ function summaryFreshnessMessage(chapter: ChapterOption): string | null {
 interface Props {
     chapterOptions: ChapterOption[]; targetChapterId: string | null;
     updateChapterSummary: (id: string, summary: string) => void;
+    suggestions: Record<string, ChapterSummarySuggestion>;
+    activeSuggestionChapterId: string | null;
+    modelAvailability: SummaryModelAvailability;
+    modelNotice: string | null;
+    isReadOnly: boolean;
+    isSuggestionCurrent: (chapterId: string) => boolean;
+    generateSuggestion: (chapterId: string) => void;
+    stopSuggestion: (chapterId: string) => void;
+    acceptSuggestion: (chapterId: string) => void;
+    keepManual: (chapterId: string) => void;
+    toggleSuggestionHit: (chapterId: string, hitId: string) => void;
 }
-export function ChapterSummariesPanel({ chapterOptions, targetChapterId, updateChapterSummary }: Props) {
+export function ChapterSummariesPanel({
+    chapterOptions, targetChapterId, updateChapterSummary, suggestions, activeSuggestionChapterId,
+    modelAvailability, modelNotice, isReadOnly, isSuggestionCurrent, generateSuggestion, stopSuggestion,
+    acceptSuggestion, keepManual, toggleSuggestionHit,
+}: Props) {
     const [chapterSearchQuery, setChapterSearchQuery] = useState('');
     const [focusedChapterId, setFocusedChapterId] = useState<string | null>(null);
     const lastFocusedChapterIdRef = useRef<string | null>(null);
@@ -134,6 +152,24 @@ export function ChapterSummariesPanel({ chapterOptions, targetChapterId, updateC
                         {summaryFreshnessMessage(chapter) && <p className={`mt-1 text-xs leading-5 ${chapter.sourceChanged ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}`}>
                             {summaryFreshnessMessage(chapter)}
                         </p>}
+                        <ChapterSummarySuggestionReview
+                            chapterId={chapter.id}
+                            chapterTitle={chapter.title}
+                            volumeTitle={chapter.volumeTitle}
+                            hasWrittenText={chapter.hasWrittenText}
+                            isReadOnly={isReadOnly || chapter.isReadOnly}
+                            isGenerating={activeSuggestionChapterId === chapter.id}
+                            isAnyGenerating={activeSuggestionChapterId !== null}
+                            modelAvailability={modelAvailability}
+                            modelNotice={modelNotice}
+                            suggestion={suggestions[chapter.id]}
+                            isCurrent={isSuggestionCurrent(chapter.id)}
+                            onGenerate={generateSuggestion}
+                            onStop={stopSuggestion}
+                            onAccept={acceptSuggestion}
+                            onKeepManual={keepManual}
+                            onToggleHit={toggleSuggestionHit}
+                        />
                     </section>
                 ))}
             </div>

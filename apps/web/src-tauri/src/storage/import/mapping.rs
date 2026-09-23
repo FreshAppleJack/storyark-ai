@@ -170,7 +170,11 @@ fn rewrite_json_references(value: &mut Value, map: &IdMap, chapter_id: Option<&s
                     *child = Value::String(mapped(&map.node_keys, id));
                 }
             }
-            "selectedChapterIds" | "chapterIds" | "missingChapterIds" | "mentionedCharacterIds" => {
+            "selectedChapterIds"
+            | "chapterIds"
+            | "missingChapterIds"
+            | "allowedChapterIds"
+            | "mentionedCharacterIds" => {
                 if let Some(ids) = child.as_array_mut() {
                     for id in ids {
                         let old = id.as_str().map(str::to_owned);

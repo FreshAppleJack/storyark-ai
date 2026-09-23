@@ -138,6 +138,9 @@ fn validate_summary_generation(
             || nonnegative(&source["planningDatabaseVersion"]))
         || source["includesFuturePlan"] != false
         || source["sourceBodyFingerprint"] != summary["sourceSnapshot"]["bodyFingerprint"]
+        || (!summary["sourceSnapshot"]["chapterDatabaseVersion"].is_null()
+            && source["chapterDatabaseVersion"]
+                != summary["sourceSnapshot"]["chapterDatabaseVersion"])
     {
         return Err(invalid());
     }
@@ -174,12 +177,21 @@ fn validate_summary_generation(
     if !trace.is_null() {
         if !text_value(&trace["searchId"], 128, false)
             || !text_value(&trace["retrievalVersion"], 128, false)
+            || trace["task"] != "chapter_summary"
             || !nonnegative(&trace["requestedAt"])
             || !(trace["indexVersion"].is_null() || positive(&trace["indexVersion"]))
             || !(trace["embeddingFingerprint"].is_null()
                 || text_value(&trace["embeddingFingerprint"], 1024, false))
+            || !validate_summary_retrieval_scope(&trace["scope"], book_id, chapter_id)
+            || !string_array(&trace["excludedHitIds"], 200, 8192, true)
+            || !unique_strings(&trace["excludedHitIds"])
             || !string_array(&trace["includedHitIds"], 200, 8192, true)
             || !unique_strings(&trace["includedHitIds"])
+            || !string_array(&trace["omittedHitIds"], 200, 8192, true)
+            || !unique_strings(&trace["omittedHitIds"])
+            || !positive(&trace["budget"]["charBudget"])
+            || !(trace["budget"]["tokenBudget"].is_null()
+                || positive(&trace["budget"]["tokenBudget"]))
         {
             return Err(invalid());
         }
@@ -206,6 +218,32 @@ fn validate_summary_generation(
         }
     }
     Ok(())
+}
+
+fn validate_summary_retrieval_scope(scope: &Value, book_id: &str, chapter_id: &str) -> bool {
+    if scope["bookId"].as_str() != Some(book_id)
+        || scope["includeFuturePlan"] != false
+        || scope["includeGenerated"] != false
+        || scope["includeStale"] != false
+        || !scope.get("beforeChapterOrder").is_some_and(Value::is_null)
+        || !scope.get("beforeAnchor").is_some_and(Value::is_null)
+        || !scope.get("timeRange").is_some_and(Value::is_null)
+    {
+        return false;
+    }
+    let Some(chapters) = scope["allowedChapterIds"].as_array() else {
+        return false;
+    };
+    if chapters.len() != 1 || chapters[0].as_str() != Some(chapter_id) {
+        return false;
+    }
+    let Some(kinds) = scope["allowedSourceKinds"].as_array() else {
+        return false;
+    };
+    !kinds.is_empty()
+        && kinds
+            .iter()
+            .all(|kind| matches!(kind.as_str(), Some("confirmed_setting" | "character")))
 }
 
 /// Shared structural validation for locally saved and imported chapter-summary provenance.

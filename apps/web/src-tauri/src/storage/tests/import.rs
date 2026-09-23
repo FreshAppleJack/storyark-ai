@@ -50,9 +50,24 @@ fn sample_work(book_id: &str, title: &str) -> Value {
                 "retrievalTrace": {
                     "searchId": "search-1",
                     "retrievalVersion": "p1-r1-v1",
+                    "task": "chapter_summary",
                     "requestedAt": now,
+                    "scope": {
+                        "bookId": book_id,
+                        "allowedSourceKinds": ["character"],
+                        "allowedChapterIds": [chapter_id],
+                        "beforeChapterOrder": null,
+                        "beforeAnchor": null,
+                        "includeFuturePlan": false,
+                        "includeGenerated": false,
+                        "includeStale": false,
+                        "timeRange": null
+                    },
+                    "excludedHitIds": [],
                     "sourceVersions": [{"sourceId": character_source_id, "chapterId": null, "sourceVersion": 2, "indexVersion": 1}],
                     "includedHitIds": ["hit-1"],
+                    "omittedHitIds": [],
+                    "budget": {"charBudget": 6000, "tokenBudget": 1500},
                     "indexVersion": 1,
                     "embeddingFingerprint": "local-e5-fingerprint"
                 },
@@ -182,6 +197,15 @@ fn fresh_import_persists_the_complete_work_and_copy_rewrites_instance_ids() {
         copied_summary["generationMetadata"]["source"]["retrievalTrace"]["sourceVersions"][0]
             ["sourceId"],
         format!("{}:character:{}", copied_id, copied_character)
+    );
+    assert_eq!(
+        copied_summary["generationMetadata"]["source"]["retrievalTrace"]["scope"]["bookId"],
+        copied_id
+    );
+    assert_eq!(
+        copied_summary["generationMetadata"]["source"]["retrievalTrace"]["scope"]
+            ["allowedChapterIds"][0],
+        copied_chapter
     );
     let copied_node_char: String = db
         .connection

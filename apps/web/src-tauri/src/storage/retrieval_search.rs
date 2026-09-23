@@ -1,7 +1,7 @@
 use super::retrieval_sources::{
     read_chunks, read_sources, resolve_scope, sync_sources_in_transaction,
 };
-use super::validation::{invalid, now};
+use super::validation::{invalid, now, valid_id};
 use super::{Database, Result, StorageError};
 use crate::rag::chunking::{stable_text_hash, CHUNK_INDEX_VERSION};
 use crate::rag::contracts::{
@@ -47,6 +47,31 @@ struct Candidate {
 
 fn search_error(message: &str) -> StorageError {
     StorageError::new("RETRIEVAL_SEARCH_FAILURE", message)
+}
+
+fn validate_task_scope(task: &RetrievalTaskStrategy, scope: &RetrievalScope) -> Result<()> {
+    if *task != RetrievalTaskStrategy::ChapterSummary {
+        return Ok(());
+    }
+    if scope.allowed_chapter_ids.len() != 1
+        || scope.include_future_plan
+        || scope.include_generated
+        || scope.include_stale
+        || scope.before_chapter_order.is_some()
+        || scope.before_anchor.is_some()
+        || scope.time_range.is_some()
+        || scope.allowed_source_kinds.is_empty()
+        || scope.allowed_source_kinds.iter().any(|kind| {
+            !matches!(
+                kind,
+                RetrievalSourceKind::ConfirmedSetting | RetrievalSourceKind::Character
+            )
+        })
+    {
+        return Err(invalid());
+    }
+    valid_id(&scope.allowed_chapter_ids[0])?;
+    Ok(())
 }
 
 fn hit_id(chunk_id: &str) -> String {
@@ -663,6 +688,7 @@ impl Database {
         query_vector: Option<Vec<f32>>,
         degradation_reason: Option<String>,
     ) -> Result<Value> {
+        validate_task_scope(&input.task, &input.scope)?;
         let requested_mode = input.mode.clone();
         let excluded = excluded_ids(&input)?;
         let limit = input.limit.clamp(1, MAX_SEARCH_LIMIT);
@@ -820,7 +846,11 @@ impl Database {
             chapter_id: scope
                 .before_anchor
                 .as_ref()
-                .map(|anchor| anchor.chapter_id.clone()),
+                .map(|anchor| anchor.chapter_id.clone())
+                .or_else(|| {
+                    (scope.allowed_chapter_ids.len() == 1)
+                        .then(|| scope.allowed_chapter_ids[0].clone())
+                }),
             scope: scope.clone(),
             excluded_hit_ids: input.excluded_hit_ids.clone(),
             index_version: Some(CHUNK_INDEX_VERSION),

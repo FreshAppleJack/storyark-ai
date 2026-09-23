@@ -2,6 +2,8 @@ import { EXCHANGE_LIMITS } from '../limits';
 import type {
     ExchangeChapterSummaryGenerationMetadata,
     ExchangeChapterSummaryGenerationSource,
+    ExchangeChapterSummaryRetrievalBudget,
+    ExchangeChapterSummaryRetrievalScope,
     ExchangeChapterSummarySourceSnapshot,
     ExchangeBrainstormGenerationMetadata,
     ExchangeBrainstormOption,
@@ -186,11 +188,18 @@ function validateSummaryRetrievalTrace(
     if (parent.retrievalTrace === null) return null;
     const object = context.requiredObjectValue(parent.retrievalTrace, `${path}.retrievalTrace`);
     if (!object) return undefined;
-    context.unknownFields(object, new Set(['searchId', 'retrievalVersion', 'requestedAt', 'sourceVersions', 'includedHitIds', 'indexVersion', 'embeddingFingerprint', 'extensions']), `${path}.retrievalTrace`);
+    context.unknownFields(object, new Set([
+        'searchId', 'retrievalVersion', 'task', 'requestedAt', 'scope', 'excludedHitIds',
+        'sourceVersions', 'includedHitIds', 'omittedHitIds', 'budget', 'indexVersion',
+        'embeddingFingerprint', 'extensions',
+    ]), `${path}.retrievalTrace`);
     const tracePath = `${path}.retrievalTrace`;
     const searchId = context.requiredString(object, 'searchId', tracePath, 128, 1);
     const retrievalVersion = context.requiredString(object, 'retrievalVersion', tracePath, EXCHANGE_LIMITS.maxPromptVersionChars, 1);
+    const task = context.enumValue(object, 'task', tracePath, ['chapter_summary'] as const);
     const requestedAt = context.requiredTimestamp(object, 'requestedAt', tracePath);
+    const scope = validateSummaryRetrievalScope(context, object.scope, `${tracePath}.scope`, parent.bookId, parent.chapterId);
+    const excludedHitIds = context.requiredStringArray(object, 'excludedHitIds', tracePath, EXCHANGE_LIMITS.maxBrainstormRetrievalHits, 8192, 1);
     const versionsValue = context.requiredArray(object, 'sourceVersions', tracePath);
     if (versionsValue && versionsValue.length > EXCHANGE_LIMITS.maxBrainstormRetrievalSources) {
         context.add(`${tracePath}.sourceVersions`, 'LIMIT_EXCEEDED', 'Summary retrieval trace contains too many sources.');
@@ -204,15 +213,86 @@ function validateSummaryRetrievalTrace(
     });
     if (sourceVersions) context.unique(sourceVersions, `${tracePath}.sourceVersions`, item => item.sourceId);
     const includedHitIds = context.requiredStringArray(object, 'includedHitIds', tracePath, EXCHANGE_LIMITS.maxBrainstormRetrievalHits, 8192, 1);
+    const omittedHitIds = context.requiredStringArray(object, 'omittedHitIds', tracePath, EXCHANGE_LIMITS.maxBrainstormRetrievalHits, 8192, 1);
+    const budgetObject = context.requiredObject(object, 'budget', tracePath);
+    const budget = budgetObject ? validateSummaryRetrievalBudget(context, budgetObject, `${tracePath}.budget`) : undefined;
     const indexVersion = object.indexVersion === null
         ? null
         : context.requiredInteger(object, 'indexVersion', tracePath, 1, Number.MAX_SAFE_INTEGER);
     const embeddingFingerprint = object.embeddingFingerprint === null
         ? null
         : context.requiredString(object, 'embeddingFingerprint', tracePath, 1024, 1);
-    if (searchId === undefined || retrievalVersion === undefined || requestedAt === undefined || !sourceVersions
-        || !includedHitIds || indexVersion === undefined || embeddingFingerprint === undefined) return undefined;
-    return { searchId, retrievalVersion, requestedAt, sourceVersions, includedHitIds, indexVersion, embeddingFingerprint };
+    if (searchId === undefined || retrievalVersion === undefined || !task || requestedAt === undefined || !scope
+        || !excludedHitIds || !sourceVersions || !includedHitIds || !omittedHitIds || !budget
+        || indexVersion === undefined || embeddingFingerprint === undefined) return undefined;
+    if (new Set(excludedHitIds).size !== excludedHitIds.length) context.add(`${tracePath}.excludedHitIds`, 'INVALID_VALUE', 'Hit IDs must be unique.');
+    if (new Set(includedHitIds).size !== includedHitIds.length) context.add(`${tracePath}.includedHitIds`, 'INVALID_VALUE', 'Hit IDs must be unique.');
+    if (new Set(omittedHitIds).size !== omittedHitIds.length) context.add(`${tracePath}.omittedHitIds`, 'INVALID_VALUE', 'Hit IDs must be unique.');
+    return { searchId, retrievalVersion, task, requestedAt, scope, excludedHitIds, sourceVersions, includedHitIds, omittedHitIds, budget, indexVersion, embeddingFingerprint };
+}
+
+function validateSummaryRetrievalScope(
+    context: ValidationContext,
+    value: unknown,
+    path: string,
+    expectedBookId: unknown,
+    expectedChapterId: unknown,
+): ExchangeChapterSummaryRetrievalScope | undefined {
+    const object = context.requiredObjectValue(value, path);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set([
+        'bookId', 'allowedSourceKinds', 'allowedChapterIds', 'beforeChapterOrder', 'beforeAnchor',
+        'includeFuturePlan', 'includeGenerated', 'includeStale', 'timeRange', 'extensions',
+    ]), path);
+    const bookId = context.requiredUuid(object, 'bookId', path);
+    const kindsValue = context.requiredArray(object, 'allowedSourceKinds', path);
+    const allowedKinds = ['confirmed_setting', 'character'] as const;
+    const allowedSourceKinds = kindsValue?.map((kind, index) => {
+        if (typeof kind !== 'string' || !allowedKinds.includes(kind as typeof allowedKinds[number])) {
+            context.add(`${path}.allowedSourceKinds[${index}]`, 'UNSAFE_CONTENT', 'Chapter summary retrieval cannot include manuscript, planning, or future-plan sources.');
+            return undefined;
+        }
+        return kind as typeof allowedKinds[number];
+    }).filter((kind): kind is typeof allowedKinds[number] => kind !== undefined);
+    const allowedChapterIds = context.requiredUuidArray(object, 'allowedChapterIds', path, 1);
+    const includeFuturePlan = context.requiredBoolean(object, 'includeFuturePlan', path);
+    const includeGenerated = context.requiredBoolean(object, 'includeGenerated', path);
+    const includeStale = context.requiredBoolean(object, 'includeStale', path);
+    for (const field of ['beforeChapterOrder', 'beforeAnchor', 'timeRange'] as const) {
+        if (!Object.prototype.hasOwnProperty.call(object, field)) {
+            context.add(`${path}.${field}`, 'MISSING_FIELD', 'Summary retrieval must record empty range and anchor filters explicitly as null.');
+        } else if (object[field] !== null) {
+            context.add(`${path}.${field}`, 'UNSAFE_CONTENT', 'Chapter summary retrieval must not use range or anchor filters from another chapter.');
+        }
+    }
+    if (!bookId || !allowedKinds || !allowedSourceKinds || !allowedChapterIds
+        || includeFuturePlan === undefined || includeGenerated === undefined || includeStale === undefined) return undefined;
+    if (bookId !== expectedBookId || allowedChapterIds.length !== 1 || allowedChapterIds[0] !== expectedChapterId
+        || allowedSourceKinds.length === 0 || includeFuturePlan || includeGenerated || includeStale) {
+        context.add(path, 'REFERENCE_MISMATCH', 'Chapter summary retrieval must be limited to this book and chapter, with future, generated, and stale sources excluded.');
+    }
+    return {
+        bookId, allowedSourceKinds, allowedChapterIds,
+        beforeChapterOrder: null,
+        beforeAnchor: null,
+        includeFuturePlan: false,
+        includeGenerated: false,
+        includeStale: false,
+        timeRange: null,
+    };
+}
+
+function validateSummaryRetrievalBudget(
+    context: ValidationContext,
+    value: AnyRecord,
+    path: string,
+): ExchangeChapterSummaryRetrievalBudget | undefined {
+    const charBudget = context.requiredInteger(value, 'charBudget', path, 1, EXCHANGE_LIMITS.maxContextSnapshotChars);
+    const tokenBudget = value.tokenBudget === null
+        ? null
+        : context.requiredInteger(value, 'tokenBudget', path, 1, Number.MAX_SAFE_INTEGER);
+    if (charBudget === undefined || tokenBudget === undefined) return undefined;
+    return { charBudget, tokenBudget };
 }
 
 function validateSummaryRetrievalSourceVersion(
@@ -267,6 +347,11 @@ function validateChapterSummary(context: ValidationContext, value: unknown, path
     if (generationMetadata && sourceSnapshot
         && generationMetadata.source.sourceBodyFingerprint !== sourceSnapshot.bodyFingerprint) {
         context.add(`${path}.generationMetadata.source.sourceBodyFingerprint`, 'REFERENCE_MISMATCH', 'Generation metadata must refer to the saved summary source snapshot.');
+    }
+    if (generationMetadata && sourceSnapshot
+        && sourceSnapshot.chapterDatabaseVersion !== null
+        && generationMetadata.source.chapterDatabaseVersion !== sourceSnapshot.chapterDatabaseVersion) {
+        context.add(`${path}.generationMetadata.source.chapterDatabaseVersion`, 'REFERENCE_MISMATCH', 'Generation metadata and source snapshot must freeze the same chapter version.');
     }
     return {
         chapterId,

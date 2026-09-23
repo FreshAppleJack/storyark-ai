@@ -61,8 +61,16 @@ foreshadowing note fingerprints; it does not duplicate the chapter body.
 Generation metadata is retained only for an adopted AI summary. Unaccepted
 suggestions remain candidate state and are not written to the planning row.
 Chapter references and metadata shapes are validated in the write transaction.
-P1-SUM1 establishes this contract and freshness review; it does not add a
-chapter-summary generation action.
+P1-SUM1 establishes the provenance and freshness contract. P1-SUM2 adds
+Story Outline card actions for generating a suggestion, reviewing old versus
+new text, accepting, or keeping the manual summary. The suggestion is transient
+until acceptance; acceptance uses the ordinary optimistic planning save. The
+selected chapter body is the only source for events. Retrieved confirmed
+settings and character profiles may clarify terminology but cannot supply
+events. Relationships and foreshadowing notes are excluded from summary
+retrieval because they may carry implications beyond the selected chapter.
+Without a configured model or retrieval source, manual read/edit/save remains
+available and the missing source is stated explicitly.
 
 ### Application preferences — `application_preferences` (single row, id = 1)
 
