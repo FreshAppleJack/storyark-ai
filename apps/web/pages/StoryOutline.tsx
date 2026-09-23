@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Book } from '../types';
-import { localBookOptions, projectBook } from '../data/local/repository';
+import { localBookOptions, localCharactersOptions, projectBook, projectCharacter } from '../data/local/repository';
 import { localPlanningOptions, type LocalPlanning } from '../data/local/planningRepository';
 import { useLocalPlanningPersistence } from '../features/planning/hooks/useLocalPlanningPersistence';
 import type { PlanningPersistence } from '../features/planning/hooks/useStoryPlanning';
@@ -117,12 +117,15 @@ function LoadedLocalOutline({ book, initial }: { book: Book; initial: LocalPlann
 }
 function LocalOutline({ bookId }: { bookId: string }) {
     const detail = useQuery({ ...localBookOptions(bookId), refetchOnMount: 'always' });
+    const characters = useQuery({ ...localCharactersOptions(bookId), refetchOnMount: 'always' });
     const planning = useQuery(localPlanningOptions(bookId));
-    const book = useMemo(() => detail.data ? projectBook(detail.data.book, detail.data) : undefined, [detail.data]);
-    const error = detail.error ?? planning.error;
-    if (error || !book || !planning.data || detail.isFetching || planning.isFetching) return <main className="p-8">
+    const book = useMemo(() => detail.data && characters.data
+        ? projectBook(detail.data.book, detail.data, characters.data.map(projectCharacter))
+        : undefined, [detail.data, characters.data]);
+    const error = detail.error ?? characters.error ?? planning.error;
+    if (error || !book || !planning.data || detail.isFetching || characters.isFetching || planning.isFetching) return <main className="p-8">
         <p role={error ? 'alert' : 'status'}>{error?.message ?? 'Loading planning workspace...'}</p>
-        {error && <Button onClick={() => { void detail.refetch(); void planning.refetch(); }}>Retry</Button>}
+        {error && <Button onClick={() => { void detail.refetch(); void characters.refetch(); void planning.refetch(); }}>Retry</Button>}
     </main>;
     return <LoadedLocalOutline book={book} initial={planning.data} />;
 }
