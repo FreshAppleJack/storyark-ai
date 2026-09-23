@@ -24,7 +24,7 @@ export function generationRetrievalTrace(
     return {
         retrievalVersion: response.trace.retrievalVersion,
         sourceVersions,
-        retrievalSourceVersions: response.trace.sourceVersions,
+        retrievalSourceVersions: response.context.sourceVersions,
         searchId: response.trace.searchId,
         task: response.trace.task,
         requestedAt: response.trace.createdAt,

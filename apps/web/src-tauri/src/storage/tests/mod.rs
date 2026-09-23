@@ -82,3 +82,4 @@ fn fixture(db: &mut Database) -> SaveChapter {
 
 mod ai_settings;
 mod audit;
+mod retrieval_r2;

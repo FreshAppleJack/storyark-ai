@@ -76,6 +76,16 @@ pub struct CancelRequest {
     pub session_id: String,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ValidateAiAdoption {
+    pub book_id: String,
+    pub chapter_id: String,
+    pub database_version: u64,
+    #[serde(default)]
+    pub retrieval_source_versions: Vec<crate::rag::contracts::RetrievalSourceVersionRecord>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenUsage {

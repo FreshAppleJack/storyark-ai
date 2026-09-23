@@ -15,7 +15,7 @@ import { EditorHeader } from '../features/editor/components/EditorHeader';
 import { AiContinueCandidate } from '../features/editor/components/AiContinueCandidate';
 import { WritingContextPanel } from '../features/editor/components/WritingContextPanel';
 import { Button } from '../components/ui/Button';
-import { getEditorPlainText, getForeshadowingExcerptMap } from '../domain/chapterContent';
+import { getForeshadowingExcerptMap } from '../domain/chapterContent';
 import { useChapterDraft } from '../features/editor/hooks/useChapterDraft';
 import { useChapterLock } from '../features/editor/hooks/useChapterLock';
 import { useChapterAutosave } from '../features/editor/hooks/useChapterAutosave';
@@ -347,7 +347,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         isReadOnly: chapterDraft.isReadOnly || chapterLock.isChangingLock,
         contextChars: aiContinueSettings.contextChars,
         outputChars: aiContinueSettings.outputChars,
-        getContextText: () => editorRef.current?.editor?.getText() ?? getEditorPlainText(chapterDraft.content),
+        getContextText: (anchor) => editorRef.current?.getTextBeforeAnchor(anchor) ?? '',
         captureAnchor: () => editorRef.current?.captureSelection() ?? null,
         insertCandidateAtAnchor: (candidate, anchor) => editorRef.current?.insertAiCandidateAtAnchor(candidate, anchor) ?? false,
     });
@@ -523,11 +523,14 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     isAiLoading={aiContinue.isAiLoading}
                     canAdopt={aiContinue.canAdopt}
                     adoptDisabledReason={aiContinue.adoptDisabledReason}
+                    saveStatus={autosave.saveStatus}
+                    draftRevision={chapterDraft.revision}
                     onStop={aiContinue.stop}
                     onAdopt={aiContinue.adoptCandidate}
                     onClose={aiContinue.closeCandidate}
                     onDiscard={aiContinue.discardCandidate}
                     onRegenerate={aiContinue.regenerate}
+                    onReselectInsertionPoint={aiContinue.reselectInsertionPoint}
                     onToggleRetrievalHit={aiContinue.toggleRetrievalHit}
                 />
 

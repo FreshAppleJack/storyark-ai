@@ -1017,22 +1017,30 @@ pub(crate) fn read_chunks(db: &Connection, scope: &RetrievalScope) -> Result<Vec
         let locator: RetrievalChunkLocator = serde_json::from_str(&locator_json)
             .map_err(|_| registry_error("Invalid retrieval chunk locator"))?;
         if let Some(anchor) = &scope.before_anchor {
-            if locator.chapter_id.as_deref() == Some(anchor.chapter_id.as_str())
-                && !locator.paragraph_spans.is_empty()
-                && !locator.paragraph_spans.iter().all(|span| {
-                    let before_paragraph = anchor
-                        .paragraph_ordinal
-                        .is_some_and(|ordinal| span.paragraph_ordinal < ordinal);
-                    let before_offset = anchor
-                        .paragraph_ordinal
-                        .zip(anchor.text_offset)
-                        .is_some_and(|(ordinal, offset)| {
-                            span.paragraph_ordinal == ordinal && span.end_offset <= offset
-                        });
-                    before_paragraph || before_offset
-                })
-            {
-                continue;
+            if locator.chapter_id.as_deref() == Some(anchor.chapter_id.as_str()) {
+                let Some(source) = visible_sources.get(&source_id) else {
+                    continue;
+                };
+                // The current chapter can only contribute locator-backed
+                // manuscript chunks before the anchor. A chapter summary or
+                // note has no paragraph boundary and may contain later text.
+                if source.source_kind != crate::rag::contracts::RetrievalSourceKind::Manuscript
+                    || locator.paragraph_spans.is_empty()
+                    || !locator.paragraph_spans.iter().all(|span| {
+                        let before_paragraph = anchor
+                            .paragraph_ordinal
+                            .is_some_and(|ordinal| span.paragraph_ordinal < ordinal);
+                        let before_offset = anchor
+                            .paragraph_ordinal
+                            .zip(anchor.text_offset)
+                            .is_some_and(|(ordinal, offset)| {
+                                span.paragraph_ordinal == ordinal && span.end_offset <= offset
+                            });
+                        before_paragraph || before_offset
+                    })
+                {
+                    continue;
+                }
             }
         }
         if locator.text_hash != text_hash

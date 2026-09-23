@@ -45,7 +45,7 @@ fn generation_audit_records_versions_and_model_without_prompt_or_credentials() {
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .unwrap();
-    assert_eq!(row.0, "ai-tasks-v1");
+    assert_eq!(row.0, "ai-tasks-v2");
     assert_eq!(row.1.as_deref(), Some("p1-r1-v1"));
     assert_eq!(row.2, config_id);
     assert_eq!(row.3, "local-test-model");

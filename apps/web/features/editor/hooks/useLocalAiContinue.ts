@@ -14,6 +14,7 @@ export type AiContinueCandidateStatus =
     | 'idle'
     | 'starting'
     | 'streaming'
+    | 'validating'
     | 'completed'
     | 'cancelled'
     | 'failed'
@@ -30,7 +31,9 @@ export interface AiContinueSource {
     contextText: string;
     outputChars: number;
     anchor: AiContinueAnchor;
+    generatedAnchor: AiContinueAnchor;
     lockWasValid: boolean;
+    staleReason?: 'draft' | 'anchor' | 'lock' | 'retrieval' | 'verification';
     retrievalContext: RetrievalContext | null;
     retrievalStatus: RetrievalSearchStatus | null;
     retrievalNotice: string | null;
@@ -54,7 +57,7 @@ interface UseLocalAiContinueOptions {
     contextChars: number;
     outputChars: number;
     chapterOrder?: number;
-    getContextText: () => string;
+    getContextText: (anchor: AiContinueAnchor) => string;
     captureAnchor: () => AiContinueAnchor | null;
     insertCandidateAtAnchor: (candidate: string, anchor: AiContinueAnchor) => boolean;
 }
@@ -66,10 +69,11 @@ interface UseLocalAiContinueResult {
     adoptDisabledReason: string | null;
     continueWriting: () => Promise<void>;
     stop: () => void;
-    adoptCandidate: () => void;
+    adoptCandidate: () => Promise<void>;
     closeCandidate: () => void;
     discardCandidate: () => void;
     regenerate: () => Promise<void>;
+    reselectInsertionPoint: () => void;
     toggleRetrievalHit: (hitId: string) => void;
 }
 
@@ -130,6 +134,15 @@ function activeStatus(status: AiContinueCandidateStatus): boolean {
     return status === 'starting' || status === 'streaming';
 }
 
+function anchorsMatch(left: AiContinueAnchor, right: AiContinueAnchor): boolean {
+    return left.from === right.from
+        && left.to === right.to
+        && left.docSize === right.docSize
+        && left.selectedText === right.selectedText
+        && left.retrievalAnchor.paragraphOrdinal === right.retrievalAnchor.paragraphOrdinal
+        && left.retrievalAnchor.textOffset === right.retrievalAnchor.textOffset;
+}
+
 function takeRecentCharacters(text: string, maxChars: number): string {
     return Array.from(text).slice(-maxChars).join('');
 }
@@ -156,6 +169,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
     const candidateRef = useRef(candidate);
     const optionsRef = useRef(options);
     const excludedHitIdsRef = useRef<string[]>([]);
+    const adoptionAttemptRef = useRef(0);
 
     useLayoutEffect(() => {
         optionsRef.current = options;
@@ -279,7 +293,15 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
             return;
         }
 
-        const contextText = takeRecentCharacters(current.getContextText(), current.contextChars);
+        if (!Number.isInteger(anchor.retrievalAnchor.paragraphOrdinal)
+            || anchor.retrievalAnchor.paragraphOrdinal < 0
+            || !Number.isInteger(anchor.retrievalAnchor.textOffset)
+            || anchor.retrievalAnchor.textOffset < 0) {
+            updateCandidate({ ...INITIAL_CANDIDATE, status: 'failed', errorMessage: 'The editor could not map this position to a story paragraph. Place the cursor in the chapter and try again.' });
+            return;
+        }
+
+        const contextText = takeRecentCharacters(current.getContextText(anchor), current.contextChars);
         if (!contextText.trim()) {
             updateCandidate({ ...INITIAL_CANDIDATE, status: 'failed', errorMessage: 'Write some chapter text before requesting a continuation.' });
             return;
@@ -307,6 +329,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
                 contextText,
                 outputChars: current.outputChars,
                 anchor,
+                generatedAnchor: anchor,
                 lockWasValid: !current.isReadOnly,
                 retrievalContext: null,
                 retrievalStatus: null,
@@ -323,7 +346,8 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
             try {
                 const retrievalScope = continueRetrievalScope(current.bookId, {
                     chapterId: current.chapterId,
-                    textOffset: anchor.from,
+                    paragraphOrdinal: anchor.retrievalAnchor.paragraphOrdinal,
+                    textOffset: anchor.retrievalAnchor.textOffset,
                 });
                 retrievalScope.beforeChapterOrder = current.chapterOrder;
                 retrievalResponse = await retrievalRepository.search({
@@ -418,6 +442,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
     }, [cleanupActive, handleEvent, isActive, updateCandidate]);
 
     const clearCandidate = useCallback((resetExcludedHits: boolean) => {
+        adoptionAttemptRef.current += 1;
         if (activeRef.current) stop();
         if (resetExcludedHits) excludedHitIdsRef.current = [];
         updateCandidate(INITIAL_CANDIDATE);
@@ -432,9 +457,22 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
     }, [closeCandidate]);
 
     const regenerate = useCallback(async () => {
+        const current = optionsRef.current;
+        if (!current.enabled || current.isReadOnly || !current.bookId || !current.chapterId) {
+            const snapshot = candidateRef.current;
+            if (snapshot.status !== 'idle') {
+                updateCandidate({
+                    ...snapshot,
+                    errorMessage: current.isReadOnly
+                        ? 'Unlock the chapter before regenerating. The current candidate is preserved.'
+                        : 'The current story context is not ready. The candidate is preserved.',
+                });
+            }
+            return;
+        }
         clearCandidate(false);
         await continueWriting();
-    }, [clearCandidate, continueWriting]);
+    }, [clearCandidate, continueWriting, updateCandidate]);
 
     const toggleRetrievalHit = useCallback((hitId: string) => {
         const excluded = new Set(excludedHitIdsRef.current);
@@ -453,51 +491,116 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
         }
     }, [updateCandidate]);
 
-    const adoptCandidate = useCallback(() => {
+    const reselectInsertionPoint = useCallback(() => {
+        const current = optionsRef.current;
+        const snapshot = candidateRef.current;
+        const source = snapshot.source;
+        if (snapshot.status !== 'stale' || source?.staleReason !== 'anchor' || !sourceMatchesCurrent(source, current)) return;
+        if (current.isReadOnly) {
+            updateCandidate({ ...snapshot, errorMessage: 'Unlock the chapter before choosing a new insertion point.' });
+            return;
+        }
+        const anchor = current.captureAnchor();
+        if (!anchor) {
+            updateCandidate({ ...snapshot, errorMessage: 'Place the cursor or selection in the chapter before choosing a new insertion point.' });
+            return;
+        }
+        updateCandidate({
+            ...snapshot,
+            status: 'completed',
+            errorMessage: 'Insertion point updated. Review the candidate before adopting it.',
+            source: { ...source, anchor, staleReason: undefined },
+        });
+    }, [updateCandidate]);
+
+    const adoptCandidate = useCallback(async () => {
         const current = optionsRef.current;
         const snapshot = candidateRef.current;
         const source = snapshot.source;
         if (snapshot.status !== 'completed' || !source || !snapshot.text.trim()) return;
 
         if (current.isReadOnly) {
-            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'Unlock the chapter before adopting this candidate. The candidate is still available.' });
+            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'Unlock the chapter before adopting this candidate. The candidate is still available.', source: { ...source, staleReason: 'lock' } });
             return;
         }
         if (!sourceMatchesCurrent(source, current)) {
-            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'The draft changed. Regenerate or return to the original insertion position before adopting.' });
+            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'The chapter, session, or draft revision changed. The candidate is preserved; regenerate before adopting.', source: { ...source, staleReason: 'draft' } });
             return;
         }
 
         const currentAnchor = current.captureAnchor();
-        if (
-            !currentAnchor
-            || currentAnchor.from !== source.anchor.from
-            || currentAnchor.to !== source.anchor.to
-            || currentAnchor.docSize !== source.anchor.docSize
-        ) {
-            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'The insertion position changed. Place the cursor or selection back at the original position, or regenerate.' });
+        if (!currentAnchor || !anchorsMatch(currentAnchor, source.anchor)) {
+            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'The insertion position or selection changed. Choose the current insertion point explicitly, or regenerate.', source: { ...source, staleReason: 'anchor' } });
             return;
         }
 
-        if (!current.insertCandidateAtAnchor(snapshot.text, source.anchor)) {
-            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'The editor changed before adoption. The candidate is preserved; regenerate or choose the insertion position again.' });
+        const attempt = ++adoptionAttemptRef.current;
+        updateCandidate({ ...snapshot, status: 'validating', errorMessage: null });
+        try {
+            await aiGenerationRepository.validateAdoption({
+                bookId: source.bookId,
+                chapterId: source.chapterId,
+                databaseVersion: source.databaseVersion,
+                retrievalSourceVersions: source.retrievalContext?.sourceVersions ?? [],
+            });
+        } catch (error) {
+            if (attempt !== adoptionAttemptRef.current) return;
+            const code = errorCode(error);
+            const staleReason = code === 'READ_ONLY' ? 'lock'
+                : code === 'CONTEXT_CHANGED' || code === 'VERSION_CONFLICT' ? 'retrieval'
+                    : 'verification';
+            const message = code === 'READ_ONLY'
+                ? 'The chapter or one of its parent records is locked. The candidate is preserved.'
+                : code === 'CONTEXT_CHANGED' || code === 'VERSION_CONFLICT'
+                    ? 'The manuscript or a retrieved source changed. The candidate is preserved; regenerate from current sources.'
+                    : 'The local source and lock check failed. The candidate is preserved and was not inserted.';
+            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: message, source: { ...source, staleReason } });
+            return;
+        }
+
+        if (attempt !== adoptionAttemptRef.current || candidateRef.current.status !== 'validating') return;
+        const latest = optionsRef.current;
+        if (latest.isReadOnly) {
+            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: 'Unlock the chapter before adopting this candidate.', source: { ...source, staleReason: 'lock' } });
+            return;
+        }
+        if (!sourceMatchesCurrent(source, latest)) {
+            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: 'The draft changed during source validation. Regenerate before adopting.', source: { ...source, staleReason: 'draft' } });
+            return;
+        }
+        const latestAnchor = latest.captureAnchor();
+        if (!latestAnchor || !anchorsMatch(latestAnchor, source.anchor)) {
+            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: 'The insertion position changed during source validation. Choose the current insertion point explicitly, or regenerate.', source: { ...source, staleReason: 'anchor' } });
+            return;
+        }
+
+        if (!latest.insertCandidateAtAnchor(snapshot.text, source.anchor)) {
+            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: 'The editor changed before adoption. The candidate is preserved; choose the insertion position again or regenerate.', source: { ...source, staleReason: 'anchor' } });
             return;
         }
 
         updateCandidate({
-            ...snapshot,
+            ...candidateRef.current,
             status: 'adopted',
-            errorMessage: 'Candidate inserted into the draft. The existing save queue will persist it.',
+            errorMessage: null,
+            source: { ...source, staleReason: undefined },
         });
     }, [updateCandidate]);
 
     useEffect(() => {
         const active = activeRef.current;
-        if (active && (active.chapterId !== options.chapterId || active.sessionId !== options.sessionId)) {
-            stop();
-            updateCandidate(INITIAL_CANDIDATE);
-        }
-    }, [options.chapterId, options.sessionId, stop, updateCandidate]);
+        const source = candidateRef.current.source;
+        const chapterOrSessionChanged = (active && (active.chapterId !== options.chapterId || active.sessionId !== options.sessionId))
+            || (source && (
+                source.bookId !== options.bookId
+                || source.chapterId !== options.chapterId
+                || source.sessionId !== options.sessionId
+            ));
+        if (!chapterOrSessionChanged) return;
+        adoptionAttemptRef.current += 1;
+        if (active) stop();
+        updateCandidate(INITIAL_CANDIDATE);
+    }, [options.bookId, options.chapterId, options.sessionId, stop, updateCandidate]);
 
     useEffect(() => () => {
         const active = activeRef.current;
@@ -529,6 +632,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
         closeCandidate,
         discardCandidate,
         regenerate,
+        reselectInsertionPoint,
         toggleRetrievalHit,
     };
 }

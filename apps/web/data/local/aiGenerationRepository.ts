@@ -63,6 +63,8 @@ export interface GenerationEvent { requestId: string; sessionId: string; sequenc
 export const aiGenerationRepository = {
     prepareContext: (input: ContextInput) => call<ContextSnapshot>('ai_prepare_context', { input }),
     start: (input: GenerationRequest) => call<{ requestId: string }>('ai_start_generation', { input }),
+    validateAdoption: (input: { bookId: string; chapterId: string; databaseVersion: number; retrievalSourceVersions: RetrievalSourceVersionRecord[] }) =>
+        call<{ validated: true }>('ai_validate_adoption', { input }),
     cancel: (requestId: string, sessionId: string) => call<{ requestId: string; outcome: 'cancelled' | 'notFound' }>('ai_cancel_generation', {
         input: { requestId, sessionId },
     }),

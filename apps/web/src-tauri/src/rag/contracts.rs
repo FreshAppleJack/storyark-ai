@@ -226,6 +226,7 @@ impl RetrievalScope {
             allowed_source_kinds: vec![
                 RetrievalSourceKind::Manuscript,
                 RetrievalSourceKind::ChapterSummary,
+                RetrievalSourceKind::Planning,
                 RetrievalSourceKind::ConfirmedSetting,
                 RetrievalSourceKind::Character,
                 RetrievalSourceKind::Relationship,
@@ -484,6 +485,10 @@ pub struct RetrievalContextMaterial {
     pub source_kind: RetrievalSourceKind,
     pub entity_id: String,
     pub chapter_id: Option<String>,
+    #[serde(default)]
+    pub chapter_title_snapshot: Option<String>,
+    #[serde(default)]
+    pub volume_title_snapshot: Option<String>,
     pub source_version: i64,
     pub chunk_id: String,
     pub quote: String,

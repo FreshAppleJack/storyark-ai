@@ -212,6 +212,8 @@ export interface RetrievalContextMaterial {
     sourceKind: RetrievalSourceKind;
     entityId: string;
     chapterId: string | null;
+    chapterTitleSnapshot?: string | null;
+    volumeTitleSnapshot?: string | null;
     sourceVersion: number;
     chunkId: string;
     quote: string;
@@ -282,6 +284,7 @@ export const continueRetrievalScope = (bookId: string, beforeAnchor: RetrievalAn
     allowedSourceKinds: [
         'manuscript',
         'chapter_summary',
+        'planning',
         'confirmed_setting',
         'character',
         'relationship',

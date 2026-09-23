@@ -1,5 +1,6 @@
 import { Check, Loader2, RefreshCw, Square, Trash2, X } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
+import type { EditorSaveStatus } from './EditorHeader';
 import type { AiContinueCandidate as AiContinueCandidateState } from '../hooks/useLocalAiContinue';
 import { RetrievalContextPanel } from '../../retrieval/components/RetrievalContextPanel';
 
@@ -8,11 +9,14 @@ interface AiContinueCandidateProps {
     isAiLoading: boolean;
     canAdopt: boolean;
     adoptDisabledReason: string | null;
+    saveStatus: EditorSaveStatus;
+    draftRevision: number;
     onStop: () => void;
     onAdopt: () => void;
     onClose: () => void;
     onDiscard: () => void;
     onRegenerate: () => void;
+    onReselectInsertionPoint: () => void;
     onToggleRetrievalHit: (hitId: string) => void;
 }
 
@@ -20,6 +24,7 @@ function statusLabel(status: AiContinueCandidateState['status']): string {
     switch (status) {
         case 'starting': return 'Preparing';
         case 'streaming': return 'Generating';
+        case 'validating': return 'Checking manuscript and source versions';
         case 'completed': return 'Ready to review';
         case 'cancelled': return 'Stopped';
         case 'failed': return 'Generation failed';
@@ -34,17 +39,32 @@ export function AiContinueCandidate({
     isAiLoading,
     canAdopt,
     adoptDisabledReason,
+    saveStatus,
+    draftRevision,
     onStop,
     onAdopt,
     onClose,
     onDiscard,
     onRegenerate,
+    onReselectInsertionPoint,
     onToggleRetrievalHit,
 }: AiContinueCandidateProps): React.ReactElement | null {
     if (candidate.status === 'idle') return null;
 
-    const canRegenerate = !isAiLoading && candidate.status !== 'adopted';
+    const canRegenerate = !isAiLoading && candidate.status !== 'validating' && candidate.status !== 'adopted';
     const canDiscard = candidate.status !== 'adopted';
+    const adoptionObserved = candidate.status === 'adopted'
+        && !!candidate.source
+        && draftRevision > candidate.source.draftRevision;
+    const persistenceMessage = !adoptionObserved
+        ? 'Applying the insertion to the draft…'
+        : saveStatus === 'saved'
+            ? 'Manuscript save complete.'
+            : saveStatus === 'saving'
+                ? 'Saving the adopted text…'
+                : saveStatus === 'error'
+                    ? 'Save failed. The adopted text remains in the editor; retry from the save indicator.'
+                    : 'Adopted into the draft. Save is pending.';
 
     return (
         <section
@@ -54,7 +74,7 @@ export function AiContinueCandidate({
             <div className="flex items-center justify-between gap-3">
                 <div>
                     <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">AI Continue candidate</h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{statusLabel(candidate.status)} · {candidate.status === 'adopted' ? 'The insertion is queued for normal persistence.' : 'The original draft is unchanged until adoption.'}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{statusLabel(candidate.status)} · {candidate.status === 'adopted' ? persistenceMessage : 'The original draft is unchanged until adoption.'}</p>
                 </div>
                 {candidate.source && (
                     <span className="text-right text-[11px] text-slate-500 dark:text-slate-400">
@@ -78,7 +98,7 @@ export function AiContinueCandidate({
                 notice={candidate.source?.retrievalNotice ?? null}
                 excludedHitIds={candidate.source?.retrievalContext?.excludedHitIds ?? []}
                 onToggleHit={onToggleRetrievalHit}
-                disabled={isAiLoading}
+                disabled={isAiLoading || candidate.status === 'validating'}
             />
 
             {candidate.status === 'completed' && !canAdopt && adoptDisabledReason && (
@@ -101,6 +121,11 @@ export function AiContinueCandidate({
                     >
                         <Check size={14} className="mr-2" />
                         Adopt
+                    </Button>
+                )}
+                {candidate.status === 'stale' && candidate.source?.staleReason === 'anchor' && (
+                    <Button variant="secondary" size="sm" onClick={onReselectInsertionPoint}>
+                        Use current insertion point
                     </Button>
                 )}
                 {canRegenerate && (

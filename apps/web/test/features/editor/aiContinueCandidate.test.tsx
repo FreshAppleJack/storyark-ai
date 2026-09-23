@@ -11,7 +11,7 @@ describe('AiContinueCandidate', () => {
         const candidate: AiContinueCandidateState = {
             status: 'adopted',
             text: 'candidate',
-            errorMessage: 'Candidate inserted into the draft.',
+            errorMessage: null,
             source: {
                 bookId: 'book-1',
                 chapterId: 'chapter-1',
@@ -20,8 +20,12 @@ describe('AiContinueCandidate', () => {
                 databaseVersion: 7,
                 contextSource: 'current-in-memory-draft',
                 contextText: 'draft',
-                anchor: { from: 4, to: 4, docSize: 18, selectedText: '' },
+                anchor: { from: 4, to: 4, docSize: 18, selectedText: '', retrievalAnchor: { paragraphOrdinal: 0, textOffset: 3 } },
+                generatedAnchor: { from: 4, to: 4, docSize: 18, selectedText: '', retrievalAnchor: { paragraphOrdinal: 0, textOffset: 3 } },
                 lockWasValid: true,
+                retrievalContext: null,
+                retrievalStatus: null,
+                retrievalNotice: null,
             },
         };
 
@@ -31,11 +35,14 @@ describe('AiContinueCandidate', () => {
                 isAiLoading={false}
                 canAdopt={false}
                 adoptDisabledReason={null}
+                saveStatus="saved"
+                draftRevision={4}
                 onStop={vi.fn()}
                 onAdopt={vi.fn()}
                 onClose={onClose}
                 onDiscard={vi.fn()}
                 onRegenerate={vi.fn()}
+                onReselectInsertionPoint={vi.fn()}
             />,
         );
 

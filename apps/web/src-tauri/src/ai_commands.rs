@@ -4,6 +4,7 @@ use crate::{
         context,
         generation::{
             CancelRequest, ContextInput, GenerateRequest, GenerationEvent, GenerationPayload,
+            GenerationTarget, ValidateAiAdoption,
         },
         settings::SaveSettings,
         tasks::{accepted, AiRuntime, EventSink},
@@ -16,6 +17,27 @@ use std::sync::{
     Arc,
 };
 use tauri::{Emitter, EventTarget};
+
+fn adoption_request(
+    book_id: String,
+    target: &GenerationTarget,
+    retrieval: Option<&crate::rag::contracts::RetrievalContext>,
+) -> Option<ValidateAiAdoption> {
+    match target {
+        GenerationTarget::Continue {
+            chapter_id,
+            database_version,
+        } => Some(ValidateAiAdoption {
+            book_id,
+            chapter_id: chapter_id.clone(),
+            database_version: *database_version,
+            retrieval_source_versions: retrieval
+                .map(|context| context.source_versions.clone())
+                .unwrap_or_default(),
+        }),
+        GenerationTarget::Brainstorm { .. } => None,
+    }
+}
 
 #[tauri::command]
 pub async fn ai_list_configs(storage: tauri::State<'_, Storage>) -> Result<Reply, ()> {
@@ -73,8 +95,15 @@ pub async fn ai_prepare_context(
 ) -> Result<Reply, ()> {
     let book_id = input.book_id.clone();
     let target = input.target.clone();
+    let adoption = adoption_request(book_id.clone(), &target, input.retrieval_context.as_ref());
     let result = storage
-        .run_typed(move |db| db.validate_ai_generation_target(&book_id, &target))
+        .run_typed(move |db| {
+            db.validate_ai_generation_target(&book_id, &target)?;
+            if let Some(adoption) = adoption {
+                db.validate_ai_adoption(adoption)?;
+            }
+            Ok(())
+        })
         .await
         .and_then(|_| {
             context::prepare(&runtime, input)
@@ -103,6 +132,18 @@ pub async fn ai_start_generation<R: tauri::Runtime>(
         Ok(snapshot) => snapshot,
         Err(error) => return Ok(Reply::from(Err(error))),
     };
+    if let Some(adoption) = adoption_request(
+        input.book_id.clone(),
+        &input.target,
+        context_snapshot.retrieval_context.as_ref(),
+    ) {
+        if let Err(error) = storage
+            .run(move |db| db.validate_ai_adoption(adoption))
+            .await
+        {
+            return Ok(Reply::from(Err(error)));
+        }
+    }
     let config_version = input.config.clone();
     let snapshot = match storage
         .run_typed(move |db| db.ai_snapshot(config_version))
@@ -167,4 +208,15 @@ pub async fn ai_cancel_generation(
         .cancel(&input.request_id, &input.session_id)
         .map(|outcome| serde_json::json!({"requestId":input.request_id,"outcome":outcome}));
     Ok(Reply::from(outcome))
+}
+
+#[tauri::command]
+pub async fn ai_validate_adoption(
+    storage: tauri::State<'_, Storage>,
+    input: ValidateAiAdoption,
+) -> Result<Reply, ()> {
+    Ok(storage
+        .run(move |db| db.validate_ai_adoption(input))
+        .await
+        .into())
 }

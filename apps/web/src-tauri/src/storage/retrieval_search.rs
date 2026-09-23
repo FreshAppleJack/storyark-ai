@@ -482,18 +482,36 @@ fn response_context(
     task: &RetrievalTaskStrategy,
     trace: &RetrievalSearchTrace,
 ) -> crate::rag::contracts::RetrievalContext {
+    let evidence_label = |hit: &RetrievalSearchHit| {
+        let chapter = hit
+            .chunk
+            .locator
+            .chapter_title_snapshot
+            .as_deref()
+            .or(hit.chapter_id.as_deref())
+            .unwrap_or("book-level");
+        let location = hit
+            .chunk
+            .locator
+            .volume_title_snapshot
+            .as_deref()
+            .map_or_else(
+                || chapter.to_owned(),
+                |volume| format!("{volume} / {chapter}"),
+            );
+        format!(
+            "{} evidence / {} / {} / source v{}",
+            task.as_str(),
+            hit.source_kind.as_str(),
+            location,
+            hit.source_version
+        )
+    };
     let items = hits
         .iter()
         .map(|hit| ContextItem {
             hit_id: hit.hit_id.clone(),
-            label: format!(
-                "{} evidence / {} / entity {} / chapter {} / source v{}",
-                task.as_str(),
-                hit.source_kind.as_str(),
-                hit.entity_id,
-                hit.chapter_id.as_deref().unwrap_or("book"),
-                hit.source_version
-            ),
+            label: evidence_label(hit),
             text: hit.chunk.source_text.clone(),
         })
         .collect::<Vec<_>>();
@@ -508,17 +526,12 @@ fn response_context(
         .filter(|hit| included.contains(&hit.hit_id))
         .map(|hit| crate::rag::contracts::RetrievalContextMaterial {
             hit_id: hit.hit_id.clone(),
-            label: format!(
-                "{} evidence / {} / entity {} / chapter {} / source v{}",
-                task.as_str(),
-                hit.source_kind.as_str(),
-                hit.entity_id,
-                hit.chapter_id.as_deref().unwrap_or("book"),
-                hit.source_version
-            ),
+            label: evidence_label(hit),
             source_kind: hit.source_kind.clone(),
             entity_id: hit.entity_id.clone(),
             chapter_id: hit.chapter_id.clone(),
+            chapter_title_snapshot: hit.chunk.locator.chapter_title_snapshot.clone(),
+            volume_title_snapshot: hit.chunk.locator.volume_title_snapshot.clone(),
             source_version: hit.source_version,
             chunk_id: hit.chunk_id.clone(),
             quote: hit.quote.clone(),
@@ -526,23 +539,25 @@ fn response_context(
             recall_methods: hit.recall_methods.clone(),
         })
         .collect::<Vec<_>>();
+    let context_source_versions = source_versions(
+        &hits
+            .iter()
+            .filter(|hit| included.contains(&hit.hit_id))
+            .cloned()
+            .collect::<Vec<_>>(),
+    );
     let evidence = hits
         .iter()
         .filter(|hit| included.contains(&hit.hit_id))
         .map(|hit| crate::rag::contracts::RetrievalContextEvidence {
             material: crate::rag::contracts::RetrievalContextMaterial {
                 hit_id: hit.hit_id.clone(),
-                label: format!(
-                    "{} evidence / {} / entity {} / chapter {} / source v{}",
-                    task.as_str(),
-                    hit.source_kind.as_str(),
-                    hit.entity_id,
-                    hit.chapter_id.as_deref().unwrap_or("book"),
-                    hit.source_version
-                ),
+                label: evidence_label(hit),
                 source_kind: hit.source_kind.clone(),
                 entity_id: hit.entity_id.clone(),
                 chapter_id: hit.chapter_id.clone(),
+                chapter_title_snapshot: hit.chunk.locator.chapter_title_snapshot.clone(),
+                volume_title_snapshot: hit.chunk.locator.volume_title_snapshot.clone(),
                 source_version: hit.source_version,
                 chunk_id: hit.chunk_id.clone(),
                 quote: hit.quote.clone(),
@@ -561,7 +576,7 @@ fn response_context(
         chapter_id: trace.chapter_id.clone(),
         scope: trace.scope.clone(),
         excluded_hit_ids: trace.excluded_hit_ids.clone(),
-        source_versions: trace.source_versions.clone(),
+        source_versions: context_source_versions,
         index_version: trace.index_version,
         embedding_fingerprint: trace.embedding_fingerprint.clone(),
         budget: crate::rag::contracts::RetrievalContextBudget {

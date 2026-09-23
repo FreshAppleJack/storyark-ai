@@ -22,6 +22,7 @@ import { EditorContextMenu } from '../features/editor/components/EditorContextMe
 import { Character, EDITOR_SPACING_LIMITS, ForeshadowingNote } from '../types';
 import { calculateMixedWordCount } from '../utils/textUtils'; // Import common utility function
 import type { AiContinueAnchor } from '../features/editor/types/aiContinue';
+import { captureAiContinueAnchor, textBeforeAiContinueAnchor } from '../features/editor/utils/aiContinueAnchor';
 import { buildAiContinueContent } from '../features/editor/utils/aiContinueText';
 import type { RetrievalChunkLocator } from '../domain/retrieval/contracts';
 
@@ -30,6 +31,7 @@ const EMPTY_CHARACTERS: Character[] = [];
 export interface TiptapEditorRef {
     insertContent: (content: string) => void;
     captureSelection: () => AiContinueAnchor | null;
+    getTextBeforeAnchor: (anchor: AiContinueAnchor) => string;
     insertAiCandidateAtAnchor: (candidate: string, anchor: AiContinueAnchor) => boolean;
     editor: Editor | null;
     getHTML: () => string; // Allow parent component to directly get latest updated HTML content
@@ -467,14 +469,11 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
         },
         captureSelection: () => {
             if (!editor || editor.isDestroyed) return null;
-            const { from, to } = editor.state.selection;
-            return {
-                from,
-                to,
-                docSize: editor.state.doc.content.size,
-                selectedText: editor.state.doc.textBetween(from, to, '\n', '\n'),
-            };
+            return captureAiContinueAnchor(editor);
         },
+        getTextBeforeAnchor: (anchor: AiContinueAnchor) => (
+            editor && !editor.isDestroyed ? textBeforeAiContinueAnchor(editor, anchor) : ''
+        ),
         insertAiCandidateAtAnchor: (candidate: string, anchor: AiContinueAnchor) => {
             if (!editor || editor.isDestroyed || !editor.isEditable || !candidate.trim()) return false;
 

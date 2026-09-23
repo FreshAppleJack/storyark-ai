@@ -20,12 +20,13 @@ use tokio::sync::{Notify, Semaphore};
 
 const MAX_CONTEXT_CHARS: u32 = 64_000;
 const MAX_CONTEXT_SECTIONS: usize = 64;
-const CONTINUE_INSTRUCTION: &str = r#"Continue the manuscript from the end of the draft below.
+const CONTINUE_INSTRUCTION: &str = r#"Continue the manuscript from the end of the text inside <manuscript-before-anchor>.
 Return only the new manuscript prose that belongs after the final character.
 Do not review, critique, summarize, correct, explain, or mention the draft.
 Do not give feedback, editing suggestions, or an assessment of the preceding text.
 Do not include a preface, label, heading, bullet list, markdown wrapper, quotation wrapper, or meta-commentary.
-Match the draft's language, narrative voice, tense, viewpoint, formatting, established facts, and character details.
+Match the manuscript excerpt's language, narrative voice, tense, viewpoint, formatting, established facts, and character details.
+Treat retrieved evidence and other reference sections as background only; they are not manuscript text and must never be continued as if they were the draft.
 Begin immediately with the continuation. If the draft ends mid-sentence, continue it naturally."#;
 const BRAINSTORM_INSTRUCTION: &str = r#"You are a senior web-novel story architect. Create exactly three alternative next-plot directions using only the supplied story context.
 Return only one valid JSON object with this exact shape:
@@ -251,6 +252,119 @@ fn validate_context(input: &ContextInput) -> Result<()> {
         return Err(failure_code("VALIDATION_ERROR"));
     }
     validate_target(&input.target)?;
+    if let GenerationTarget::Continue { chapter_id, .. } = &input.target {
+        if input
+            .sections
+            .iter()
+            .any(|section| section.kind == ContextKind::FuturePlan)
+        {
+            return Err(failure_code("VALIDATION_ERROR"));
+        }
+        if let Some(retrieval) = &input.retrieval_context {
+            let anchor = retrieval.scope.before_anchor.as_ref();
+            let retrieval_sections = input
+                .sections
+                .iter()
+                .filter(|section| {
+                    section.kind == ContextKind::RetrievalEvidence && section.text == retrieval.text
+                })
+                .count();
+            let allowed_source_kinds = [
+                crate::rag::contracts::RetrievalSourceKind::Manuscript,
+                crate::rag::contracts::RetrievalSourceKind::ChapterSummary,
+                crate::rag::contracts::RetrievalSourceKind::Planning,
+                crate::rag::contracts::RetrievalSourceKind::ConfirmedSetting,
+                crate::rag::contracts::RetrievalSourceKind::Character,
+                crate::rag::contracts::RetrievalSourceKind::Relationship,
+                crate::rag::contracts::RetrievalSourceKind::ForeshadowingNote,
+            ];
+            let has_evidence = !retrieval.evidence.is_empty();
+            let evidence_source_ids = retrieval
+                .evidence
+                .iter()
+                .map(|evidence| {
+                    format!(
+                        "{}:{}:{}",
+                        retrieval.book_id,
+                        evidence.material.source_kind.as_str(),
+                        evidence.material.entity_id
+                    )
+                })
+                .collect::<HashSet<_>>();
+            let mut version_source_ids = HashSet::new();
+            let versions_match_evidence = retrieval.source_versions.iter().all(|version| {
+                version.source_version > 0
+                    && version.index_version > 0
+                    && version_source_ids.insert(version.source_id.as_str())
+                    && evidence_source_ids.contains(&version.source_id)
+            }) && retrieval.evidence.iter().all(|evidence| {
+                let expected_source_id = format!(
+                    "{}:{}:{}",
+                    retrieval.book_id,
+                    evidence.material.source_kind.as_str(),
+                    evidence.material.entity_id
+                );
+                retrieval.source_versions.iter().any(|version| {
+                    version.source_id == expected_source_id
+                        && version.source_version == evidence.material.source_version
+                        && version.chapter_id == evidence.material.chapter_id
+                })
+            }) && version_source_ids.len()
+                == evidence_source_ids.len();
+            let evidence_hit_ids = retrieval
+                .evidence
+                .iter()
+                .map(|evidence| evidence.material.hit_id.as_str())
+                .collect::<HashSet<_>>();
+            let included_hit_ids = retrieval
+                .included_hit_ids
+                .iter()
+                .map(String::as_str)
+                .collect::<HashSet<_>>();
+            if retrieval.task != crate::rag::contracts::RetrievalTaskStrategy::Continuation
+                || retrieval.chapter_id.as_deref() != Some(chapter_id.as_str())
+                || retrieval.scope.include_future_plan
+                || retrieval.scope.include_generated
+                || retrieval.scope.include_stale
+                || retrieval.scope.before_chapter_order.is_none()
+                || retrieval.scope.allowed_source_kinds.is_empty()
+                || retrieval
+                    .scope
+                    .allowed_source_kinds
+                    .iter()
+                    .any(|kind| !allowed_source_kinds.contains(kind))
+                || !anchor.is_some_and(|anchor| {
+                    anchor.chapter_id == *chapter_id
+                        && anchor.paragraph_ordinal.is_some()
+                        && anchor.text_offset.is_some()
+                })
+                || (has_evidence && retrieval_sections != 1)
+                || (!has_evidence
+                    && (retrieval_sections != 0
+                        || !retrieval.text.trim().is_empty()
+                        || !retrieval.included_hit_ids.is_empty()
+                        || !retrieval.source_versions.is_empty()))
+                || (has_evidence
+                    && (!versions_match_evidence || evidence_hit_ids != included_hit_ids))
+                || retrieval.evidence.iter().any(|evidence| {
+                    evidence.material.freshness != crate::rag::contracts::RetrievalFreshness::Fresh
+                        || evidence.material.source_kind
+                            == crate::rag::contracts::RetrievalSourceKind::FuturePlan
+                        || (evidence.material.chapter_id.as_deref() == Some(chapter_id.as_str())
+                            && evidence.material.source_kind
+                                != crate::rag::contracts::RetrievalSourceKind::Manuscript)
+                })
+            {
+                return Err(failure_code("VALIDATION_ERROR"));
+            }
+        } else if input
+            .sections
+            .iter()
+            .any(|section| section.kind == ContextKind::RetrievalEvidence)
+        {
+            return Err(failure_code("VALIDATION_ERROR"));
+        }
+    }
     if let Some(retrieval) = &input.retrieval_context {
         if retrieval.book_id != input.book_id
             || retrieval.scope.book_id != input.book_id
@@ -330,17 +444,36 @@ pub fn format_generation_prompt(
     output_chars: u32,
 ) -> String {
     match target {
-        GenerationTarget::Continue { .. } => format!(
-            "{CONTINUE_INSTRUCTION}\nAim for approximately {} characters of new prose, then stop naturally.\n\n<draft>\n{}\n</draft>",
-            output_chars.max(1),
-            format_context(snapshot)
-        ),
+        GenerationTarget::Continue { .. } => format_continue_prompt(snapshot, output_chars),
         GenerationTarget::Brainstorm { .. } => format!(
             "{BRAINSTORM_INSTRUCTION}\nKeep the complete JSON response under approximately {} characters.\n\n<brainstorm-context>\n{}\n</brainstorm-context>",
             output_chars.max(1),
             format_context(snapshot)
         ),
     }
+}
+
+fn format_continue_prompt(snapshot: &ContextSnapshot, output_chars: u32) -> String {
+    let manuscript = snapshot
+        .sections
+        .iter()
+        .filter(|section| section.kind == ContextKind::CurrentDraft)
+        .map(|section| section.text.as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let references = snapshot
+        .sections
+        .iter()
+        .filter(|section| section.kind != ContextKind::CurrentDraft)
+        .map(|section| format!("[{}]\n{}", kind_label(&section.kind), section.text))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    format!(
+        "{CONTINUE_INSTRUCTION}\nAim for approximately {} characters of new prose, then stop naturally.\n\n<manuscript-before-anchor>\n{}\n</manuscript-before-anchor>\n\n<reference-material>\n{}\n</reference-material>",
+        output_chars.max(1),
+        manuscript,
+        if references.is_empty() { "None supplied." } else { &references }
+    )
 }
 
 fn kind_label(kind: &ContextKind) -> &'static str {
@@ -447,8 +580,138 @@ mod tests {
         );
         assert!(prompt.contains("Return only the new manuscript prose"));
         assert!(prompt.contains("Aim for approximately 300 characters of new prose"));
-        assert!(prompt.contains("<draft>\n[Current draft]\n你好\n</draft>"));
+        assert!(prompt.contains("<manuscript-before-anchor>\n你好\n</manuscript-before-anchor>"));
+        assert!(prompt.contains("<reference-material>\nNone supplied.\n</reference-material>"));
         assert!(prompt.contains("Do not review, critique, summarize"));
+    }
+
+    #[test]
+    fn continuation_keeps_retrieved_evidence_outside_the_manuscript_excerpt() {
+        let snapshot = ContextSnapshot {
+            context_snapshot_id: "snapshot".into(),
+            book_id: "book".into(),
+            session_id: "session".into(),
+            draft_revision: 1,
+            target: GenerationTarget::Continue {
+                chapter_id: "chapter".into(),
+                database_version: 1,
+            },
+            sections: vec![
+                section(ContextKind::CurrentDraft, "前文在锚点处结束。"),
+                section(
+                    ContextKind::RetrievalEvidence,
+                    "[manuscript evidence / Volume / Chapter 2 / source v4]\n旧线索。",
+                ),
+            ],
+            char_count: 32,
+            retrieval_context: None,
+        };
+        let prompt = format_generation_prompt(&snapshot, &snapshot.target, 500);
+        let manuscript = prompt.split("</manuscript-before-anchor>").next().unwrap();
+        let references = prompt.split("<reference-material>").nth(1).unwrap();
+
+        assert!(manuscript.contains("前文在锚点处结束。"));
+        assert!(!manuscript.contains("旧线索。"));
+        assert!(references.contains("Chapter 2 / source v4"));
+        assert!(references.contains("旧线索。"));
+        assert!(prompt.contains("background only"));
+    }
+
+    #[test]
+    fn continuation_context_rejects_future_plan_sections() {
+        let error = validate_context(&ContextInput {
+            book_id: uuid::Uuid::new_v4().to_string(),
+            session_id: "session".into(),
+            draft_revision: 1,
+            max_chars: 32,
+            target: GenerationTarget::Continue {
+                chapter_id: "chapter".into(),
+                database_version: 1,
+            },
+            sections: vec![
+                section(ContextKind::CurrentDraft, "锚点之前的正文。"),
+                section(ContextKind::FuturePlan, "后文计划，不能当作已发生事实。"),
+            ],
+            retrieval_context: None,
+        })
+        .unwrap_err();
+
+        assert_eq!(error.code, "VALIDATION_ERROR");
+    }
+
+    #[test]
+    fn continuation_context_rejects_unanchored_summary_for_the_current_chapter() {
+        let book_id = uuid::Uuid::new_v4().to_string();
+        let material = json!({
+            "hitId": "hit-1",
+            "label": "chapter summary / Current chapter / source v2",
+            "sourceKind": "chapter_summary",
+            "entityId": "chapter",
+            "chapterId": "chapter",
+            "chapterTitleSnapshot": "Current chapter",
+            "volumeTitleSnapshot": "Volume",
+            "sourceVersion": 2,
+            "chunkId": "chunk-1",
+            "quote": "A later event.",
+            "freshness": "fresh",
+            "recallMethods": ["semantic"]
+        });
+        let mut evidence = material.clone();
+        evidence["text"] = json!("The full chapter summary contains later events.");
+        let scope = json!({
+            "bookId": book_id,
+            "allowedSourceKinds": ["manuscript", "chapter_summary", "planning", "confirmed_setting", "character", "relationship", "foreshadowing_note"],
+            "allowedChapterIds": [],
+            "beforeChapterOrder": 0,
+            "beforeAnchor": {"chapterId": "chapter", "paragraphOrdinal": 1, "textOffset": 0},
+            "includeFuturePlan": false,
+            "includeGenerated": false,
+            "includeStale": false,
+            "timeRange": null
+        });
+        let context: crate::rag::contracts::RetrievalContext = serde_json::from_value(json!({
+            "searchId": "search-1",
+            "retrievalVersion": "p1-r1-v1",
+            "task": "continuation",
+            "requestedAt": 1,
+            "bookId": book_id,
+            "chapterId": "chapter",
+            "scope": scope,
+            "excludedHitIds": [],
+            "sourceVersions": [{"sourceId": format!("{book_id}:chapter_summary:chapter"), "chapterId": "chapter", "sourceVersion": 2, "indexVersion": 1}],
+            "indexVersion": 1,
+            "embeddingFingerprint": null,
+            "budget": {"charBudget": 8000, "tokenBudget": 2000},
+            "materials": [material],
+            "evidence": [evidence],
+            "text": "[chapter summary / Current chapter / source v2]\nThe full chapter summary contains later events.",
+            "charCount": 75,
+            "tokenEstimate": 18,
+            "charBudget": 8000,
+            "tokenBudget": 2000,
+            "includedHitIds": ["hit-1"],
+            "omittedHitIds": []
+        }))
+        .unwrap();
+        let context_text = context.text.clone();
+        let error = validate_context(&ContextInput {
+            book_id,
+            session_id: "session".into(),
+            draft_revision: 1,
+            max_chars: 256,
+            target: GenerationTarget::Continue {
+                chapter_id: "chapter".into(),
+                database_version: 1,
+            },
+            sections: vec![
+                section(ContextKind::CurrentDraft, "Draft before the anchor."),
+                section(ContextKind::RetrievalEvidence, &context_text),
+            ],
+            retrieval_context: Some(context),
+        })
+        .unwrap_err();
+
+        assert_eq!(error.code, "VALIDATION_ERROR");
     }
 
     #[test]

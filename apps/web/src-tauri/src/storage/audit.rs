@@ -5,7 +5,7 @@ use crate::ai::generation::{GenerateRequest, GenerationTarget, SourceVersion};
 use rusqlite::{params, TransactionBehavior};
 use uuid::Uuid;
 
-pub const PROMPT_VERSION: &str = "ai-tasks-v1";
+pub const PROMPT_VERSION: &str = "ai-tasks-v2";
 
 fn target_source_versions(target: &GenerationTarget) -> Vec<SourceVersion> {
     match target {

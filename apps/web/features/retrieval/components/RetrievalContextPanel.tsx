@@ -48,7 +48,11 @@ export function RetrievalContextPanel({
                                 <span className="min-w-0">
                                     <span className="flex flex-wrap gap-x-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                                         <span>{material.sourceKind}</span>
-                                        <span>{material.chapterId ?? 'book-level'}</span>
+                                        <span>
+                                            {[material.volumeTitleSnapshot, material.chapterTitleSnapshot ?? material.chapterId ?? 'book-level']
+                                                .filter(Boolean)
+                                                .join(' / ')}
+                                        </span>
                                         <span>source v{material.sourceVersion}</span>
                                         {isExcluded && <span className="text-amber-700 dark:text-amber-300">excluded for next generation</span>}
                                     </span>
