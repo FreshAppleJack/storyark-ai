@@ -29,6 +29,15 @@ export interface BrainstormCandidate {
     retrievalContext: RetrievalContext | null;
     retrievalStatus: RetrievalSearchStatus | null;
     retrievalNotice: string | null;
+    lastAttempt?: {
+        status: 'invalid' | 'failed' | 'cancelled' | 'stale';
+        rawText: string;
+        errorMessage: string;
+        metadata: BrainstormGenerationMetadata | null;
+        retrievalContext: RetrievalContext | null;
+        retrievalStatus: RetrievalSearchStatus | null;
+        retrievalNotice: string | null;
+    };
 }
 
 export const EMPTY_BRAINSTORM_CANDIDATE: BrainstormCandidate = {
@@ -59,16 +68,6 @@ function parseJsonText(rawText: string): unknown {
     try {
         return JSON.parse(unfenced);
     } catch {
-        const objectStart = unfenced.indexOf('{');
-        const objectEnd = unfenced.lastIndexOf('}');
-        if (objectStart >= 0 && objectEnd > objectStart) {
-            try { return JSON.parse(unfenced.slice(objectStart, objectEnd + 1)); } catch { /* Keep the original validation error. */ }
-        }
-        const arrayStart = unfenced.indexOf('[');
-        const arrayEnd = unfenced.lastIndexOf(']');
-        if (arrayStart >= 0 && arrayEnd > arrayStart) {
-            try { return JSON.parse(unfenced.slice(arrayStart, arrayEnd + 1)); } catch { /* Keep the original validation error. */ }
-        }
         throw new Error('The model response is not valid JSON.');
     }
 }
@@ -107,11 +106,9 @@ export function parseBrainstormCandidate(rawText: string): { options: Brainstorm
         return { errorMessage: error instanceof Error ? error.message : 'The model response is not valid JSON.' };
     }
 
-    const optionsValue = Array.isArray(parsed)
-        ? parsed
-        : parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-            ? (parsed as Record<string, unknown>).options
-            : undefined;
+    const optionsValue = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>).options
+        : undefined;
     if (!Array.isArray(optionsValue)) return { errorMessage: 'The JSON response must contain an options array.' };
     if (optionsValue.length !== BRAINSTORM_FIELD_LIMITS.maxOptions) {
         return { errorMessage: `The response must contain exactly ${BRAINSTORM_FIELD_LIMITS.maxOptions} options.` };

@@ -37,6 +37,12 @@ describe('brainstorm candidate validation', () => {
         expect(parseBrainstormCandidate('The previous chapter is excellent.')).toEqual({
             errorMessage: 'The model response is not valid JSON.',
         });
+        expect(parseBrainstormCandidate(`Here are the options: ${JSON.stringify({ options })}`)).toEqual({
+            errorMessage: 'The model response is not valid JSON.',
+        });
+        expect(parseBrainstormCandidate(JSON.stringify(options))).toEqual({
+            errorMessage: 'The JSON response must contain an options array.',
+        });
     });
 
     it('rejects oversized fields and empty option lists', () => {

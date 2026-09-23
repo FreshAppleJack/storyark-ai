@@ -158,7 +158,16 @@ function exportSnapshot(): LocalWorkExportSnapshot {
                 configId: '00000000-0000-4000-8000-000000000060',
                 modelId: 'model-1',
                 generatedAt: 1_700_000_000_100,
-                promptVersion: 'brainstorm-v1',
+                promptVersion: 'brainstorm-v2',
+                includesPlanning: true,
+                retrieval: {
+                    retrievalVersion: 'retrieval-v2',
+                    requestedAt: 1_700_000_000_050,
+                    sourceVersions: [{ sourceId: `${bookId}:character:${characterId}`, chapterId: null, sourceVersion: 2, indexVersion: 3 }],
+                    includedHitIds: ['hit-1'],
+                    indexVersion: 3,
+                    embeddingFingerprint: 'local-e5-fingerprint',
+                },
                 source: {
                     bookId,
                     workspaceDatabaseVersion: 1,
@@ -183,6 +192,16 @@ describe('whole-work export construction', () => {
         expect(value.foreshadowings[0]).toMatchObject({ id: 'legacy-note', chapterId, unknownField: { preserved: true } });
         expect(value.chapters[0].body).toMatchObject({ format: 'tiptap-json', content: { type: 'doc' } });
         expect(value.brainstormWorkspaces[0].generationMetadata?.source.selectedChapters[0]).toEqual({ chapterId, databaseVersion: 3 });
+        expect(value.brainstormWorkspaces[0].generationMetadata).toMatchObject({
+            includesPlanning: true,
+            retrieval: {
+                retrievalVersion: 'retrieval-v2',
+                sourceVersions: [{ sourceVersion: 2, indexVersion: 3 }],
+                includedHitIds: ['hit-1'],
+                indexVersion: 3,
+                embeddingFingerprint: 'local-e5-fingerprint',
+            },
+        });
         expect(summarizeStoryArkWorkExport(value).counts).toMatchObject({
             volumes: 1,
             chapters: 1,

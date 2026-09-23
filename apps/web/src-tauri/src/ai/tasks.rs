@@ -34,6 +34,7 @@ Return only one valid JSON object with this exact shape:
 The title must be short and concrete. Conflict, motivation, and consequences should explain the immediate pressure, character reasons, and fallout. Development should contain concrete editable continuation beats from setup through the next-chapter landing point. Every field must be a non-empty string.
 Do not use Markdown fences. Do not add a preface, explanation, critique, review, summary, or comments outside the JSON object.
 Do not rewrite the existing story or claim that you checked sources not included below.
+Sections labeled [Future plans] are proposals for events that have not happened. Never describe them as established story facts; use them only as possible future directions.
 If a selected chapter has no stored summary, use only its explicitly labeled bounded chapter text."#;
 
 pub struct Cancellation {
@@ -740,6 +741,10 @@ mod tests {
         assert!(prompt.contains("valid JSON object"));
         assert!(prompt.contains("\"options\""));
         assert!(prompt.contains("Do not add a preface"));
+        assert!(prompt.contains(
+            "Sections labeled [Future plans] are proposals for events that have not happened"
+        ));
+        assert!(prompt.contains("Future plans"));
         assert!(prompt.contains("<brainstorm-context>"));
     }
 

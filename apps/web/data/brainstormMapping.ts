@@ -24,6 +24,28 @@ export function parseBrainstormGenerationMetadata(value: unknown): BrainstormGen
         || chapters.some(chapter => !chapter || typeof chapter !== 'object'
             || typeof (chapter as Record<string, unknown>).chapterId !== 'string'
             || !Number.isSafeInteger((chapter as Record<string, unknown>).databaseVersion))) return undefined;
+    if (Object.prototype.hasOwnProperty.call(metadata, 'includesPlanning') && typeof metadata.includesPlanning !== 'boolean') return undefined;
+    if (Object.prototype.hasOwnProperty.call(metadata, 'retrieval')) {
+        if (metadata.retrieval !== null) {
+            const retrieval = metadata.retrieval;
+            if (!retrieval || typeof retrieval !== 'object' || Array.isArray(retrieval)) return undefined;
+            const retrievalValue = retrieval as Record<string, unknown>;
+            const versions = retrievalValue.sourceVersions;
+            const indexVersion = retrievalValue.indexVersion;
+            if (typeof retrievalValue.retrievalVersion !== 'string' || !retrievalValue.retrievalVersion
+                || !Number.isSafeInteger(retrievalValue.requestedAt)
+                || !Array.isArray(versions)
+                || versions.some(version => !version || typeof version !== 'object' || Array.isArray(version)
+                    || typeof (version as Record<string, unknown>).sourceId !== 'string'
+                    || !((version as Record<string, unknown>).chapterId === null || typeof (version as Record<string, unknown>).chapterId === 'string')
+                    || !Number.isSafeInteger((version as Record<string, unknown>).sourceVersion)
+                    || !Number.isSafeInteger((version as Record<string, unknown>).indexVersion))
+                || !Array.isArray(retrievalValue.includedHitIds)
+                || retrievalValue.includedHitIds.some(hitId => typeof hitId !== 'string')
+                || !(indexVersion === null || (Number.isSafeInteger(indexVersion) && Number(indexVersion) > 0))
+                || !(retrievalValue.embeddingFingerprint === null || typeof retrievalValue.embeddingFingerprint === 'string')) return undefined;
+        }
+    }
     return metadata as unknown as BrainstormGenerationMetadata;
 }
 

@@ -13,9 +13,20 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const legacy = vi.hoisted(() => ({ planning: vi.fn(), graph: vi.fn() }));
 const api = vi.hoisted(() => ({ get: vi.fn(), generate: vi.fn(), save: vi.fn() }));
+const generation = vi.hoisted(() => ({
+    candidate: {
+        status: 'idle', rawText: '', options: [], errorMessage: null, metadata: null,
+        sourceFingerprint: null, draftRevision: null, retrievalContext: null, retrievalStatus: null, retrievalNotice: null,
+    },
+    generate: vi.fn(), stop: vi.fn(), regenerate: vi.fn(), discardCandidate: vi.fn(), closeCandidate: vi.fn(),
+    acceptOption: vi.fn(), toggleRetrievalHit: vi.fn(),
+}));
 vi.mock('../../../InteractionContent/BooksContext', () => ({ useBooks: () => ({ fetchStoryPlanning: legacy.planning, fetchGraphData: legacy.graph }) }));
 vi.mock('../../../InteractionContent/PreferencesContext', () => ({ usePreferences: () => ({ autoHighlightSettings: { disabledRoles: [] } }) }));
 vi.mock('../../../data/brainstormApi', () => ({ brainstormApi: api }));
+vi.mock('../../../features/brainstorm/hooks/useLocalBrainstormGeneration', () => ({
+    useLocalBrainstormGeneration: () => generation,
+}));
 
 const book: Book = {
     id: 'book', title: 'Book', author: '', status: 'serializing', lastModified: 0,
@@ -31,15 +42,22 @@ const initial: LocalBrainstorm = {
     contextSnapshot: {}, generatedOptions: [], selectedOptionId: null, finalContent: 'Draft finale',
 };
 
-function setup(workspace = initial) {
+function setup(workspace = initial, generationSource?: BrainstormSources['generation']) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     return renderHook(() => {
         const persistence = useLocalBrainstormPersistence(workspace);
-        const sources: BrainstormSources = { planning, relationships: [], persistence };
+        const sources: BrainstormSources = { planning, relationships: [], persistence, generation: generationSource };
         return useBrainstormWorkspace(book.id, book, null, sources);
     }, { wrapper: ({ children }) => <QueryClientProvider client={client}>{children}</QueryClientProvider> });
 }
-beforeEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); });
+beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    generation.candidate = {
+        status: 'idle', rawText: '', options: [], errorMessage: null, metadata: null,
+        sourceFingerprint: null, draftRevision: null, retrievalContext: null, retrievalStatus: null, retrievalNotice: null,
+    };
+});
 
 it('loads the local workspace without legacy calls and disables generation', async () => {
     const { result } = setup();
@@ -122,6 +140,45 @@ it('builds the snapshot on first save with chapter source versions', async () =>
     const snapshot = input.contextSnapshot as { selectedChapters: Array<{ id: string; databaseVersion?: number }> };
     expect(snapshot.selectedChapters[0]).toMatchObject({ id: 'chapter-1', databaseVersion: 3 });
     expect(result.current.isSnapshotStale).toBe(false);
+});
+
+it('keeps the editable result untouched during generation and regeneration', async () => {
+    const option = {
+        id: 'candidate-1', title: 'New direction', conflict: 'Conflict', motivation: 'Motivation',
+        consequences: 'Consequences', development: 'Development',
+    };
+    const metadata = {
+        configId: 'config-1', modelId: 'model-1', generatedAt: 1234, promptVersion: 'brainstorm-v2',
+        includesPlanning: true, retrieval: null,
+        source: { bookId: 'book', workspaceDatabaseVersion: 4, planningDatabaseVersion: 2, graphDatabaseVersion: 3, selectedChapters: [{ chapterId: 'chapter-1', databaseVersion: 3 }] },
+    };
+    generation.candidate = {
+        status: 'completed', rawText: JSON.stringify({ options: [option] }), options: [option], errorMessage: null, metadata,
+        sourceFingerprint: 'source-1', draftRevision: 0, retrievalContext: null, retrievalStatus: null, retrievalNotice: null,
+    };
+    generation.acceptOption.mockReturnValue(true);
+    const generationSource: NonNullable<BrainstormSources['generation']> = {
+        bookId: 'book', workspaceBookId: 'book', workspaceDatabaseVersion: 4,
+        planningBookId: 'book', planningDatabaseVersion: 2, graphBookId: 'book', graphDatabaseVersion: 3,
+    };
+    const { result } = setup(initial, generationSource);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await act(async () => { await result.current.handleGenerate(); });
+    expect(generation.generate).toHaveBeenCalledTimes(1);
+    expect(result.current.workspace).toMatchObject({ finalContent: 'Draft finale', generatedOptions: [], selectedOptionId: null });
+
+    act(() => result.current.chooseOption(option));
+    expect(result.current.workspace).toMatchObject({ finalContent: expect.stringContaining('New direction'), selectedOptionId: 'candidate-1' });
+    expect(result.current.workspace.generationMetadata).toEqual(metadata);
+    act(() => result.current.updateFinalContent('作者手工修改的方案'));
+    await act(async () => { await result.current.regenerate(); });
+    expect(generation.regenerate).toHaveBeenCalledTimes(1);
+    expect(result.current.workspace.finalContent).toBe('作者手工修改的方案');
+    expect(result.current.workspace.selectedOptionId).toBe('candidate-1');
+
+    act(() => result.current.chooseOption(option));
+    expect(result.current.workspace.finalContent).toContain('New direction');
+    expect(generation.acceptOption).toHaveBeenCalledTimes(1);
 });
 
 it('does not reuse the previous selection state when a new brainstorm candidate replaces it', async () => {

@@ -195,7 +195,25 @@ export interface ExchangeBrainstormGenerationMetadata {
     modelId: string;
     generatedAt: Timestamp;
     promptVersion: string;
+    includesPlanning?: boolean;
+    retrieval?: ExchangeBrainstormRetrievalMetadata | null;
     source: ExchangeBrainstormGenerationSource;
+    extensions?: ExchangeExtensions;
+}
+
+export interface ExchangeBrainstormRetrievalMetadata {
+    retrievalVersion: string;
+    requestedAt: Timestamp;
+    sourceVersions: Array<{
+        sourceId: string;
+        chapterId: UUID | null;
+        sourceVersion: number;
+        indexVersion: number;
+        extensions?: ExchangeExtensions;
+    }>;
+    includedHitIds: string[];
+    indexVersion: number | null;
+    embeddingFingerprint: string | null;
     extensions?: ExchangeExtensions;
 }
 

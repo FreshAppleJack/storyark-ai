@@ -29,6 +29,8 @@ export const EXCHANGE_LIMITS = {
     maxBrainstormOptions: 100_000,
     maxBrainstormTitleChars: 240,
     maxBrainstormDetailChars: 4_000,
+    maxBrainstormRetrievalSources: 200,
+    maxBrainstormRetrievalHits: 200,
     maxGraphNodes: 10_000,
     maxGraphEdges: 50_000,
     maxAssets: 1_000,

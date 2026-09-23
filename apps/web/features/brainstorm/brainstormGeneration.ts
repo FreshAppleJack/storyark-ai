@@ -13,7 +13,7 @@ import {
     type ChapterOption,
 } from './brainstormContext';
 
-export const BRAINSTORM_PROMPT_VERSION = 'brainstorm-v1';
+export const BRAINSTORM_PROMPT_VERSION = 'brainstorm-v2';
 export const BRAINSTORM_CONTEXT_MAX_CHARS = 60_000;
 export const BRAINSTORM_OUTPUT_CHARS = 12_000;
 

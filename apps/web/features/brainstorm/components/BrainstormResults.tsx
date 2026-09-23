@@ -176,6 +176,25 @@ function CandidatePanel({
             {candidate.rawText && (
                 <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-brand-100 bg-white px-4 py-3 text-xs leading-5 text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">{candidate.rawText}</pre>
             )}
+            {candidate.lastAttempt && (
+                <div role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+                    <div className="font-semibold">Latest generation attempt was not adopted</div>
+                    <p className="mt-1">{candidate.lastAttempt.errorMessage}</p>
+                    {candidate.lastAttempt.rawText && (
+                        <details className="mt-2">
+                            <summary className="cursor-pointer font-semibold">Review raw generation text</summary>
+                            <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-amber-200 bg-white px-4 py-3 text-xs leading-5 text-slate-700 dark:border-amber-900/70 dark:bg-slate-950 dark:text-slate-200">{candidate.lastAttempt.rawText}</pre>
+                        </details>
+                    )}
+                    <RetrievalContextPanel
+                        context={candidate.lastAttempt.retrievalContext}
+                        notice={candidate.lastAttempt.retrievalNotice}
+                        excludedHitIds={candidate.lastAttempt.retrievalContext?.excludedHitIds ?? []}
+                        onToggleHit={toggleRetrievalHit}
+                        disabled={isGenerating || isSaving}
+                    />
+                </div>
+            )}
             <RetrievalContextPanel
                 context={candidate.retrievalContext}
                 notice={candidate.retrievalNotice}

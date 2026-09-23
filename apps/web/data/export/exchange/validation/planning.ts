@@ -74,14 +74,74 @@ function validateBrainstormOption(context: ValidationContext, value: unknown, pa
 function validateGenerationMetadata(context: ValidationContext, value: unknown, path: string): ExchangeBrainstormGenerationMetadata | undefined {
     const object = context.requiredObjectValue(value, path);
     if (!object) return undefined;
-    context.unknownFields(object, new Set(['configId', 'modelId', 'generatedAt', 'promptVersion', 'source', 'extensions']), path);
+    context.unknownFields(object, new Set(['configId', 'modelId', 'generatedAt', 'promptVersion', 'includesPlanning', 'retrieval', 'source', 'extensions']), path);
     const configId = context.requiredUuid(object, 'configId', path);
     const modelId = context.requiredString(object, 'modelId', path, EXCHANGE_LIMITS.maxModelIdChars, 1);
     const generatedAt = context.requiredTimestamp(object, 'generatedAt', path);
     const promptVersion = context.requiredString(object, 'promptVersion', path, EXCHANGE_LIMITS.maxPromptVersionChars, 1);
     const source = validateGenerationSource(context, context.requiredObject(object, 'source', path), `${path}.source`);
+    const includesPlanning = Object.prototype.hasOwnProperty.call(object, 'includesPlanning')
+        ? context.requiredBoolean(object, 'includesPlanning', path)
+        : undefined;
+    const retrieval = validateGenerationRetrieval(context, object, path);
     if (!configId || modelId === undefined || generatedAt === undefined || promptVersion === undefined || !source) return undefined;
-    return { configId, modelId, generatedAt, promptVersion, source };
+    return {
+        configId,
+        modelId,
+        generatedAt,
+        promptVersion,
+        ...(includesPlanning === undefined ? {} : { includesPlanning }),
+        ...(retrieval === undefined ? {} : { retrieval }),
+        source,
+    };
+}
+
+function validateGenerationRetrieval(
+    context: ValidationContext,
+    parent: AnyRecord,
+    path: string,
+): ExchangeBrainstormGenerationMetadata['retrieval'] | undefined {
+    if (!Object.prototype.hasOwnProperty.call(parent, 'retrieval')) return undefined;
+    if (parent.retrieval === null) return null;
+    const object = context.requiredObjectValue(parent.retrieval, `${path}.retrieval`);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set(['retrievalVersion', 'requestedAt', 'sourceVersions', 'includedHitIds', 'indexVersion', 'embeddingFingerprint', 'extensions']), `${path}.retrieval`);
+    const retrievalPath = `${path}.retrieval`;
+    const retrievalVersion = context.requiredString(object, 'retrievalVersion', retrievalPath, EXCHANGE_LIMITS.maxPromptVersionChars, 1);
+    const requestedAt = context.requiredTimestamp(object, 'requestedAt', retrievalPath);
+    const sourceValues = context.requiredArray(object, 'sourceVersions', retrievalPath);
+    if (sourceValues && sourceValues.length > EXCHANGE_LIMITS.maxBrainstormRetrievalSources) {
+        context.add(`${retrievalPath}.sourceVersions`, 'LIMIT_EXCEEDED', `Retrieval source versions cannot exceed ${EXCHANGE_LIMITS.maxBrainstormRetrievalSources}.`);
+    }
+    const sourceVersions = sourceValues?.map((value, index) => validateRetrievalSourceVersion(context, value, `${retrievalPath}.sourceVersions[${index}]`))
+        .filter((value): value is NonNullable<ExchangeBrainstormGenerationMetadata['retrieval']>['sourceVersions'][number] => value !== undefined);
+    if (sourceVersions) context.unique(sourceVersions, `${retrievalPath}.sourceVersions`, source => source.sourceId);
+    const includedHitIds = context.requiredStringArray(object, 'includedHitIds', retrievalPath, EXCHANGE_LIMITS.maxBrainstormRetrievalHits, 512, 1);
+    const indexVersion = object.indexVersion === null
+        ? null
+        : context.requiredInteger(object, 'indexVersion', retrievalPath, 1, Number.MAX_SAFE_INTEGER);
+    const embeddingFingerprint = object.embeddingFingerprint === null
+        ? null
+        : context.requiredString(object, 'embeddingFingerprint', retrievalPath, 512, 1);
+    if (retrievalVersion === undefined || requestedAt === undefined || !sourceVersions || !includedHitIds
+        || indexVersion === undefined || embeddingFingerprint === undefined) return undefined;
+    return { retrievalVersion, requestedAt, sourceVersions, includedHitIds, indexVersion, embeddingFingerprint };
+}
+
+function validateRetrievalSourceVersion(
+    context: ValidationContext,
+    value: unknown,
+    path: string,
+): NonNullable<ExchangeBrainstormGenerationMetadata['retrieval']>['sourceVersions'][number] | undefined {
+    const object = context.requiredObjectValue(value, path);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set(['sourceId', 'chapterId', 'sourceVersion', 'indexVersion', 'extensions']), path);
+    const sourceId = context.requiredString(object, 'sourceId', path, 512, 1);
+    const chapterId = object.chapterId === null ? null : context.requiredUuid(object, 'chapterId', path);
+    const sourceVersion = context.requiredInteger(object, 'sourceVersion', path, 1, Number.MAX_SAFE_INTEGER);
+    const indexVersion = context.requiredInteger(object, 'indexVersion', path, 1, Number.MAX_SAFE_INTEGER);
+    if (sourceId === undefined || chapterId === undefined || sourceVersion === undefined || indexVersion === undefined) return undefined;
+    return { sourceId, chapterId, sourceVersion, indexVersion };
 }
 
 function validateGenerationSource(

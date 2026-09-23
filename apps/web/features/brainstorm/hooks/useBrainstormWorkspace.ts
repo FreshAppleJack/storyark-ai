@@ -167,8 +167,9 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
             setErrorMessage('This brainstorm workspace is read-only. The candidate is still available for review.');
             return;
         }
-        const isCandidateOption = candidate.options.some(item => item.id === option.id);
-        if (isCandidateOption) {
+        const isNewCandidateOption = candidate.options.some(item => item.id === option.id)
+            && !workspace.generatedOptions.some(item => item.id === option.id);
+        if (isNewCandidateOption) {
             const accepted = sources?.generation
                 ? localGeneration.acceptOption(option.id)
                 : candidate.sourceFingerprint === JSON.stringify({ bookId, draftRevision: revision.current, selectedChapterIds })
@@ -180,7 +181,7 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
             }
         }
         edit(prev => {
-            const generatedOptions = isCandidateOption
+            const generatedOptions = isNewCandidateOption
                 ? [...prev.generatedOptions, ...candidate.options.filter(item => !prev.generatedOptions.some(existing => existing.id === item.id))]
                 : prev.generatedOptions;
             return {
@@ -188,10 +189,10 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
                 generatedOptions,
                 selectedOptionId: option.id,
                 finalContent: formatOptionAsEditableText(option),
-                generationMetadata: isCandidateOption ? candidate.metadata ?? prev.generationMetadata : prev.generationMetadata,
+                generationMetadata: isNewCandidateOption ? candidate.metadata ?? prev.generationMetadata : prev.generationMetadata,
             };
         });
-        if (isCandidateOption && !sources?.generation) setRemoteCandidate(previous => ({ ...previous, status: 'adopted', errorMessage: null }));
+        if (isNewCandidateOption && !sources?.generation) setRemoteCandidate(previous => ({ ...previous, status: 'adopted', errorMessage: null }));
     };
     const showAllOptions = () => {
         if (!hasSelectedDisplayedOption) return;

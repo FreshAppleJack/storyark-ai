@@ -118,6 +118,20 @@ export interface BrainstormGenerationMetadata {
     modelId: string;
     generatedAt: number;
     promptVersion: string;
+    includesPlanning?: boolean;
+    retrieval?: {
+        retrievalVersion: string;
+        requestedAt: number;
+        sourceVersions: Array<{
+            sourceId: string;
+            chapterId: string | null;
+            sourceVersion: number;
+            indexVersion: number;
+        }>;
+        includedHitIds: string[];
+        indexVersion: number | null;
+        embeddingFingerprint: string | null;
+    } | null;
     source: {
         bookId: string;
         workspaceDatabaseVersion: number;
