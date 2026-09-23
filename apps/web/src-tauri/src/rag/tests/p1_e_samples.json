@@ -26,6 +26,12 @@
       "text": "人物：沈砚；别名：共同别名。"
     },
     {
+      "id": "confirmed-setting",
+      "kind": "planning",
+      "state": "active",
+      "text": "设定：档案门只能在雨夜开启。"
+    },
+    {
       "id": "future-plot",
       "kind": "future_plan",
       "state": "future",
@@ -68,6 +74,11 @@
       "id": "future-plan",
       "query": "尚未发生的地下室停电",
       "expectedSources": ["future-plot"]
+    },
+    {
+      "id": "confirmed-setting",
+      "query": "档案门只能在雨夜开启",
+      "expectedSources": ["confirmed-setting"]
     },
     {
       "id": "expired-summary",

@@ -105,3 +105,14 @@ request policy and is not changed by this acceptance work.
 
 Remote embedding compatibility and cross-platform desktop acceptance are not
 claimed by this record.
+
+## P1-R4 broader-scope note — 2026-09-23
+
+The no-answer observation above is specific to its isolated manuscript-only
+fixture. A broader R4 scope containing a planning background produced an
+additional semantic-only planning hit for the query `海边灯塔的蓝色汽笛`
+(`semanticScore` observed near `0.858`). The hit did not contain the later
+chapter text or a future-plan record, but it was unrelated to the query. Do not
+generalize the earlier zero false-recall result to mixed source scopes; the
+R4 report records this as a relevance false positive rather than a temporal
+information leak.

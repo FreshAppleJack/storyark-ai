@@ -4,7 +4,12 @@ import {
     buildBrainstormGenerationContext,
     BRAINSTORM_PROMPT_VERSION,
 } from '../../../features/brainstorm/brainstormGeneration';
-import type { BrainstormRelationship, BrainstormSourceVersions, ChapterOption } from '../../../features/brainstorm/brainstormContext';
+import {
+    getBrainstormChapters,
+    type BrainstormRelationship,
+    type BrainstormSourceVersions,
+    type ChapterOption,
+} from '../../../features/brainstorm/brainstormContext';
 
 const book = {
     id: 'book-1',
@@ -61,5 +66,46 @@ describe('RAG Brainstorm context snapshot', () => {
             expect.objectContaining({ sourceNodeKey: 'ari-after', label: 'Protects' }),
         ]);
         expect(BRAINSTORM_PROMPT_VERSION).toBe('brainstorm-v2');
+    });
+
+    it('replaces an out-of-date chapter summary with bounded current manuscript text', () => {
+        const currentText = '当前正文事实：林岚守住了档案门。';
+        const versionedBook = {
+            ...book,
+            volumes: [{
+                ...book.volumes[0],
+                chapters: [{
+                    ...book.volumes[0].chapters[0],
+                    content: JSON.stringify({
+                        type: 'doc',
+                        content: [{ type: 'paragraph', content: [{ type: 'text', text: currentText }] }],
+                    }),
+                }],
+            }],
+        } as unknown as Book;
+        const stalePlanning: StoryPlanning = {
+            ...planning,
+            chapterSummaries: [{
+                chapterId: 'chapter-1',
+                summary: '过期概括：地下室已经停电。',
+                sourceChapterVersion: 6,
+                updatedAt: 101,
+            }],
+        };
+        const chapters = getBrainstormChapters(versionedBook, stalePlanning);
+        expect(chapters[0]).toMatchObject({ summary: '', summaryStatus: 'stale' });
+        const context = buildBrainstormGenerationContext(
+            versionedBook,
+            stalePlanning,
+            chapters,
+            characters,
+            relationships,
+            versions,
+            13,
+        );
+        const selectedChapterSection = context.sections.find(section => section.label === 'Selected chapter source snapshot');
+        expect(selectedChapterSection?.text).toContain(currentText);
+        expect(selectedChapterSection?.text).not.toContain('地下室已经停电');
+        expect(context.sourceSnapshot.selectedChapters).toMatchObject([{ summarySource: 'stale-planning-summary' }]);
     });
 });

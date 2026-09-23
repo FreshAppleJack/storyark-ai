@@ -41,7 +41,7 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, rege
                     )}
                     {missingSummaryChapters.length > 0 && (
                         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
-                            Some selected chapters do not have plot summaries yet. Add chapter summaries first, otherwise the brainstorm may be less relevant.
+                            Some selected chapters have missing or out-of-date summaries. The brainstorm will use a bounded excerpt of their current text instead; refresh summaries for fuller context.
                         </div>
                     )}
                     {errorMessage && (

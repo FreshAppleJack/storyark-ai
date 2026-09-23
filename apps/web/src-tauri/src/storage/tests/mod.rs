@@ -20,6 +20,7 @@ mod retrieval;
 mod retrieval_p1e;
 mod retrieval_p1s3;
 mod retrieval_r0;
+mod retrieval_r4;
 mod worker;
 
 struct TempDirectory(PathBuf);

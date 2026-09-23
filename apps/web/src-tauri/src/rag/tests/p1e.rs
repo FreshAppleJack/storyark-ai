@@ -76,6 +76,7 @@ fn fixed_chinese_sample_declares_all_p1e_coverage_categories() {
         ids,
         vec![
             "alias",
+            "confirmed-setting",
             "cross-chapter-event",
             "duplicate-people",
             "expired-summary",

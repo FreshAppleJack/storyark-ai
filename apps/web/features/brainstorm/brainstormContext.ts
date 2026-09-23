@@ -31,6 +31,7 @@ export interface ChapterOption {
     summary: string;
     content: string;
     databaseVersion?: number;
+    summaryStatus?: 'current' | 'stale' | 'missing';
 }
 
 export const getMentionedCharacterIds = (
@@ -62,16 +63,27 @@ export const formatOptionAsEditableText = (option: BrainstormOption) => (
 
 export function getBrainstormChapters(book: Book | undefined, planning: StoryPlanning): ChapterOption[] {
     if (!book) return [];
-    const summaryMap = new Map(planning.chapterSummaries.map(item => [item.chapterId, item.summary]));
+    const summaryMap = new Map(planning.chapterSummaries.map(item => [item.chapterId, item]));
     return book.volumes.flatMap(volume => (
-        volume.chapters.map((chapter: Chapter) => ({
-            id: chapter.id,
-            title: chapter.title,
-            volumeTitle: volume.title,
-            summary: summaryMap.get(chapter.id) || '',
-            content: chapter.content || '',
-            databaseVersion: chapter.databaseVersion,
-        }))
+        volume.chapters.map((chapter: Chapter) => {
+            const summary = summaryMap.get(chapter.id);
+            const hasCurrentChapterVersion = Number.isSafeInteger(chapter.databaseVersion)
+                && (chapter.databaseVersion ?? 0) > 0;
+            const summaryStatus = !summary?.summary.trim()
+                ? 'missing'
+                : hasCurrentChapterVersion && summary.sourceChapterVersion !== chapter.databaseVersion
+                    ? 'stale'
+                    : 'current';
+            return {
+                id: chapter.id,
+                title: chapter.title,
+                volumeTitle: volume.title,
+                summary: summaryStatus === 'current' ? summary?.summary || '' : '',
+                content: chapter.content || '',
+                databaseVersion: chapter.databaseVersion,
+                summaryStatus,
+            };
+        })
     ));
 }
 // Minimal structural shape so both the legacy API DTO and the local graph
@@ -218,7 +230,9 @@ export function buildContextSnapshot(book: Book, planning: StoryPlanning, select
             volumeTitle: chapter.volumeTitle,
             summary: chapter.summary,
             databaseVersion: chapter.databaseVersion,
-            summarySource: chapter.summary.trim() ? 'stored-planning-summary' : 'missing',
+            summarySource: chapter.summaryStatus === 'stale'
+                ? 'stale-planning-summary'
+                : chapter.summary.trim() ? 'stored-planning-summary' : 'missing',
             boundedChapterText: chapter.summary.trim() ? undefined : boundedChapterText(chapter.content, 2000),
         })),
         missingSummaryChapterTitles: missingSummaryChapters.map(chapter => chapter.title),
