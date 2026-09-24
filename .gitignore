@@ -14,9 +14,8 @@
 .DS_Store
 Thumbs.db
 
-# Java / Maven
+# Build output
 **/target/
-.mvn/timing.properties
 
 # Node / Vite
 **/node_modules/

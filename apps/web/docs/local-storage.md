@@ -431,7 +431,7 @@ legacy HTTP API at runtime:
 
 ## Legacy migration entry point and UUID mapping (types and structure)
 
-The legacy server (`apps/server`, retained for reference) stores books with
+The legacy Spring Boot server is archived outside the active repository. It stores books with
 MySQL `Long` auto-increment IDs scoped by `userId`. Chapters carry a raw
 `content` string (HTML or early JSON), `orderIndex`, a `foreshadowings` JSON
 string and an `isEditable` flag. The local model replaces these with UUID
