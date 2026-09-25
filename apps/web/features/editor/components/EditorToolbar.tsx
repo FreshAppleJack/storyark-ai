@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { Editor } from '@tiptap/core';
+import { OverlayHorizontalScrollbar } from '../../../components/ui/OverlayHorizontalScrollbar';
 import {
     AlignCenter,
     AlignLeft,
@@ -77,6 +78,8 @@ interface EditorToolbarProps {
  */
 export function EditorToolbar({ editor, isEditable, onToggleReadOnly }: EditorToolbarProps): React.ReactElement | null {
     const [, forceUpdate] = useState({});
+    const toolbarScrollId = useId();
+    const toolbarScrollRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         if (!editor) return;
@@ -111,7 +114,12 @@ export function EditorToolbar({ editor, isEditable, onToggleReadOnly }: EditorTo
     const currentSize = editor.getAttributes('textStyle').fontSize || '20px';
 
     return (
-        <div className="sticky top-0 z-20 h-12 flex items-center px-4 gap-1 select-none overflow-x-auto bg-white/85 dark:bg-slate-950/85 backdrop-blur transition-all border-b border-slate-100 dark:border-slate-800">
+        <div className="sticky top-0 z-20 h-12">
+        <div
+            id={toolbarScrollId}
+            ref={toolbarScrollRef}
+            className="flex h-full items-center gap-1 overflow-x-auto border-b border-slate-100 bg-white/85 px-4 select-none backdrop-blur transition-all scrollbar-hidden-x dark:border-slate-800 dark:bg-slate-950/85"
+        >
             <select
                 className="h-8 text-xs border border-slate-200 dark:border-slate-700 rounded px-2 text-slate-600 dark:text-slate-300 outline-none focus:border-brand-500 bg-transparent w-24 truncate mr-1"
                 onMouseDown={saveSelection}
@@ -174,6 +182,12 @@ export function EditorToolbar({ editor, isEditable, onToggleReadOnly }: EditorTo
                     {isEditable ? <Unlock size={16} className="text-slate-500 dark:text-slate-400"/> : <Lock size={16} className="text-rose-500"/>}
                 </ToolbarButton>
             </div>
+        </div>
+        <OverlayHorizontalScrollbar
+            scrollElementRef={toolbarScrollRef}
+            scrollElementId={toolbarScrollId}
+            ariaLabel="Editor formatting toolbar"
+        />
         </div>
     );
 }

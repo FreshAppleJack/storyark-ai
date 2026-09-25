@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useId, useRef } from 'react';
 import {
     ChevronRight, Globe, ListTree, Loader2, PanelRightClose, PanelRightOpen, Settings, Wand2,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { SaveStatusIndicator } from '../../../components/ui/SaveStatusIndicator';
+import { OverlayHorizontalScrollbar } from '../../../components/ui/OverlayHorizontalScrollbar';
 import { ExportMenu } from './ExportMenu';
 
 export type EditorSaveStatus = 'saved' | 'saving' | 'unsaved' | 'error';
@@ -60,6 +61,9 @@ export function EditorHeader({
     onExportPdf,
     onExportWorkJson,
 }: EditorHeaderProps): React.ReactElement {
+    const actionsScrollId = useId();
+    const actionsScrollRef = useRef<HTMLDivElement>(null);
+
     return (
         <header className="flex h-14 min-w-0 flex-shrink-0 items-center justify-between overflow-visible border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-950">
             <div className="min-w-0 flex-shrink">
@@ -75,7 +79,13 @@ export function EditorHeader({
                 )}
             </div>
 
-            <div className="min-w-0 max-w-full overflow-x-auto whitespace-nowrap custom-scrollbar flex items-center gap-4 py-1">
+            <div className="relative min-w-0 max-w-full flex-1">
+                <div
+                    id={actionsScrollId}
+                    ref={actionsScrollRef}
+                    className="h-full w-full overflow-x-auto whitespace-nowrap scrollbar-hidden-x"
+                >
+                <div className="flex w-max min-w-full items-center justify-end gap-4 py-1">
                 <SaveStatusIndicator state={saveStatus} savedText={localMode ? 'Saved locally' : 'Saved'} onRetry={onRetrySave} />
 
                 <div className="h-4 mx-1 border-l border-slate-300 dark:border-slate-700" />
@@ -151,6 +161,13 @@ export function EditorHeader({
                 </Button>
 
                 <ExportMenu isExporting={isExporting} onExportWord={onExportWord} onExportPdf={onExportPdf} onExportWorkJson={onExportWorkJson} canExportWorkJson={localMode} />
+                </div>
+                </div>
+                <OverlayHorizontalScrollbar
+                    scrollElementRef={actionsScrollRef}
+                    scrollElementId={actionsScrollId}
+                    ariaLabel="Editor header actions"
+                />
             </div>
         </header>
     );

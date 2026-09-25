@@ -21,7 +21,8 @@
         "center": true,
         "resizable": true,
         "fullscreen": false,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "scrollBarStyle": "fluentOverlay"
       }
     ],
     "security": {

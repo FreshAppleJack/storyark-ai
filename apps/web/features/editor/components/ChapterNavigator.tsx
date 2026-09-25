@@ -612,7 +612,7 @@ export function ChapterNavigator({
                                 </button>
                             </div>
                             {storySearchMode === 'semantic' ? (
-                                <div className={expandSemanticSearchPanel ? 'min-h-0 min-w-0 flex-1 overflow-y-auto pr-1 custom-scrollbar' : ''}>
+                                <div className={expandSemanticSearchPanel ? 'min-h-0 min-w-0 flex-1 overflow-y-auto pr-1' : ''}>
                                     <StorySearchResults
                                         embeddingStatus={storySearch.embeddingStatus}
                                         indexStatus={storySearch.indexStatus}
@@ -662,7 +662,7 @@ export function ChapterNavigator({
                 )}
 
                 {/* Sidebar List */}
-                <div className={`min-h-0 flex-1 overflow-y-auto py-2 custom-scrollbar relative ${hideChapterTree ? 'hidden' : ''}`}>
+                <div className={`min-h-0 flex-1 overflow-y-auto py-2 relative ${hideChapterTree ? 'hidden' : ''}`}>
                     {sidebarExpanded ? (
                         <div className="px-2 space-y-1">
                             {book.volumes.length === 0 && (
