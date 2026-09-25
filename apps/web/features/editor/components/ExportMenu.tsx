@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Download, FileJson, FileText, FileType, Loader2 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 
@@ -10,6 +11,18 @@ interface ExportMenuProps {
     canExportWorkJson?: boolean;
 }
 
+function getMenuPosition(anchor: DOMRect, menuWidth: number, menuHeight: number): { left: number; top: number } {
+    const viewportPadding = 8;
+    const maxLeft = Math.max(viewportPadding, window.innerWidth - menuWidth - viewportPadding);
+    const left = Math.min(Math.max(anchor.right - menuWidth, viewportPadding), maxLeft);
+    const belowTop = anchor.bottom + viewportPadding;
+    const top = menuHeight && belowTop + menuHeight > window.innerHeight - viewportPadding
+        ? Math.max(viewportPadding, anchor.top - menuHeight - viewportPadding)
+        : Math.min(belowTop, Math.max(viewportPadding, window.innerHeight - menuHeight - viewportPadding));
+
+    return { left, top };
+}
+
 /**
  * Header export dropdown (Word / PDF). The parent owns the actual export
  * handlers (they need the editor instance and chapter title); this component
@@ -17,12 +30,41 @@ interface ExportMenuProps {
  */
 export function ExportMenu({ isExporting, onExportWord, onExportPdf, onExportWorkJson, canExportWorkJson = false }: ExportMenuProps): React.ReactElement {
     const [isOpen, setIsOpen] = useState(false);
+    const [menuPosition, setMenuPosition] = useState<{ left: number; top: number } | null>(null);
+    const triggerRef = useRef<HTMLDivElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const closeMenu = () => setIsOpen(false);
         window.addEventListener('click', closeMenu);
         return () => window.removeEventListener('click', closeMenu);
     }, []);
+
+    useLayoutEffect(() => {
+        if (!isOpen) return;
+
+        const updatePosition = () => {
+            const anchor = triggerRef.current?.getBoundingClientRect();
+            if (!anchor) return;
+
+            const menuWidth = menuRef.current?.offsetWidth || 192;
+            const menuHeight = menuRef.current?.offsetHeight || 0;
+            const position = getMenuPosition(anchor, menuWidth, menuHeight);
+
+            setMenuPosition(previous => previous?.left === position.left && previous.top === position.top
+                ? previous
+                : position);
+        };
+
+        const frame = window.requestAnimationFrame(updatePosition);
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        return () => {
+            window.cancelAnimationFrame(frame);
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
+    }, [isOpen]);
 
     const handleExportWord = (event: React.MouseEvent) => {
         if (isExporting) return;
@@ -43,19 +85,38 @@ export function ExportMenu({ isExporting, onExportWord, onExportPdf, onExportWor
     };
 
     return (
-        <div className="relative">
+        <div className="relative mr-1" ref={triggerRef}>
             <Button
                 variant="primary"
                 size="sm"
-                onClick={(e) => { e.stopPropagation(); setIsOpen(!isOpen); }}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    const nextIsOpen = !isOpen;
+                    if (nextIsOpen) {
+                        const anchor = triggerRef.current?.getBoundingClientRect();
+                        if (anchor) setMenuPosition(getMenuPosition(anchor, 192, 0));
+                    } else {
+                        setMenuPosition(null);
+                    }
+                    setIsOpen(nextIsOpen);
+                }}
                 disabled={isExporting}
+                aria-expanded={isOpen}
+                aria-controls="export-menu"
             >
                 {isExporting ? <Loader2 size={14} className="animate-spin mr-2"/> : <Download size={14} className="mr-2"/>}
                 Export
             </Button>
 
-            {isOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-slate-900 rounded-md shadow-xl border border-slate-200 dark:border-slate-800 z-50 animate-in fade-in zoom-in duration-100 overflow-hidden">
+            {isOpen && menuPosition && createPortal(
+                <div
+                    ref={menuRef}
+                    id="export-menu"
+                    data-testid="export-menu"
+                    onClick={event => event.stopPropagation()}
+                    style={{ left: menuPosition.left, top: menuPosition.top }}
+                    className="fixed z-[100] max-h-[calc(100vh-1rem)] w-48 overflow-y-auto overflow-x-hidden rounded-md border border-slate-200 bg-white shadow-xl animate-in fade-in zoom-in duration-100 dark:border-slate-800 dark:bg-slate-900"
+                >
                     <div className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border-b border-slate-100 dark:border-slate-700 text-xs font-semibold text-slate-500 dark:text-slate-400">
                         Document exports
                     </div>
@@ -105,7 +166,8 @@ export function ExportMenu({ isExporting, onExportWord, onExportPdf, onExportWor
                             </div>
                         </button>
                     </>}
-                </div>
+                </div>,
+                document.body,
             )}
         </div>
     );

@@ -130,6 +130,10 @@ describe('ExportMenu', () => {
         await user.click(screen.getByText('Export'));
         expect(screen.getByText('Word Document')).toBeInTheDocument();
 
+        const exportMenu = screen.getByTestId('export-menu');
+        expect(exportMenu.parentElement).toBe(document.body);
+        expect(exportMenu).toHaveClass('fixed');
+
         await user.click(screen.getByText('Word Document'));
         expect(props.onExportWord).toHaveBeenCalledTimes(1);
         expect(screen.queryByText('Word Document')).not.toBeInTheDocument();
