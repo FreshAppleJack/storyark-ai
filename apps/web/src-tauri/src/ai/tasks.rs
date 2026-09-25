@@ -406,6 +406,8 @@ fn validate_context(input: &ContextInput) -> Result<()> {
                 crate::rag::contracts::RetrievalSourceKind::Planning,
                 crate::rag::contracts::RetrievalSourceKind::ConfirmedSetting,
                 crate::rag::contracts::RetrievalSourceKind::Character,
+                crate::rag::contracts::RetrievalSourceKind::Relationship,
+                crate::rag::contracts::RetrievalSourceKind::ForeshadowingNote,
             ];
             let has_evidence = !retrieval.evidence.is_empty();
             let evidence_source_ids = retrieval
@@ -779,6 +781,63 @@ mod tests {
         .unwrap_err();
 
         assert_eq!(error.code, "VALIDATION_ERROR");
+    }
+
+    #[test]
+    fn continuation_allows_relationship_and_foreshadowing_retrieval_scope_without_hits() {
+        let book_id = uuid::Uuid::new_v4().to_string();
+        let chapter_id = "chapter";
+        let retrieval: crate::rag::contracts::RetrievalContext = serde_json::from_value(json!({
+            "searchId": "search-empty",
+            "retrievalVersion": "p1-r1-v1",
+            "task": "continuation",
+            "requestedAt": 10,
+            "bookId": book_id,
+            "chapterId": chapter_id,
+            "scope": {
+                "bookId": book_id,
+                "allowedSourceKinds": ["manuscript", "chapter_summary", "planning", "confirmed_setting", "character", "relationship", "foreshadowing_note"],
+                "allowedChapterIds": [],
+                "beforeChapterOrder": 1,
+                "beforeAnchor": {"chapterId": chapter_id, "paragraphOrdinal": 0, "textOffset": 4},
+                "includeFuturePlan": false,
+                "includeGenerated": false,
+                "includeStale": false,
+                "timeRange": null
+            },
+            "excludedHitIds": [],
+            "sourceVersions": [],
+            "indexVersion": null,
+            "embeddingFingerprint": null,
+            "budget": {"charBudget": 8000, "tokenBudget": 2000},
+            "materials": [],
+            "evidence": [],
+            "text": "",
+            "charCount": 0,
+            "tokenEstimate": 0,
+            "charBudget": 8000,
+            "tokenBudget": 2000,
+            "includedHitIds": [],
+            "omittedHitIds": []
+        })).unwrap();
+
+        let result = validate_context(&ContextInput {
+            book_id,
+            session_id: "session".into(),
+            draft_revision: 1,
+            max_chars: 64,
+            target: GenerationTarget::Continue {
+                chapter_id: chapter_id.into(),
+                database_version: 1,
+            },
+            sections: vec![section(ContextKind::CurrentDraft, "正文停在这里。")],
+            retrieval_context: Some(retrieval),
+        });
+
+        assert!(
+            result.is_ok(),
+            "empty optional retrieval must not block continuation: {result:?}"
+        );
     }
 
     #[test]

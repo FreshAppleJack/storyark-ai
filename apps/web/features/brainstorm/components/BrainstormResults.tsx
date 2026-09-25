@@ -44,7 +44,7 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, rege
                             Some selected chapters have missing or out-of-date summaries. The brainstorm will use a bounded excerpt of their current text instead; refresh summaries for fuller context.
                         </div>
                     )}
-                    {errorMessage && (
+                    {errorMessage && (!hasCandidate || candidate.status === 'invalid' || errorMessage !== candidate.errorMessage) && (
                         <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-200">
                             {errorMessage}
                         </div>
@@ -153,7 +153,13 @@ function CandidatePanel({
                     ? 'Candidate directions were added to the editable workspace. Save to persist them.'
                     : candidate.status === 'invalid'
                         ? 'The model response was kept for review, but it is not a valid brainstorm candidate.'
-                        : candidate.errorMessage || 'The candidate was not adopted.';
+                        : candidate.status === 'failed'
+                            ? 'Generation failed. Existing options and manual edits are unchanged.'
+                            : candidate.status === 'cancelled'
+                                ? 'Generation stopped. Existing options and manual edits are unchanged.'
+                                : candidate.status === 'stale'
+                                    ? 'The candidate needs review because its source context changed.'
+                                    : candidate.errorMessage || 'The candidate was not adopted.';
     return (
         <section className="rounded-xl border border-brand-200 bg-brand-50/60 p-5 shadow-sm dark:border-brand-900/70 dark:bg-brand-950/20">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

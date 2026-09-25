@@ -17,6 +17,11 @@ pub mod openai_responses;
 #[derive(Debug, Clone)]
 pub enum ProviderEvent {
     Delta(String),
+    FinalDelta {
+        text: String,
+        usage: TokenUsage,
+        finish_reason: FinishReason,
+    },
     Usage(TokenUsage),
     Completed {
         usage: TokenUsage,

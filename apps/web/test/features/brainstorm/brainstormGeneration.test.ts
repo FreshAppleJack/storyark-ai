@@ -108,4 +108,54 @@ describe('RAG Brainstorm context snapshot', () => {
         expect(selectedChapterSection?.text).not.toContain('地下室已经停电');
         expect(context.sourceSnapshot.selectedChapters).toMatchObject([{ summarySource: 'stale-planning-summary' }]);
     });
+
+    it('builds a usable prompt from chapter text when summaries, characters, and plans are absent', () => {
+        const currentText = '当前章节正文仍可用于构思。';
+        const sparseBook = {
+            ...book,
+            characters: [],
+            volumes: [{
+                ...book.volumes[0],
+                chapters: [{
+                    ...book.volumes[0].chapters[0],
+                    content: JSON.stringify({
+                        type: 'doc',
+                        content: [{ type: 'paragraph', content: [{ type: 'text', text: currentText }] }],
+                    }),
+                }],
+            }],
+        } as unknown as Book;
+        const sparsePlanning: StoryPlanning = {
+            storySummary: '',
+            storyBackground: '',
+            databaseVersion: 0,
+            chapterSummaries: [],
+            plotSettings: [],
+        };
+        const sourceChapter: ChapterOption = {
+            id: 'chapter-1',
+            title: 'The Door',
+            volumeTitle: 'Volume One',
+            summary: '',
+            summaryStatus: 'missing',
+            content: sparseBook.volumes[0].chapters[0].content,
+            databaseVersion: 7,
+        };
+
+        const context = buildBrainstormGenerationContext(
+            sparseBook,
+            sparsePlanning,
+            [sourceChapter],
+            [],
+            [],
+            versions,
+            14,
+        );
+
+        const chapterSource = context.sections.find(section => section.label === 'Selected chapter source snapshot');
+        expect(chapterSource?.text).toContain(currentText);
+        expect(context.sections.find(section => section.label === 'Appearing character context')?.text).toBe('[]');
+        expect(context.sections.find(section => section.label === 'Existing plot plans')?.text).toBe('[]');
+        expect(context.retrievalQuery).toContain(currentText);
+    });
 });

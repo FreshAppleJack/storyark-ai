@@ -88,3 +88,18 @@ it('clearly disables generation when the default model is not configured', () =>
     expect(screen.getByText(/Manual editing and saving remain available/)).toBeTruthy();
     expect(callbacks.onGenerate).not.toHaveBeenCalled();
 });
+
+it('shows a failed generation detail only once', () => {
+    const errorMessage = 'The service did not return a valid completed text response for this protocol.';
+    const failedSuggestion: ChapterSummarySuggestion = {
+        ...suggestion(),
+        status: 'failed',
+        suggestedSummary: null,
+        errorMessage,
+    };
+
+    renderReview({ suggestion: failedSuggestion });
+
+    expect(screen.getAllByText(errorMessage)).toHaveLength(1);
+    expect(screen.getByRole('status').textContent).toContain('Generation failed.');
+});

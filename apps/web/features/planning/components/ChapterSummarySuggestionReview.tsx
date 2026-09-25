@@ -36,7 +36,7 @@ function statusText(suggestion: ChapterSummarySuggestion, isCurrent: boolean): s
         case 'stale': return 'The chapter, planning, or a supporting source changed. Review or regenerate; this suggestion was not adopted.';
         case 'adopting': return 'Saving the accepted summary through the planning version check…';
         case 'save-failed': return 'The suggestion is present in the planning draft, but its save failed. Resolve the save conflict before retrying.';
-        case 'failed': return suggestion.errorMessage ?? 'Generation failed. The current summary is unchanged.';
+        case 'failed': return 'Generation failed. The current summary is unchanged.';
         default: return 'Suggestion is waiting for review.';
     }
 }

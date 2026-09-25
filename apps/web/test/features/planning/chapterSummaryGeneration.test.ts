@@ -126,6 +126,24 @@ describe('chapter summary generation context', () => {
         expect(context.previousSummary).toBe('Manual: she opens the room.');
     });
 
+    it('can summarize chapter text when the book has no character or planning material', () => {
+        const book = createBook();
+        book.characters = [];
+        const sparsePlanning: StoryPlanning = {
+            storySummary: '',
+            storyBackground: '',
+            databaseVersion: 0,
+            chapterSummaries: [],
+            plotSettings: [],
+        };
+
+        const context = buildChapterSummaryGenerationContext(book, sparsePlanning, createChapter(), 0);
+
+        expect(context.sections).toHaveLength(1);
+        expect(context.sections[0].text).toContain('她推开档案室的门。');
+        expect(context.retrievalScope.allowedChapterIds).toEqual([chapterId]);
+    });
+
     it('records the actual retrieval contract and rejects malformed/oversized candidates without replacing manual text', () => {
         const context = buildChapterSummaryGenerationContext(createBook(), planning, createChapter(), 3);
         const metadata = buildChapterSummaryGenerationMetadata(config, context, retrievalContext());

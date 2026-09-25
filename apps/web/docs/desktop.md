@@ -124,3 +124,41 @@ built and visibly rendered the existing login page in WebView2. Authentication,
 editor persistence, and other platforms were not validated in this shell step.
 The existing large frontend chunk warning remains. Rust also reported MSVC's
 import-library creation message as a linker warning; both builds completed.
+
+## Windows CDP diagnostics
+
+For disposable desktop tests, set both `STORYARK_DATA_DIR` (SQLite) and
+`WEBVIEW2_USER_DATA_FOLDER` (WebView profile) to separate temporary directories.
+Set `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9236` before
+launching the debug executable, then check `http://127.0.0.1:9236/json/list`.
+Use a temporary `.mjs` CDP client against the returned WebView target.
+
+Access-denied / OS error 5 during startup does not establish a port conflict.
+Check the launch security context and profile permissions. On 2026-09-25, a
+sandbox launch failed to expose CDP, while the same executable launched with
+normal user permissions and a fresh test profile loaded the real Tauri dashboard
+and accepted CDP evaluation. Use the approved normal-user launch path when the
+agent sandbox prevents startup; this does not require disabling browser security.
+
+## AI request diagnostics
+
+Connection testing uses the same streaming adapter, timeout, and output token
+cap as generation, with only a synthetic `Reply with OK only.` prompt. It must
+not silently lower the cap: that can report success for a configuration the
+provider rejects during generation. HTTP 400 and 422 map to validation errors,
+not malformed-stream errors. Provider bodies and credentials remain private.
+
+On 2026-09-25, a metadata-only live DeepSeek Responses comparison returned HTTP
+400 for a 600,000-token cap and HTTP 200 with completed text for a 4,096-token
+cap, using identical synthetic input. Missing optional story context was not
+responsible for this rejection. Keep the cap within the selected model's
+supported range; the application's numeric maximum is not a provider limit.
+
+The rebuilt desktop also passed a real-WebView CDP regression with an isolated
+manuscript-only book: chapter-summary review, three parsed brainstorm options,
+and a continuation candidate all appeared without characters, relationships,
+plot settings, or an accepted chapter summary. This end-to-end check used a
+local synthetic Responses SSE server, including a terminal event at EOF. The
+same probe confirmed that connection testing sent the configured 600,000 cap
+and surfaced a synthetic HTTP 400 as `VALIDATION_ERROR`; a 4,096 cap completed.
+This synthetic UI test is separate from the live DeepSeek request comparison.
