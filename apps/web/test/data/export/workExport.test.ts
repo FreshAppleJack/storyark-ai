@@ -256,7 +256,7 @@ describe('whole-work export construction', () => {
                 fingerprintAlgorithm: 'fnv1a64-utf16-v1',
                 bodyFingerprint: fingerprint,
                 structuredFingerprint: 'fedcba9876543210',
-                blockFingerprints: ['fedcba9876543210'],
+                blockFingerprints: ['fedcba9876543210', 'fedcba9876543210'],
                 mentionedCharacterIds: [characterId],
                 foreshadowingIds: ['legacy-note'],
                 foreshadowingNoteFingerprints: [{ noteId: 'legacy-note', fingerprint: 'fedcba9876543210' }],
@@ -322,7 +322,11 @@ describe('whole-work export construction', () => {
         if (!parsed.valid) throw new Error('The generated work export did not round-trip.');
         expect(parsed.value.planning.chapterSummaries[0]).toMatchObject({
             provenance: 'ai-adopted',
-            sourceSnapshot: { bodyFingerprint: fingerprint, chapterDatabaseVersion: 3 },
+            sourceSnapshot: {
+                bodyFingerprint: fingerprint,
+                chapterDatabaseVersion: 3,
+                blockFingerprints: ['fedcba9876543210', 'fedcba9876543210'],
+            },
             generationMetadata: {
                 source: {
                     allowedSources: [{ sourceVersion: 1 }],

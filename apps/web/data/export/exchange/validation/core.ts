@@ -288,7 +288,7 @@ export class ValidationContext {
         });
     }
 
-    requiredStringArray(parent: AnyRecord | undefined, key: string, path: string, maxItems: number, maxChars: number, minChars = 0): string[] | undefined {
+    requiredStringArray(parent: AnyRecord | undefined, key: string, path: string, maxItems: number, maxChars: number, minChars = 0, ensureUnique = true): string[] | undefined {
         const value = this.read(parent, key, path);
         if (value === undefined) return undefined;
         if (!Array.isArray(value)) {
@@ -306,7 +306,7 @@ export class ValidationContext {
                 result.push(item);
             }
         });
-        this.unique(result.map(id => ({ id })), fieldPath(path, key), item => item.id);
+        if (ensureUnique) this.unique(result.map(id => ({ id })), fieldPath(path, key), item => item.id);
         return result;
     }
 

@@ -60,7 +60,7 @@ function validateSummarySourceSnapshot(
     const fingerprintAlgorithm = context.requiredString(object, 'fingerprintAlgorithm', path, 64, 1);
     const bodyFingerprint = context.requiredString(object, 'bodyFingerprint', path, 16, 16);
     const structuredFingerprint = context.requiredString(object, 'structuredFingerprint', path, 16, 16);
-    const blockFingerprints = context.requiredStringArray(object, 'blockFingerprints', path, EXCHANGE_LIMITS.maxSummarySnapshotBlocks, 16, 16);
+    const blockFingerprints = context.requiredStringArray(object, 'blockFingerprints', path, EXCHANGE_LIMITS.maxSummarySnapshotBlocks, 16, 16, false);
     const mentionedCharacterIds = context.requiredUuidArray(object, 'mentionedCharacterIds', path, EXCHANGE_LIMITS.maxSummarySourceVersions);
     const foreshadowingIds = context.requiredStringArray(object, 'foreshadowingIds', path, EXCHANGE_LIMITS.maxNotes, EXCHANGE_LIMITS.maxReferenceChars, 1);
     const noteValues = context.requiredArray(object, 'foreshadowingNoteFingerprints', path);

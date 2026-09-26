@@ -60,7 +60,7 @@ function CharacterSettingsContent({ bookId }: { bookId: string }) {
                     <button onClick={() => navigate(`/editor/${bookId}`)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-500 dark:text-slate-400">
                         <ArrowLeft size={20} />
                     </button>
-                    <h1 className="font-bold text-lg text-slate-800 dark:text-white">World Settings:《{book.title}》</h1>
+                    <h1 className="font-bold text-lg text-slate-800 dark:text-white">World Settings: <em className="italic [font-synthesis:style]">{book.title}</em></h1>
                 </div>
 
                 <div className="flex items-center gap-2">
