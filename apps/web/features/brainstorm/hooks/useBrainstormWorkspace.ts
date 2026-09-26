@@ -279,6 +279,9 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
                     if (!ok) throw new Error('Save failed. Please try again.');
                     savedRevision.current = snapshotRevision;
                     if (revision.current === snapshotRevision) {
+                        // Keep the visible freshness warning in sync with the
+                        // snapshot that was just committed. A later edit wins.
+                        setWorkspace(current => revision.current === snapshotRevision ? snapshot : current);
                         // The indicator persists like the editor's: it only
                         // leaves when the next edit marks the page dirty.
                         setSaveState('saved');

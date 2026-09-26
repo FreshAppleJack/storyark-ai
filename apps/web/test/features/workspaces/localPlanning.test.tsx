@@ -5,6 +5,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { planningRepository, type LocalPlanning } from '../../../data/local/planningRepository';
 import { localKeys, projectBook, type LocalBookDetail } from '../../../data/local/repository';
 import { useStoryPlanning } from '../../../features/planning/hooks/useStoryPlanning';
+import { getBrainstormChapters } from '../../../features/brainstorm/brainstormContext';
 import { createChapterSummarySourceSnapshot } from '../../../domain/chapterSummarySource';
 import { useLocalPlanningPersistence } from '../../../features/planning/hooks/useLocalPlanningPersistence';
 import { useLocalNoteDrafts } from '../../../features/foreshadowing/hooks/useLocalNoteDrafts';
@@ -90,6 +91,57 @@ it('keeps a stale legacy summary flagged until the author explicitly edits it', 
     });
     expect(result.current.chapterOptions[0].sourceChanged).toBe(false);
     expect(result.current.chapterOptions[0].summaryFreshness?.status).toBe('current');
+});
+
+it('acknowledges a changed chapter summary without changing its text and keeps it current for Brainstorm', async () => {
+    const currentContent = JSON.stringify({
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: '正文新增了一段。' }] }],
+    });
+    const changedDetail: LocalBookDetail = {
+        ...detail,
+        chapters: detail.chapters.map(item => item.id === chapter.id
+            ? { ...item, databaseVersion: 2, body: { ...item.body, content: currentContent } }
+            : item),
+    };
+    const changedBook = projectBook(book, changedDetail);
+    const originalChapter = projected.volumes[0].chapters[0];
+    const stalePlanning: LocalPlanning = {
+        ...initial,
+        databaseVersion: 1,
+        chapterSummaries: [{
+            chapterId: chapter.id,
+            summary: '保留这段人工概括。',
+            sourceChapterVersion: 1,
+            sourceSnapshot: createChapterSummarySourceSnapshot(originalChapter, 100),
+            provenance: 'author',
+            updatedAt: 100,
+        }],
+    };
+    const save = vi.spyOn(planningRepository, 'save').mockImplementation(async input => ({
+        planning: { ...stalePlanning, ...input, databaseVersion: input.expectedDatabaseVersion + 1 },
+        sessionKey: input.sessionKey,
+        revision: input.revision,
+    }));
+    const { result } = renderHook(() => useStoryPlanning(book.id, changedBook, useLocalPlanningPersistence(stalePlanning)), wrapper());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.chapterOptions[0].summaryFreshness?.status).toBe('possibly-stale');
+
+    act(() => result.current.acknowledgeChapterSummaryChanges(chapter.id));
+
+    expect(result.current.planning.chapterSummaries[0].summary).toBe('保留这段人工概括。');
+    expect(result.current.chapterOptions[0].summaryFreshness?.status).toBe('current');
+    await act(async () => { expect(await result.current.flush()).toBe(true); });
+    expect(save.mock.calls[0][0].chapterSummaries[0].freshnessAcknowledgement).toMatchObject({
+        acknowledgedSourceSnapshot: { chapterId: chapter.id, chapterDatabaseVersion: 2 },
+        allowedSourceVersions: [],
+    });
+
+    const brainstormChapters = getBrainstormChapters(changedBook, result.current.planning);
+    expect(brainstormChapters[0]).toMatchObject({
+        summary: '保留这段人工概括。',
+        summaryStatus: 'current',
+    });
 });
 
 it('keeps an accepted AI summary in the planning draft when the optimistic save conflicts', async () => {

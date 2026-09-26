@@ -158,6 +158,7 @@ export interface ExchangeChapterSummary {
     updatedAt: Timestamp;
     provenance?: 'author' | 'ai-adopted';
     sourceSnapshot?: ExchangeChapterSummarySourceSnapshot;
+    freshnessAcknowledgement?: ExchangeChapterSummaryFreshnessAcknowledgement;
     generationMetadata?: ExchangeChapterSummaryGenerationMetadata;
     extensions?: ExchangeExtensions;
 }
@@ -177,6 +178,12 @@ export interface ExchangeChapterSummarySourceSnapshot {
     foreshadowingNoteFingerprints: Array<{ noteId: string; fingerprint: string }>;
     capturedAt: Timestamp;
     extensions?: ExchangeExtensions;
+}
+
+export interface ExchangeChapterSummaryFreshnessAcknowledgement {
+    acknowledgedSourceSnapshot: ExchangeChapterSummarySourceSnapshot;
+    allowedSourceVersions: Array<number | null>;
+    acknowledgedAt: Timestamp;
 }
 
 export type ExchangeChapterSummarySourceKind = 'planning' | 'confirmed_setting' | 'character' | 'relationship' | 'foreshadowing_note';

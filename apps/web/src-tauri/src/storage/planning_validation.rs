@@ -220,6 +220,33 @@ fn validate_summary_generation(
     Ok(())
 }
 
+fn validate_summary_freshness_acknowledgement(
+    acknowledgement: &Value,
+    summary: &Value,
+    chapter_id: &str,
+) -> Result<()> {
+    validate_summary_snapshot(&acknowledgement["acknowledgedSourceSnapshot"], chapter_id)?;
+    if !nonnegative(&acknowledgement["acknowledgedAt"]) {
+        return Err(invalid());
+    }
+    let versions = acknowledgement["allowedSourceVersions"]
+        .as_array()
+        .ok_or_else(invalid)?;
+    let expected_count = summary["generationMetadata"]["source"]["allowedSources"]
+        .as_array()
+        .map_or(0, Vec::len);
+    if versions.len() > 512 || versions.len() != expected_count {
+        return Err(invalid());
+    }
+    if versions
+        .iter()
+        .any(|version| !version.is_null() && !positive(version))
+    {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
 fn validate_summary_retrieval_scope(scope: &Value, book_id: &str, chapter_id: &str) -> bool {
     if scope["bookId"].as_str() != Some(book_id)
         || scope["includeFuturePlan"] != false
@@ -271,6 +298,9 @@ pub(super) fn validate_summary_metadata(
             return Err(invalid());
         }
         validate_summary_generation(metadata, summary, book_id, chapter_id)?;
+    }
+    if let Some(acknowledgement) = summary.get("freshnessAcknowledgement") {
+        validate_summary_freshness_acknowledgement(acknowledgement, summary, chapter_id)?;
     }
     Ok(())
 }

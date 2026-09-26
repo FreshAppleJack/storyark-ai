@@ -165,6 +165,38 @@ describe('chapter summary source snapshots', () => {
         expect(result.changedAllowedSourceIds).toEqual([`${metadata.source.bookId}:character:${characterA}`]);
     });
 
+    it('uses an explicit review acknowledgement as the new freshness baseline and detects later changes', () => {
+        const original = source(document(paragraph('她推开门。')));
+        const current = source(document(paragraph('她推开门。'), paragraph('门后传来脚步声。')), 2);
+        const originalSnapshot = createChapterSummarySourceSnapshot(original, 100);
+        const acknowledgedSnapshot = createChapterSummarySourceSnapshot(current, 200);
+        const metadata = parseChapterSummaryGenerationMetadata({
+            ...generationMetadata,
+            source: { ...generationMetadata.source, sourceBodyFingerprint: originalSnapshot.bodyFingerprint },
+        }, chapterId);
+        const key = `${bookId}:character:${characterA}`;
+        const summary: ChapterSummaryForFreshness = {
+            chapterId,
+            summary: '作者保留的现有概括。',
+            provenance: 'ai-adopted',
+            sourceSnapshot: originalSnapshot,
+            generationMetadata: metadata,
+            freshnessAcknowledgement: {
+                acknowledgedSourceSnapshot: acknowledgedSnapshot,
+                allowedSourceVersions: [5],
+                acknowledgedAt: 200,
+            },
+        };
+
+        expect(assessChapterSummaryFreshness(summary, current, new Map([[key, 5]])).status).toBe('current');
+        expect(assessChapterSummaryFreshness(summary, current, new Map([[key, 6]])).status).toBe('possibly-stale');
+        expect(assessChapterSummaryFreshness(
+            summary,
+            source(document(paragraph('她推开门。'), paragraph('门后传来脚步声。'), paragraph('灯亮了。')), 3),
+            new Map([[key, 5]]),
+        ).status).toBe('possibly-stale');
+    });
+
     it('rejects generation metadata that admits future plans or malformed retrieval traces', () => {
         expect(parseChapterSummaryGenerationMetadata({
             ...generationMetadata,

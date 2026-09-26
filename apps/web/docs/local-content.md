@@ -52,12 +52,19 @@ chapter.
 
 storySummary, storyBackground, chapterSummaries (each `{chapterId, summary,
 updatedAt, provenance?, sourceChapterVersion?, sourceSnapshot?,
-generationMetadata?}`), and plotSettings persist as Rust-validated JSON inside
-one per-book row with its own `databaseVersion`. Legacy summaries without a
+generationMetadata?, freshnessAcknowledgement?}`), and plotSettings persist as
+Rust-validated JSON inside one per-book row with its own `databaseVersion`.
+Legacy summaries without a
 provenance field are treated as author-written. A source snapshot stores the
 chapter ID/title, content format/version, chapter database-version snapshot,
 FNV-1a change fingerprints, block fingerprints, Mention character IDs, and
 foreshadowing note fingerprints; it does not duplicate the chapter body.
+`freshnessAcknowledgement` stores a new source baseline accepted by the author
+after reviewing a possible change. It does not replace the original
+`sourceSnapshot` or AI generation provenance; later source changes are compared
+with the acknowledged baseline and can make the summary stale again. When a
+work is copied, its acknowledgement snapshot references are remapped with the
+rest of the book's IDs.
 Generation metadata is retained only for an adopted AI summary. Unaccepted
 suggestions remain candidate state and are not written to the planning row.
 Chapter references and metadata shapes are validated in the write transaction.

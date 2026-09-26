@@ -2,6 +2,7 @@ import type { ChapterSummary, StoryPlanning, PlotSetting } from '../types';
 import { asRecord, parseJsonSafe } from '../utils/serialization';
 import {
     parseChapterSummaryGenerationMetadata,
+    parseChapterSummaryFreshnessAcknowledgement,
     parseChapterSummarySourceSnapshot,
 } from './chapterSummarySource';
 
@@ -46,6 +47,11 @@ export function normalizeStoryPlanning(value: unknown, now: number): StoryPlanni
         const chapterId = String(item.chapterId);
         const sourceSnapshot = parseChapterSummarySourceSnapshot(item.sourceSnapshot, chapterId);
         const generationMetadata = parseChapterSummaryGenerationMetadata(item.generationMetadata, chapterId);
+        const freshnessAcknowledgement = parseChapterSummaryFreshnessAcknowledgement(
+            item.freshnessAcknowledgement,
+            chapterId,
+            generationMetadata?.source.allowedSources.length ?? 0,
+        );
         return {
             chapterId,
             summary: text(item.summary),
@@ -57,6 +63,7 @@ export function normalizeStoryPlanning(value: unknown, now: number): StoryPlanni
                 ? 'ai-adopted'
                 : 'author',
             ...(sourceSnapshot ? { sourceSnapshot } : {}),
+            ...(freshnessAcknowledgement ? { freshnessAcknowledgement } : {}),
             ...(generationMetadata ? { generationMetadata } : {}),
             updatedAt: timestamp(item.updatedAt, now),
         };

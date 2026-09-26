@@ -36,7 +36,7 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, rege
                     )}
                     {isSnapshotStale && (
                         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
-                            The saved context snapshot was built from older chapter or summary versions. Save again to refresh it.
+                            The saved brainstorm snapshot uses older chapter versions or summaries. Select “Save Result” on this page to refresh it; saving a chapter or planning page alone does not refresh this snapshot.
                         </div>
                     )}
                     {missingSummaryChapters.length > 0 && (

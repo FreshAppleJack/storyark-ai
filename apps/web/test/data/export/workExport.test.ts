@@ -262,6 +262,25 @@ describe('whole-work export construction', () => {
                 foreshadowingNoteFingerprints: [{ noteId: 'legacy-note', fingerprint: 'fedcba9876543210' }],
                 capturedAt: 1_700_000_000_000,
             },
+            freshnessAcknowledgement: {
+                acknowledgedSourceSnapshot: {
+                    chapterId,
+                    chapterDatabaseVersion: 3,
+                    chapterTitle: 'Chapter',
+                    contentFormat: 'tiptap-json',
+                    contentVersion: 1,
+                    fingerprintAlgorithm: 'fnv1a64-utf16-v1',
+                    bodyFingerprint: fingerprint,
+                    structuredFingerprint: 'fedcba9876543210',
+                    blockFingerprints: ['fedcba9876543210', 'fedcba9876543210'],
+                    mentionedCharacterIds: [characterId],
+                    foreshadowingIds: ['legacy-note'],
+                    foreshadowingNoteFingerprints: [{ noteId: 'legacy-note', fingerprint: 'fedcba9876543210' }],
+                    capturedAt: 1_700_000_000_050,
+                },
+                allowedSourceVersions: [1],
+                acknowledgedAt: 1_700_000_000_050,
+            },
             generationMetadata: {
                 providerId: 'provider-a',
                 configId: '00000000-0000-4000-8000-000000000060',
@@ -326,6 +345,10 @@ describe('whole-work export construction', () => {
                 bodyFingerprint: fingerprint,
                 chapterDatabaseVersion: 3,
                 blockFingerprints: ['fedcba9876543210', 'fedcba9876543210'],
+            },
+            freshnessAcknowledgement: {
+                acknowledgedSourceSnapshot: { chapterId, chapterDatabaseVersion: 3, capturedAt: 1_700_000_000_050 },
+                allowedSourceVersions: [1],
             },
             generationMetadata: {
                 source: {

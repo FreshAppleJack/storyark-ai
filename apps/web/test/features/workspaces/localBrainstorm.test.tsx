@@ -142,6 +142,29 @@ it('builds the snapshot on first save with chapter source versions', async () =>
     expect(result.current.isSnapshotStale).toBe(false);
 });
 
+it('refreshes the in-memory stale snapshot after Save Result commits it', async () => {
+    vi.spyOn(brainstormRepository, 'save').mockImplementation(async input => (
+        { workspace: { ...input, databaseVersion: input.expectedDatabaseVersion + 1, bookId: 'book', updatedAt: 2 } as never,
+            sessionKey: input.sessionKey, revision: input.revision }
+    ));
+    const staleWorkspace: LocalBrainstorm = {
+        ...initial,
+        contextSnapshot: {
+            selectedChapters: [{ id: 'chapter-1', databaseVersion: 2, summary: 'Summary one' }],
+        },
+    };
+    const { result } = setup(staleWorkspace);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.isSnapshotStale).toBe(true);
+
+    await act(async () => { await result.current.handleSave(); });
+
+    expect(result.current.isSnapshotStale).toBe(false);
+    expect(result.current.workspace.contextSnapshot.selectedChapters).toEqual([
+        expect.objectContaining({ id: 'chapter-1', databaseVersion: 3, summary: '' }),
+    ]);
+});
+
 it('keeps the editable result untouched during generation and regeneration', async () => {
     const option = {
         id: 'candidate-1', title: 'New direction', conflict: 'Conflict', motivation: 'Motivation',

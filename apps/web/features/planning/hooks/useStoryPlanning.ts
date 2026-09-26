@@ -4,7 +4,12 @@ import { showSaveSuccessToast } from '../../../components/ui/saveToast';
 import type { Book, PlotSetting, StoryPlanning } from '../../../types';
 import { useBooks } from '../../../InteractionContent/BooksContext';
 import { createEmptyPlanning, createPlotSetting, sanitizePlanning } from '../../../domain/storyPlanning';
-import { createChapterSummarySourceSnapshot, type ChapterSummarySourceSnapshot } from '../../../domain/chapterSummarySource';
+import {
+    assessChapterSummaryFreshness,
+    createChapterSummarySourceSnapshot,
+    createCurrentAllowedSourceVersions,
+    type ChapterSummarySourceSnapshot,
+} from '../../../domain/chapterSummarySource';
 import { getPlanningChapters } from '../planningSelectors';
 import { registerWorkDraftFlush } from '../../../services/workDraftFlushRegistry';
 
@@ -109,9 +114,44 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
         edit(prev => ({
             ...prev, chapterSummaries: prev.chapterSummaries.some(item => item.chapterId === chapterId)
                 ? prev.chapterSummaries.map(item => item.chapterId === chapterId
-                    ? { ...item, ...source, provenance: 'author', generationMetadata: undefined, summary, updatedAt }
+                    ? { ...item, ...source, provenance: 'author', generationMetadata: undefined, freshnessAcknowledgement: undefined, summary, updatedAt }
                     : item)
                 : [...prev.chapterSummaries, { chapterId, ...source, provenance: 'author', summary, updatedAt }]
+        }));
+    };
+    const acknowledgeChapterSummaryChanges = (chapterId: string) => {
+        const chapter = book?.volumes.flatMap(volume => volume.chapters).find(item => item.id === chapterId);
+        const summary = latest.current.chapterSummaries.find(item => item.chapterId === chapterId);
+        if (!book || !chapter || !summary) return;
+        const chapters = book.volumes.flatMap(volume => volume.chapters);
+        const allowedSourceVersions = createCurrentAllowedSourceVersions({
+            bookId,
+            planningDatabaseVersion: latest.current.databaseVersion,
+            characters: book.characters,
+            chapters,
+        });
+        if (assessChapterSummaryFreshness(summary, chapter, allowedSourceVersions).status !== 'possibly-stale') return;
+        const acknowledgedAt = Date.now();
+        const acknowledgedSourceSnapshot = createChapterSummarySourceSnapshot(chapter, acknowledgedAt);
+        const generationSources = summary.generationMetadata?.source.allowedSources ?? [];
+        const acknowledgedVersions = generationSources.map(source => {
+            const currentVersion = allowedSourceVersions.get(source.sourceId);
+            // Saving this acknowledgement advances the planning version once.
+            if (source.sourceKind === 'planning') return (currentVersion ?? 0) + 1;
+            return currentVersion ?? null;
+        });
+        edit(previous => ({
+            ...previous,
+            chapterSummaries: previous.chapterSummaries.map(item => item.chapterId === chapterId
+                ? {
+                    ...item,
+                    freshnessAcknowledgement: {
+                        acknowledgedSourceSnapshot,
+                        allowedSourceVersions: acknowledgedVersions,
+                        acknowledgedAt,
+                    },
+                }
+                : item),
         }));
     };
     const updateSelectedPlot = (patch: Partial<PlotSetting>) => {
@@ -211,6 +251,7 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
                     summary: input.summary.trim(),
                     sourceChapterVersion: input.sourceSnapshot.chapterDatabaseVersion ?? undefined,
                     sourceSnapshot: input.sourceSnapshot,
+                    freshnessAcknowledgement: undefined,
                     provenance: 'ai-adopted',
                     generationMetadata: input.generationMetadata,
                     updatedAt: Date.now(),
@@ -240,6 +281,7 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
         selectedPlotId, setSelectedPlotId, selectedPlot, chapterOptions,
         isLoading, loadError, isSaving, saveState, retry: () => setLoadAttempt(attempt => attempt + 1),
         updatePlanningField, updateChapterSummary, adoptChapterSummarySuggestion,
+        acknowledgeChapterSummaryChanges,
         updateSelectedPlot, addPlotSetting, deleteSelectedPlot, togglePlotChapter, handleSave
     };
 }

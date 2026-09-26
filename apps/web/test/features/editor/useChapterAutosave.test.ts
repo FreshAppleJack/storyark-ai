@@ -54,6 +54,19 @@ afterEach(() => {
 });
 
 describe('useChapterAutosave', () => {
+    it('does not persist a clean draft during a flush', async () => {
+        const { view, saveChapter, markSaved } = setup();
+
+        let flushResult: boolean | undefined;
+        await act(async () => {
+            flushResult = await view.result.current.flush();
+        });
+
+        expect(flushResult).toBe(true);
+        expect(saveChapter).not.toHaveBeenCalled();
+        expect(markSaved).not.toHaveBeenCalled();
+    });
+
     it.each([true, false])('ignores a stale chapter response (%s) even when revisions match', async (ok) => {
         const { view, edit, switchChapter, saveChapter, markSaved } = setup();
         let finish!: (ok: boolean) => void;

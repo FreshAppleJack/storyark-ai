@@ -1,5 +1,6 @@
 import type {
     ChapterSummaryContentFormat,
+    ChapterSummaryFreshnessAcknowledgement,
     ChapterSummaryGenerationMetadata,
     ChapterSummaryProvenance,
     ChapterSummarySourceSnapshot,
@@ -96,6 +97,7 @@ export interface ChapterSummary {
   updatedAt: number;
   provenance?: ChapterSummaryProvenance;
   sourceSnapshot?: ChapterSummarySourceSnapshot;
+  freshnessAcknowledgement?: ChapterSummaryFreshnessAcknowledgement;
   generationMetadata?: ChapterSummaryGenerationMetadata;
 }
 

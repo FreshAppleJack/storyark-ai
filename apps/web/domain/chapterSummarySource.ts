@@ -20,6 +20,13 @@ export interface ChapterSummarySourceSnapshot {
     capturedAt: number;
 }
 
+export interface ChapterSummaryFreshnessAcknowledgement {
+    acknowledgedSourceSnapshot: ChapterSummarySourceSnapshot;
+    /** Current versions aligned with generationMetadata.source.allowedSources. */
+    allowedSourceVersions: Array<number | null>;
+    acknowledgedAt: number;
+}
+
 export interface ChapterSummaryAllowedSource {
     sourceId: string;
     entityId: string;
@@ -151,6 +158,7 @@ export interface ChapterSummaryForFreshness {
     sourceChapterVersion?: number;
     provenance?: ChapterSummaryProvenance;
     sourceSnapshot?: ChapterSummarySourceSnapshot;
+    freshnessAcknowledgement?: ChapterSummaryFreshnessAcknowledgement;
     generationMetadata?: ChapterSummaryGenerationMetadata;
 }
 
@@ -348,11 +356,14 @@ function difference(previous: string[], current: string[]): { added: string[]; r
 function sourceVersionChanges(
     metadata: ChapterSummaryGenerationMetadata | undefined,
     currentVersions: ReadonlyMap<string, number> | undefined,
+    acknowledgedVersions?: readonly (number | null)[],
 ): string[] {
     if (!metadata || !currentVersions) return [];
-    return metadata.source.allowedSources
-        .filter(source => currentVersions.get(source.sourceId) !== source.sourceVersion)
-        .map(source => source.sourceId);
+    const hasAcknowledgedVersions = acknowledgedVersions?.length === metadata.source.allowedSources.length;
+    return metadata.source.allowedSources.flatMap((source, index) => {
+        const expectedVersion = hasAcknowledgedVersions ? acknowledgedVersions[index] : source.sourceVersion;
+        return (currentVersions.get(source.sourceId) ?? null) === expectedVersion ? [] : [source.sourceId];
+    });
 }
 
 export function assessChapterSummaryFreshness(
@@ -375,7 +386,7 @@ export function assessChapterSummaryFreshness(
             changedForeshadowingNoteIds: [], changedAllowedSourceIds: [], reasons: ['generation-metadata-unavailable'],
         };
     }
-    const baseline = summary.sourceSnapshot;
+    const baseline = summary.freshnessAcknowledgement?.acknowledgedSourceSnapshot ?? summary.sourceSnapshot;
     if (!baseline || baseline.chapterId !== chapter.id) {
         return {
             status: 'needs-review', sourceVersionChanged: summary.sourceChapterVersion !== chapter.databaseVersion,
@@ -422,7 +433,11 @@ export function assessChapterSummaryFreshness(
     const changedForeshadowingNoteIds = [...new Set([...oldNotes.keys(), ...newNotes.keys()])]
         .filter(noteId => oldNotes.get(noteId) !== newNotes.get(noteId))
         .sort();
-    const changedAllowedSourceIds = sourceVersionChanges(summary.generationMetadata, currentAllowedSourceVersions);
+    const changedAllowedSourceIds = sourceVersionChanges(
+        summary.generationMetadata,
+        currentAllowedSourceVersions,
+        summary.freshnessAcknowledgement?.allowedSourceVersions,
+    );
     const sourceVersionChanged = baseline.chapterDatabaseVersion !== current.chapterDatabaseVersion;
     const reasons: string[] = [];
     if (changedBlocks) reasons.push('paragraph-content-or-structure-changed');
@@ -478,6 +493,21 @@ export function parseChapterSummarySourceSnapshot(value: unknown, chapterId: str
         || !(value.contentVersion === null || (Number.isSafeInteger(value.contentVersion) && Number(value.contentVersion) >= 0))
         || !Number.isSafeInteger(value.capturedAt) || Number(value.capturedAt) < 0) return undefined;
     return value as unknown as ChapterSummarySourceSnapshot;
+}
+
+export function parseChapterSummaryFreshnessAcknowledgement(
+    value: unknown,
+    chapterId: string,
+    allowedSourceCount: number,
+): ChapterSummaryFreshnessAcknowledgement | undefined {
+    if (!isRecord(value) || !Number.isSafeInteger(value.acknowledgedAt) || Number(value.acknowledgedAt) < 0
+        || !Array.isArray(value.allowedSourceVersions) || value.allowedSourceVersions.length !== allowedSourceCount
+        || value.allowedSourceVersions.length > 512
+        || value.allowedSourceVersions.some(version => version !== null
+            && (!Number.isSafeInteger(version) || Number(version) < 1))) return undefined;
+    const acknowledgedSourceSnapshot = parseChapterSummarySourceSnapshot(value.acknowledgedSourceSnapshot, chapterId);
+    if (!acknowledgedSourceSnapshot) return undefined;
+    return value as unknown as ChapterSummaryFreshnessAcknowledgement;
 }
 
 export function parseChapterSummaryGenerationMetadata(value: unknown, chapterId: string): ChapterSummaryGenerationMetadata | undefined {

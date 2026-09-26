@@ -85,6 +85,7 @@ function StoryOutlineContent({ bookId, localBook, persistence }: { bookId: strin
                 <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[340px_minmax(420px,1fr)_380px] overflow-hidden">
                     <ChapterSummariesPanel chapterOptions={editor.chapterOptions} targetChapterId={searchParams.get('chapterId')}
                         updateChapterSummary={editor.updateChapterSummary}
+                        acknowledgeChapterSummaryChanges={editor.acknowledgeChapterSummaryChanges}
                         suggestions={summarySuggestions.suggestions}
                         activeSuggestionChapterId={summarySuggestions.activeChapterId}
                         modelAvailability={summarySuggestions.modelAvailability}

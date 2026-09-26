@@ -2,6 +2,7 @@ import { EXCHANGE_LIMITS } from '../limits';
 import type {
     ExchangeChapterSummaryGenerationMetadata,
     ExchangeChapterSummaryGenerationSource,
+    ExchangeChapterSummaryFreshnessAcknowledgement,
     ExchangeChapterSummaryRetrievalBudget,
     ExchangeChapterSummaryRetrievalScope,
     ExchangeChapterSummarySourceSnapshot,
@@ -120,6 +121,46 @@ function validateSummaryGenerationMetadata(
     const source = validateSummaryGenerationSource(context, context.requiredObject(object, 'source', path), `${path}.source`);
     if (providerId === undefined || !configId || protocol === undefined || modelId === undefined || generatedAt === undefined || promptVersion === undefined || !source) return undefined;
     return { providerId, configId, protocol, modelId, generatedAt, promptVersion, source };
+}
+
+function validateSummaryFreshnessAcknowledgement(
+    context: ValidationContext,
+    value: unknown,
+    path: string,
+    chapterId: string,
+    allowedSourceCount: number,
+): ExchangeChapterSummaryFreshnessAcknowledgement | undefined {
+    const object = context.requiredObjectValue(value, path);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set([
+        'acknowledgedSourceSnapshot', 'allowedSourceVersions', 'acknowledgedAt', 'extensions',
+    ]), path);
+    const acknowledgedSourceSnapshot = validateSummarySourceSnapshot(
+        context,
+        object.acknowledgedSourceSnapshot,
+        `${path}.acknowledgedSourceSnapshot`,
+    );
+    const versions = context.requiredArray(object, 'allowedSourceVersions', path);
+    const acknowledgedAt = context.requiredTimestamp(object, 'acknowledgedAt', path);
+    if (versions && versions.length > EXCHANGE_LIMITS.maxSummarySourceVersions) {
+        context.add(`${path}.allowedSourceVersions`, 'LIMIT_EXCEEDED', 'A freshness acknowledgement cannot contain more than 512 source versions.');
+    }
+    const allowedSourceVersions = versions?.map((version, index) => {
+        if (version === null) return null;
+        if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) {
+            context.add(`${path}.allowedSourceVersions[${index}]`, 'INVALID_VALUE', 'A source version must be a positive integer or null.');
+            return null;
+        }
+        return version;
+    });
+    if (allowedSourceVersions && allowedSourceVersions.length !== allowedSourceCount) {
+        context.add(`${path}.allowedSourceVersions`, 'REFERENCE_MISMATCH', 'Acknowledged source versions must match the summary generation source list.');
+    }
+    if (acknowledgedSourceSnapshot && acknowledgedSourceSnapshot.chapterId !== chapterId) {
+        context.add(`${path}.acknowledgedSourceSnapshot.chapterId`, 'REFERENCE_MISMATCH', 'The acknowledged source snapshot must belong to the summary chapter.');
+    }
+    if (!acknowledgedSourceSnapshot || !allowedSourceVersions || acknowledgedAt === undefined) return undefined;
+    return { acknowledgedSourceSnapshot, allowedSourceVersions, acknowledgedAt };
 }
 
 function validateSummaryGenerationSource(
@@ -316,7 +357,7 @@ function validateChapterSummary(context: ValidationContext, value: unknown, path
     if (!object) return undefined;
     context.unknownFields(object, new Set([
         'chapterId', 'summary', 'sourceChapterVersion', 'updatedAt', 'provenance',
-        'sourceSnapshot', 'generationMetadata', 'extensions',
+        'sourceSnapshot', 'freshnessAcknowledgement', 'generationMetadata', 'extensions',
     ]), path);
     const chapterId = context.requiredUuid(object, 'chapterId', path);
     const summary = context.requiredString(object, 'summary', path, EXCHANGE_LIMITS.maxSummaryChars);
@@ -330,6 +371,15 @@ function validateChapterSummary(context: ValidationContext, value: unknown, path
         : undefined;
     const generationMetadata = Object.prototype.hasOwnProperty.call(object, 'generationMetadata')
         ? validateSummaryGenerationMetadata(context, object.generationMetadata, `${path}.generationMetadata`)
+        : undefined;
+    const freshnessAcknowledgement = Object.prototype.hasOwnProperty.call(object, 'freshnessAcknowledgement')
+        ? validateSummaryFreshnessAcknowledgement(
+            context,
+            object.freshnessAcknowledgement,
+            `${path}.freshnessAcknowledgement`,
+            chapterId ?? '',
+            generationMetadata?.source.allowedSources.length ?? 0,
+        )
         : undefined;
     if (!chapterId || summary === undefined || updatedAt === undefined) return undefined;
     if (provenance === 'ai-adopted' && !generationMetadata) {
@@ -360,6 +410,7 @@ function validateChapterSummary(context: ValidationContext, value: unknown, path
         updatedAt,
         ...(provenance === undefined ? {} : { provenance }),
         ...(sourceSnapshot === undefined ? {} : { sourceSnapshot }),
+        ...(freshnessAcknowledgement === undefined ? {} : { freshnessAcknowledgement }),
         ...(generationMetadata === undefined ? {} : { generationMetadata }),
     };
 }

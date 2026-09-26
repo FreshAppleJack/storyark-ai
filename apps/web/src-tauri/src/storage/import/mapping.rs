@@ -383,6 +383,17 @@ pub(super) fn copy_work(work: &Value, map: &IdMap, title: &str) -> Result<Value>
             if summary.get("sourceChapterVersion").is_some() {
                 summary["sourceChapterVersion"] = json!(1);
             }
+            if let Some(versions) = summary
+                .get_mut("freshnessAcknowledgement")
+                .and_then(|acknowledgement| acknowledgement.get_mut("allowedSourceVersions"))
+                .and_then(Value::as_array_mut)
+            {
+                for version in versions {
+                    if !version.is_null() {
+                        *version = json!(1);
+                    }
+                }
+            }
         }
     }
     for plot in planning["plotSettings"].as_array_mut().unwrap() {

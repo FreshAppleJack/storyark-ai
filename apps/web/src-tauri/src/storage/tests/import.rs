@@ -12,7 +12,7 @@ fn sample_work(book_id: &str, title: &str) -> Value {
     let now = 1_700_000_000_000_i64;
     let note_id = "legacy-note";
     let character_source_id = format!("{}:character:{}", book_id, character_id);
-    let chapter_summary = json!({
+    let mut chapter_summary = json!({
         "chapterId": chapter_id,
         "summary": "Chapter summary",
         "sourceChapterVersion": 3,
@@ -74,6 +74,11 @@ fn sample_work(book_id: &str, title: &str) -> Value {
                 "includesFuturePlan": false
             }
         }
+    });
+    chapter_summary["freshnessAcknowledgement"] = json!({
+        "acknowledgedSourceSnapshot": chapter_summary["sourceSnapshot"].clone(),
+        "allowedSourceVersions": [2],
+        "acknowledgedAt": now
     });
     json!({
         "schemaVersion": 1,
@@ -178,6 +183,19 @@ fn fresh_import_persists_the_complete_work_and_copy_rewrites_instance_ids() {
         copied_character
     );
     assert_eq!(
+        copied_summary["freshnessAcknowledgement"]["acknowledgedSourceSnapshot"]["chapterId"],
+        copied_chapter
+    );
+    assert_eq!(
+        copied_summary["freshnessAcknowledgement"]["acknowledgedSourceSnapshot"]
+            ["mentionedCharacterIds"][0],
+        copied_character
+    );
+    assert_eq!(
+        copied_summary["freshnessAcknowledgement"]["allowedSourceVersions"][0],
+        1
+    );
+    assert_eq!(
         copied_summary["generationMetadata"]["source"]["bookId"],
         copied_id
     );
@@ -228,6 +246,11 @@ fn fresh_import_persists_the_complete_work_and_copy_rewrites_instance_ids() {
             |row| row.get(0),
         )
         .unwrap();
+    assert_eq!(
+        copied_summary["freshnessAcknowledgement"]["acknowledgedSourceSnapshot"]
+            ["foreshadowingIds"][0],
+        copied_note
+    );
     let copied_mark: String = db
         .connection
         .query_row(

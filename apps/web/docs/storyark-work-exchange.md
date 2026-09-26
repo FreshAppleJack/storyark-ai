@@ -258,13 +258,21 @@ chapterSummaries, plotSettings
 1,048,576 characters. A chapter summary requires `chapterId`, `summary`, and
 `updatedAt`; `sourceChapterVersion`, `provenance` (`author` or `ai-adopted`),
 `sourceSnapshot`, and `generationMetadata` are optional for legacy
-compatibility. A source snapshot records the chapter/version and deterministic
-body/block fingerprints, content format, Mention identities, and foreshadowing
-note fingerprints; it does not carry a duplicate chapter body. When present,
+compatibility. `freshnessAcknowledgement` is also optional; it records the
+author-confirmed source snapshot and allowed-source version vector used as the
+new freshness baseline. Acknowledging a possible change does not rewrite the
+original source snapshot or adopted-AI generation provenance, and subsequent
+source changes can make the summary stale again. A source snapshot records the
+chapter/version and deterministic body/block fingerprints, content format,
+Mention identities, and foreshadowing note fingerprints; it does not carry a
+duplicate chapter body. When present,
 its chapter ID must equal the summary's chapter ID. Its chapter database
 version is a historical source snapshot and may differ from the receiving
 device's chapter version. The optional `sourceChapterVersion` is rebased for
 the imported local record; it is not the sole freshness or concurrency test.
+When creating a copy, acknowledgement snapshot references are rewritten using
+the same old-ID to new-ID mapping as the rest of the work; local source versions
+are rebased for the copied records.
 An adopted AI summary
 requires generation metadata containing provider/config/model IDs, generation
 time, prompt version, allowed source IDs and versions, and an optional retrieval
