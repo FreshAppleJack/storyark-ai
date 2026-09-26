@@ -612,7 +612,7 @@ export function ChapterNavigator({
                                 </button>
                             </div>
                             {storySearchMode === 'semantic' ? (
-                                <div className={expandSemanticSearchPanel ? 'min-h-0 min-w-0 flex-1 overflow-y-auto pr-1' : ''}>
+                                <div className={expandSemanticSearchPanel ? 'min-h-0 min-w-0 flex-1 overflow-y-auto pb-2 pr-1' : ''}>
                                     <StorySearchResults
                                         embeddingStatus={storySearch.embeddingStatus}
                                         indexStatus={storySearch.indexStatus}

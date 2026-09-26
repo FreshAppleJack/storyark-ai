@@ -309,7 +309,7 @@ export function StorySearchResults({
                         </p>
                     </div>
                     {response.hits.length > 0 && (
-                        <div className="max-h-96 space-y-1.5 overflow-y-auto pr-1">
+                        <div className="max-h-96 space-y-1.5 overflow-y-auto">
                             {response.hits.map(hit => (
                                 <SearchHitCard
                                     key={hit.hitId}
