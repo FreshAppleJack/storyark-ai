@@ -401,8 +401,54 @@ fn chunk_registry_keeps_locators_and_historical_version_identity() {
 fn lexical_search_uses_cjk_fts_and_returns_locators() {
     let temp = TempDirectory::new();
     let mut db = Database::open(&temp.0).unwrap();
-    let chapter = fixture(&mut db);
+    let mut chapter = fixture(&mut db);
+    // Real Tiptap documents omit content on blank paragraphs. One blank line
+    // must not remove every manuscript chunk, even in an already-ready index.
+    chapter.content = json!({"type":"doc","content":[
+        {"type":"paragraph"},
+        {"type":"paragraph","content":[{"type":"text","text":"你好，那个男人回来了。"}]},
+        {"type":"paragraph"}
+    ]})
+    .to_string();
     db.save_chapter(chapter.clone()).unwrap();
+    let source_id = source(
+        &db.sync_retrieval_sources(&chapter.book_id).unwrap(),
+        "manuscript",
+    )["sourceId"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    db.connection
+        .execute(
+            "DELETE FROM retrieval_chunks WHERE source_id=?",
+            [&source_id],
+        )
+        .unwrap();
+    db.connection
+        .execute(
+            "DELETE FROM retrieval_chunks_fts WHERE source_id=?",
+            [&source_id],
+        )
+        .unwrap();
+    db.connection
+        .execute(
+            "DELETE FROM retrieval_dirty_sources WHERE source_id=?",
+            [&source_id],
+        )
+        .unwrap();
+    db.connection.execute("UPDATE retrieval_sources SET index_status='ready',index_version=1,embedding_fingerprint=? WHERE source_id=?", rusqlite::params![current_fingerprint(), source_id]).unwrap();
+    let repaired = db.sync_retrieval_sources(&chapter.book_id).unwrap();
+    assert_eq!(source(&repaired, "manuscript")["indexStatus"], "stale");
+    assert_eq!(
+        db.connection
+            .query_row(
+                "SELECT count(*) FROM retrieval_dirty_sources WHERE source_id=?",
+                [&source_id],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        1
+    );
     let response = db
         .search_retrieval(
             RetrievalSearchRequest {
@@ -448,6 +494,10 @@ fn lexical_search_uses_cjk_fts_and_returns_locators() {
     assert!(response["hits"][0]["indexUpdatedAt"].is_null());
     assert_eq!(response["hits"][0]["recallMethods"][0], "lexical");
     assert_eq!(response["hits"][0]["freshness"], "fresh");
+    assert_eq!(
+        response["hits"][0]["chunk"]["locator"]["paragraphSpans"][0]["paragraphOrdinal"],
+        1
+    );
     assert!(response["context"]["text"]
         .as_str()
         .unwrap()

@@ -768,6 +768,23 @@ fn sync_book_chunks(
                 ],
             )?;
         }
+        // Older extraction could mark a source ready without any chunks. Newly
+        // recovered chunks need embeddings even when the author's text is unchanged.
+        let repaired = db.execute(
+            "UPDATE retrieval_sources SET index_status='stale',embedding_fingerprint=NULL
+             WHERE source_id=?1 AND index_status='ready' AND EXISTS (
+                 SELECT 1 FROM retrieval_chunks WHERE source_id=?1 AND source_version=?2
+                 AND index_version=?3 AND embedding_blob IS NULL)",
+            params![draft.source_id, draft.source_version, CHUNK_INDEX_VERSION],
+        )?;
+        if repaired > 0 && draft.source_status == RetrievalSourceStatus::Active {
+            super::retrieval_scheduler::mark_dirty(
+                db,
+                book_id,
+                &draft.source_id,
+                draft.source_version,
+            )?;
+        }
     }
     Ok(())
 }

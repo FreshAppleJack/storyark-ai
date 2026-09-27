@@ -1,4 +1,5 @@
 import type { ReactElement } from 'react';
+import { ChevronDown } from 'lucide-react';
 import type {
     RetrievalSearchFilters,
     RetrievalSourceKind,
@@ -46,7 +47,7 @@ export function StorySearchFilters({
     const manuscriptExcluded = !filters.sourceKinds.includes('manuscript');
 
     return (
-        <details className="rounded-lg border border-slate-200 bg-white text-xs dark:border-slate-800 dark:bg-slate-900">
+        <details className="group/filters rounded-lg border border-slate-200 bg-white text-xs dark:border-slate-800 dark:bg-slate-900">
             <summary className="flex cursor-pointer items-center justify-between gap-2 px-3 py-2 font-semibold text-slate-700 outline-none dark:text-slate-200">
                 <span>Search filters</span>
                 {manuscriptExcluded && (
@@ -54,22 +55,25 @@ export function StorySearchFilters({
                         Manuscript excluded
                     </span>
                 )}
+                <ChevronDown aria-hidden="true" size={14} className="ml-auto shrink-0 transition-transform group-open/filters:rotate-180" />
             </summary>
             <div className="space-y-3 border-t border-slate-200 px-3 py-3 dark:border-slate-800">
-                <div className="flex items-center justify-between gap-2">
-                    {manuscriptExcluded ? (
-                        <p className="text-amber-700 dark:text-amber-300">Manuscript text will not be searched.</p>
-                    ) : <span />}
-                    <button
-                        type="button"
-                        onClick={() => onChange(createDefaultStorySearchFilters())}
-                        className="ml-auto rounded px-1.5 py-1 font-semibold text-brand-700 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-950/40"
-                    >
-                        Reset filters
-                    </button>
-                </div>
+                {manuscriptExcluded && (
+                    <p className="text-amber-700 dark:text-amber-300">Manuscript text will not be searched.</p>
+                )}
                 <fieldset>
-                    <legend className="mb-1.5 font-semibold text-slate-600 dark:text-slate-300">Evidence sources</legend>
+                    <legend className="mb-1.5 w-full">
+                        <span className="flex items-center justify-between gap-2">
+                            <span className="font-semibold text-slate-600 dark:text-slate-300">Evidence sources</span>
+                            <button
+                                type="button"
+                                onClick={() => onChange(createDefaultStorySearchFilters())}
+                                className="ml-auto rounded px-1.5 py-1 font-semibold text-brand-700 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-950/40"
+                            >
+                                Reset filters
+                            </button>
+                        </span>
+                    </legend>
                     <div className="grid grid-cols-2 gap-x-2 gap-y-1.5">
                         {SOURCE_OPTIONS.map(option => {
                             const checked = filters.sourceKinds.includes(option.kind);

@@ -415,7 +415,12 @@ fn inline_text(value: &Value, index_terms: &mut Vec<String>) -> Option<String> {
             .map(str::to_owned),
         "hardBreak" => Some("\n".to_owned()),
         "paragraph" | "heading" | "blockquote" | "codeBlock" => {
-            let children = object.get("content").and_then(Value::as_array)?;
+            // Tiptap omits content for empty text blocks (including blank lines).
+            // Preserve their ordinals and scene boundaries without rejecting the document.
+            let children = match object.get("content") {
+                None => return Some(String::new()),
+                Some(content) => content.as_array()?,
+            };
             let mut text = String::new();
             for child in children {
                 text.push_str(&inline_text(child, index_terms)?);

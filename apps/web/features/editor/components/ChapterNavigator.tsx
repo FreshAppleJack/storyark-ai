@@ -151,8 +151,7 @@ export function ChapterNavigator({
         localMode && storySearchMode === 'semantic',
         { chapterIds: storySearchChapterIds, activeChapterId },
     );
-    const hideChapterTree = storySearchMode === 'semantic'
-        && (storySearch.isSearching || storySearch.response !== null || storySearch.searchError !== null);
+    const hideChapterTree = localMode && storySearchMode === 'semantic' && sidebarExpanded;
 
     // Only reconcile membership; content updates and reordering preserve user choices.
     const volumeIds = book.volumes.map(volume => volume.id);
@@ -557,7 +556,7 @@ export function ChapterNavigator({
                 </div>
 
                 {sidebarExpanded && (
-                    <div className="min-w-0 flex-shrink-0 border-b border-slate-100 p-4 dark:border-slate-800">
+                    <div className={`min-w-0 p-4 ${hideChapterTree ? 'flex min-h-0 flex-1 flex-col' : 'flex-shrink-0 border-b border-slate-100 dark:border-slate-800'}`}>
                         <div className="flex items-center gap-3 mb-2">
                             <div className={`w-10 h-14 ${book.coverColor || 'bg-slate-700'} rounded shadow-sm flex-shrink-0`}></div>
                             <div className="overflow-hidden">
@@ -565,7 +564,7 @@ export function ChapterNavigator({
                                 <p className="text-xs text-slate-500 dark:text-slate-400 truncate">by {book.author}</p>
                             </div>
                         </div>
-                        <form className="mt-4 min-w-0 space-y-2" onSubmit={handleSidebarSearchSubmit}>
+                        <form className={`mt-4 min-w-0 ${hideChapterTree ? 'flex min-h-0 flex-1 flex-col gap-2 [&>*]:shrink-0' : 'space-y-2'}`} onSubmit={handleSidebarSearchSubmit}>
                             {localMode && (
                                 <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 text-[11px] font-medium dark:bg-slate-900">
                                     {(['title', 'semantic'] as StorySearchMode[]).map((mode) => (
@@ -634,7 +633,7 @@ export function ChapterNavigator({
                                 </button>
                             </div>
                             {storySearchMode === 'semantic' ? (
-                                <div className="min-w-0 max-h-[min(60vh,36rem)] overflow-y-auto pb-2 pr-1">
+                                <div className="min-h-0 min-w-0 flex-1 !shrink overflow-hidden">
                                     <StorySearchResults
                                         embeddingStatus={storySearch.embeddingStatus}
                                         indexStatus={storySearch.indexStatus}
@@ -685,7 +684,7 @@ export function ChapterNavigator({
                 )}
 
                 {/* Sidebar List */}
-                <div className={`min-h-0 flex-1 overflow-y-auto py-2 relative ${hideChapterTree ? 'hidden' : ''}`}>
+                <div hidden={hideChapterTree} className="min-h-0 flex-1 overflow-y-auto py-2 relative">
                     {sidebarExpanded ? (
                         <div className="px-2 space-y-1">
                             {book.volumes.length === 0 && (

@@ -5,6 +5,30 @@ use crate::rag::sources::normalize_index_text;
 use serde_json::json;
 
 #[test]
+fn omitted_empty_content_preserves_text_and_paragraph_locations() {
+    let document = json!({"type":"doc","content":[
+        {"type":"paragraph"},
+        {"type":"paragraph","content":[{"type":"text","text":"那个男人回来了。"}]},
+        {"type":"paragraph"},
+        {"type":"paragraph","content":[{"type":"text","text":"老者打开了门。"}]},
+        {"type":"paragraph"}
+    ]});
+    let blocks = tiptap_blocks(&document).unwrap();
+    assert_eq!(blocks.len(), 5);
+    let chunks = chunk_blocks(&blocks);
+    assert_eq!(chunks.len(), 2);
+    assert_eq!(chunks[0].source_text, "那个男人回来了。");
+    assert_eq!(chunks[0].paragraph_spans[0].paragraph_ordinal, 1);
+    assert_eq!(chunks[0].paragraph_spans[0].node_path, vec![1]);
+    assert_eq!(chunks[1].paragraph_spans[0].paragraph_ordinal, 3);
+    assert_eq!(chunks[1].paragraph_spans[0].node_path, vec![3]);
+    assert!(
+        tiptap_blocks(&json!({"type":"doc","content":[{"type":"paragraph","content":42}]}))
+            .is_none()
+    );
+}
+
+#[test]
 fn fixed_profile_handles_short_empty_and_repeated_text() {
     assert!(chunk_blocks(&text_blocks("   ")).is_empty());
     let short = chunk_blocks(&text_blocks("Hello，世界 123!"));

@@ -273,7 +273,8 @@ export function StorySearchResults({
     const showInitialStatus = !response && !isSearching && !searchError;
 
     return (
-        <div className="space-y-2" aria-live="polite">
+        <div className="flex h-full min-h-0 flex-col" aria-live="polite">
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1 pb-2" aria-label="Story search results">
             <StorySearchFilters
                 filters={filters}
                 chapters={chapters}
@@ -322,8 +323,6 @@ export function StorySearchResults({
                     ) : (
                         <p className="mt-1">Searches the current book using local semantic and lexical evidence.</p>
                     )}
-                    {renderIndexProgress(indexProgress)}
-                    {renderIndexAction(embeddingStatus, indexStatus, isIndexing, isStatusLoading, onQueueIndex)}
                 </div>
             )}
 
@@ -359,6 +358,11 @@ export function StorySearchResults({
                             ))}
                         </div>
                     )}
+                </div>
+            )}
+            </div>
+            {(indexProgress || (embeddingStatus?.available && indexStatus)) && (
+                <div aria-label="Local story index controls" className="shrink-0 border-t border-slate-200 pt-2 dark:border-slate-800">
                     {renderIndexProgress(indexProgress)}
                     {renderIndexAction(embeddingStatus, indexStatus, isIndexing, isStatusLoading, onQueueIndex)}
                 </div>

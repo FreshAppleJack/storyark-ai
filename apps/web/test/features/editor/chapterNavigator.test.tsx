@@ -160,16 +160,19 @@ describe('ChapterNavigator', () => {
         const search = vi.spyOn(retrievalRepository, 'search').mockRejectedValue(new Error('Search probe failure'));
         const { container } = render(<ChapterNavigator {...createProps({ localMode: true })} />);
         const form = container.querySelector('form') as HTMLFormElement;
-        const initialFormClass = form.className;
-
         fireEvent.click(screen.getByRole('button', { name: 'Semantic / Story' }));
+        const initialFormClass = form.className;
+        expect(screen.getByText('Create Volume')).not.toBeVisible();
+        expect(form).toHaveClass('flex-1');
         fireEvent.change(screen.getByPlaceholderText('Search the story'), { target: { value: '脆弱' } });
         fireEvent.click(screen.getByRole('button', { name: 'Go' }));
 
         await waitFor(() => expect(screen.getAllByRole('alert').some(alert => alert.textContent?.includes('Search probe failure'))).toBe(true));
         expect(form.className).toBe(initialFormClass);
-        expect(form).not.toHaveClass('flex-1');
+        expect(screen.getByText('Create Volume')).not.toBeVisible();
         expect(form).not.toHaveClass('overflow-hidden');
+        fireEvent.click(screen.getByRole('button', { name: 'Title / Chapter' }));
+        expect(screen.getByText('Create Volume')).toBeVisible();
         search.mockRestore();
     });
 

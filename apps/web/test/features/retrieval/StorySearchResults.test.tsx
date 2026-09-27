@@ -62,7 +62,8 @@ describe('StorySearchResults', () => {
 
         const excerpt = container.querySelector('article p');
         expect(excerpt).not.toBeNull();
-        expect(container.querySelectorAll('.overflow-y-auto')).toHaveLength(0);
+        expect(screen.getByLabelText('Story search results')).toContainElement(excerpt);
+        expect(excerpt!.closest('article')).not.toHaveClass('overflow-y-auto');
         expect(excerpt).toHaveTextContent(query);
         expect(Array.from(excerpt!.textContent ?? '').length).toBeLessThan(123);
         expect(screen.getByText(query, { selector: 'mark' })).toBeInTheDocument();
