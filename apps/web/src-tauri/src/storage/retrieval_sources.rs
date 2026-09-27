@@ -1195,3 +1195,34 @@ impl Database {
 pub(crate) fn sync_sources_in_transaction(db: &Connection, book_id: &str) -> Result<()> {
     sync_book_sources(db, book_id)
 }
+
+// Reordering changes the scope used by "before current chapter" retrieval,
+// but not source text, chunk locators or embeddings. Keep the index intact.
+pub(crate) fn sync_order_metadata_in_transaction(db: &Connection, book_id: &str) -> Result<()> {
+    let registered: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM retrieval_sources WHERE book_id=?)",
+        [book_id],
+        |row| row.get(0),
+    )?;
+    if !registered {
+        return sync_book_sources(db, book_id);
+    }
+    let chapter_ids = db
+        .prepare(
+            "SELECT c.id FROM chapters c JOIN volumes v ON v.id=c.volume_id
+             WHERE c.book_id=? ORDER BY v.position,v.id,c.position,c.id",
+        )?
+        .query_map([book_id], |row| row.get::<_, String>(0))?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for (order, chapter_id) in chapter_ids.iter().enumerate() {
+        db.execute(
+            "UPDATE retrieval_sources
+             SET visibility_scope_json=json_set(visibility_scope_json,'$.chapterOrder',?1)
+             WHERE book_id=?2 AND json_extract(visibility_scope_json,'$.kind')='chapter'
+               AND json_extract(visibility_scope_json,'$.chapterId')=?3
+               AND json_extract(visibility_scope_json,'$.chapterOrder')<>?1",
+            params![order as i64, book_id, chapter_id],
+        )?;
+    }
+    Ok(())
+}

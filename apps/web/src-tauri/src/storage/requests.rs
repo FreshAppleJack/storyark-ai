@@ -96,7 +96,14 @@ pub struct SetReadOnly {
 #[serde(rename_all = "camelCase")]
 pub struct Reorder {
     pub parent: Option<ExpectedTarget>,
-    pub items: Vec<ExpectedTarget>,
+    pub items: Vec<ReorderItem>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReorderItem {
+    #[serde(flatten)]
+    pub target: ExpectedTarget,
+    pub expected_position: i64,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

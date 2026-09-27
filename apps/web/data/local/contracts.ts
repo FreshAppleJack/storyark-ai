@@ -95,7 +95,7 @@ export interface LocalStorageCommands {
     setReadOnly(input: ExpectedTarget & { isReadOnly: boolean }): Promise<StorageResult<LocalRecord>>;
     reorder(input: {
         parent: null | ExpectedTarget;
-        items: Array<ExpectedTarget>;
+        items: Array<ExpectedTarget & { expectedPosition: number }>;
     }): Promise<StorageResult<LocalRecord[]>>;
     delete(input: ExpectedTarget & { expectedParentVersion?: DatabaseVersion }): Promise<StorageResult<{ deletedId: UUID; parent: LocalRecord | null }>>;
 }

@@ -43,11 +43,11 @@ export function WritingContextPanel({
         <aside
             className={`flex-shrink-0 overflow-hidden bg-white dark:bg-slate-950 shadow-xl transition-all duration-300 ease-in-out ${
                 isOpen
-                    ? 'w-80 xl:w-96 opacity-100 border-l border-slate-200 dark:border-slate-800'
+                    ? 'w-72 opacity-100 border-l border-slate-200 dark:border-slate-800'
                     : 'w-0 opacity-0 border-l-0 pointer-events-none'
             }`}
         >
-            <div className="h-full w-80 xl:w-96 flex flex-col">
+            <div className="h-full w-72 flex flex-col">
                 <section className="flex-1 min-h-0 flex flex-col border-b border-slate-200 dark:border-slate-800">
                     <div className="h-14 px-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                         <div className="min-w-0">

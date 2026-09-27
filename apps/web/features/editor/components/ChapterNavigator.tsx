@@ -60,9 +60,19 @@ interface RenamingState {
 }
 
 interface DragItemState {
-    index: number;
+    id: string;
     type: NavigatorItemType;
     parentId?: string;
+}
+
+function moveItem<T extends { id: string }>(items: T[], draggedId: string, targetId: string): T[] | null {
+    const from = items.findIndex(item => item.id === draggedId);
+    const to = items.findIndex(item => item.id === targetId);
+    if (from < 0 || to < 0 || from === to) return null;
+    const reordered = [...items];
+    const [moved] = reordered.splice(from, 1);
+    reordered.splice(to, 0, moved);
+    return reordered;
 }
 
 type SidebarSearchMode = 'chapter' | 'volume';
@@ -136,7 +146,7 @@ export function ChapterNavigator({
     const contextMenuRef = useRef<HTMLDivElement>(null);
     const submittedRenameRef = useRef<RenamingState | null>(null);
     const dragItemRef = useRef<DragItemState | null>(null);
-    const dragOverItemRef = useRef<DragItemState | null>(null);
+    const [dragTarget, setDragTarget] = useState<DragItemState | null>(null);
     const storySearchChapters = useMemo(() => book.volumes.flatMap(volume => volume.chapters.map(chapter => ({
         id: chapter.id,
         title: chapter.title,
@@ -243,52 +253,57 @@ export function ChapterNavigator({
     }, [book, sidebarSearchMode, sidebarSearchQuery]);
 
     // --- Drag & Drop Handlers ---
-    const handleDragStart = (e: React.DragEvent, type: NavigatorItemType, index: number, parentId?: string) => {
+    const handleDragStart = (e: React.DragEvent, type: NavigatorItemType, id: string, parentId?: string) => {
         if (renamingState) {
             e.preventDefault(); return;
         }
-        dragItemRef.current = { index, type, parentId };
+        dragItemRef.current = { id, type, parentId };
+        e.dataTransfer?.setData('text/plain', id);
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
         (e.currentTarget as HTMLDivElement).style.opacity = '0.5';
         e.stopPropagation();
     };
 
-    const handleDragEnter = (e: React.DragEvent, type: NavigatorItemType, index: number, parentId?: string) => {
-        e.preventDefault(); e.stopPropagation();
-        if (renamingState) return;
+    const canDropOn = (type: NavigatorItemType, id: string, parentId?: string) => {
+        const dragged = dragItemRef.current;
+        return dragged !== null && dragged.type === type && dragged.id !== id
+            && (type !== 'chapter' || dragged.parentId === parentId);
+    };
 
-        dragOverItemRef.current = { index, type, parentId };
+    const handleDragEnter = (e: React.DragEvent, type: NavigatorItemType, id: string, parentId?: string) => {
+        e.stopPropagation();
+        if (!canDropOn(type, id, parentId)) { setDragTarget(null); return; }
+        setDragTarget(current => current?.type === type && current.id === id && current.parentId === parentId
+            ? current : { type, id, parentId });
+    };
 
-        if (!dragItemRef.current) return;
-        if (dragItemRef.current.type !== type) return;
-        if (type === 'chapter' && dragItemRef.current.parentId !== parentId) return;
+    const handleDragOver = (e: React.DragEvent, type: NavigatorItemType, id: string, parentId?: string) => {
+        e.stopPropagation();
+        if (!canDropOn(type, id, parentId)) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    };
 
-        const dragIndex = dragItemRef.current.index;
-        const hoverIndex = index;
-        if (dragIndex === hoverIndex) return;
-
+    const handleDrop = (e: React.DragEvent, type: NavigatorItemType, id: string, parentId?: string) => {
+        e.stopPropagation();
+        if (!canDropOn(type, id, parentId)) return;
+        e.preventDefault();
+        const draggedId = dragItemRef.current!.id;
         if (type === 'volume') {
-            const newVolumes = [...book.volumes];
-            const draggedVol = newVolumes[dragIndex];
-            newVolumes.splice(dragIndex, 1);
-            newVolumes.splice(hoverIndex, 0, draggedVol);
-            onReorderVolumes(newVolumes);
-        } else if (type === 'chapter') {
-            const volume = book.volumes.find(v => v.id === parentId);
-            if (volume) {
-                const newChapters = [...volume.chapters];
-                const draggedChap = newChapters[dragIndex];
-                newChapters.splice(dragIndex, 1);
-                newChapters.splice(hoverIndex, 0, draggedChap);
-                onReorderChapters(volume.id, newChapters);
-            }
+            const reordered = moveItem(book.volumes, draggedId, id);
+            if (reordered) onReorderVolumes(reordered);
+        } else {
+            const volume = book.volumes.find(item => item.id === parentId);
+            const reordered = volume && moveItem(volume.chapters, draggedId, id);
+            if (volume && reordered) onReorderChapters(volume.id, reordered);
         }
-        dragItemRef.current.index = hoverIndex;
+        setDragTarget(null);
     };
 
     const handleDragEnd = (e: React.DragEvent) => {
         (e.currentTarget as HTMLDivElement).style.opacity = '1';
         dragItemRef.current = null;
-        dragOverItemRef.current = null;
+        setDragTarget(null);
     };
 
     // --- Volume & Chapter Management Handlers ---
@@ -529,7 +544,7 @@ export function ChapterNavigator({
 
     return (
         <>
-            <aside className={`relative h-full min-h-0 min-w-0 max-w-[50vw] flex-shrink-0 overflow-hidden bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 ease-in-out flex flex-col max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:left-0 max-[900px]:z-30 max-[900px]:shadow-2xl ${sidebarExpanded ? 'w-72' : 'w-16'}`}>
+            <aside className={`relative h-full min-h-0 min-w-0 max-w-[50vw] flex-shrink-0 overflow-hidden bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 ease-in-out flex flex-col max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:left-0 max-[900px]:z-30 max-[900px]:shadow-2xl ${sidebarExpanded ? 'w-80 xl:w-96' : 'w-16'}`}>
                 {/* Sidebar Header */}
                 <div className="h-14 flex-shrink-0 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4">
                     {sidebarExpanded ? (
@@ -687,7 +702,7 @@ export function ChapterNavigator({
                                 </div>
                             )}
 
-                            {book.volumes.map((vol, vIndex) => {
+                            {book.volumes.map((vol) => {
                                 const isVolDraggable = !expandedVolumes.has(vol.id) && renamingState?.id !== vol.id;
                                 const isRenamingVol = renamingState?.id === vol.id && renamingState?.type === 'volume';
 
@@ -697,12 +712,13 @@ export function ChapterNavigator({
                                         key={vol.id}
                                         className="mb-2"
                                         draggable={isVolDraggable}
-                                        onDragStart={(e) => handleDragStart(e, 'volume', vIndex)}
-                                        onDragEnter={(e) => handleDragEnter(e, 'volume', vIndex)}
+                                        onDragStart={(e) => handleDragStart(e, 'volume', vol.id)}
+                                        onDragEnter={(e) => handleDragEnter(e, 'volume', vol.id)}
                                         onDragEnd={handleDragEnd}
-                                        onDragOver={(e) => e.preventDefault()}
+                                        onDragOver={(e) => handleDragOver(e, 'volume', vol.id)}
+                                        onDrop={(e) => handleDrop(e, 'volume', vol.id)}
                                     >
-                                        <div className="flex items-center justify-between group/vol pr-2">
+                                        <div className={`flex items-center justify-between group/vol rounded-md pr-2 ${dragTarget?.type === 'volume' && dragTarget.id === vol.id ? 'ring-2 ring-brand-400' : ''}`}>
                                             <button
                                                 onClick={() => toggleVolume(vol.id)}
                                                 onContextMenu={(e) => handleContextMenu(e, 'volume', vol.id)}
@@ -739,7 +755,7 @@ export function ChapterNavigator({
 
                                         {expandedVolumes.has(vol.id) && (
                                             <div className="ml-4 mt-1 space-y-0.5 border-l border-slate-200 dark:border-slate-800 pl-2">
-                                                {vol.chapters.map((chapter, cIndex) => {
+                                                {vol.chapters.map((chapter) => {
                                                     const isRenamingChap = renamingState?.id === chapter.id && renamingState?.type === 'chapter';
 
                                                     return (
@@ -748,10 +764,11 @@ export function ChapterNavigator({
                                                             key={chapter.id}
                                                             onContextMenu={(e) => handleContextMenu(e, 'chapter', chapter.id, vol.id)}
                                                             draggable={!isRenamingChap}
-                                                            onDragStart={(e) => handleDragStart(e, 'chapter', cIndex, vol.id)}
-                                                            onDragEnter={(e) => handleDragEnter(e, 'chapter', cIndex, vol.id)}
+                                                            onDragStart={(e) => handleDragStart(e, 'chapter', chapter.id, vol.id)}
+                                                            onDragEnter={(e) => handleDragEnter(e, 'chapter', chapter.id, vol.id)}
                                                             onDragEnd={handleDragEnd}
-                                                            onDragOver={(e) => e.preventDefault()}
+                                                            onDragOver={(e) => handleDragOver(e, 'chapter', chapter.id, vol.id)}
+                                                            onDrop={(e) => handleDrop(e, 'chapter', chapter.id, vol.id)}
                                                             onClick={() => {
                                                                 if (isRenamingChap) return;
                                                                 setSidebarSearchTarget(null);
@@ -764,6 +781,7 @@ export function ChapterNavigator({
                                                                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
                                                             }
                                                                 ${sidebarSearchTarget?.type === 'chapter' && sidebarSearchTarget.id === chapter.id && activeChapterId === chapter.id ? 'ring-1 ring-brand-200 dark:ring-brand-800' : ''}
+                                                                ${dragTarget?.type === 'chapter' && dragTarget.id === chapter.id && dragTarget.parentId === vol.id ? 'ring-2 ring-brand-400' : ''}
                                                             `}
                                                         >
                                                             <div className="flex items-center gap-2 overflow-hidden flex-1">

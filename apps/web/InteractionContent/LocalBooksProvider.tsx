@@ -177,7 +177,7 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 const items = newVolumes.map(volume => {
                     const stored = current.volumes.find(item => item.id === volume.id);
                     if (!stored) throw new Error('Volume not found. Reopen the book.');
-                    return { kind: 'volume' as const, bookId, volumeId: volume.id, expectedDatabaseVersion: stored.databaseVersion };
+                    return { kind: 'volume' as const, bookId, volumeId: volume.id, expectedDatabaseVersion: stored.databaseVersion, expectedPosition: stored.position };
                 });
                 const records = await localRepository.reorder<LocalVolume>({ parent: { kind: 'book', bookId, expectedDatabaseVersion: current.book.databaseVersion }, items });
                 client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({ ...old, volumes: records }));
@@ -192,7 +192,7 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 const items = newChapters.map(chapter => {
                     const stored = current.chapters.find(item => item.id === chapter.id && item.volumeId === volumeId);
                     if (!stored) throw new Error('Chapter not found. Reopen the book.');
-                    return { kind: 'chapter' as const, bookId, volumeId, chapterId: chapter.id, expectedDatabaseVersion: stored.databaseVersion };
+                    return { kind: 'chapter' as const, bookId, volumeId, chapterId: chapter.id, expectedDatabaseVersion: stored.databaseVersion, expectedPosition: stored.position };
                 });
                 const records = await localRepository.reorder<LocalChapter>({ parent: { kind: 'volume', bookId, volumeId, expectedDatabaseVersion: volume.databaseVersion }, items });
                 client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({

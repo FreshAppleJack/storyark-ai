@@ -52,7 +52,7 @@ export const localRepository = {
         call<T>('local_rename', { input }),
     setReadOnly: <T extends LocalRecord = LocalRecord>(input: ExpectedTarget & { isReadOnly: boolean }) =>
         call<T>('local_set_read_only', { input }),
-    reorder: <T extends LocalRecord = LocalRecord>(input: { parent: ExpectedTarget | null; items: ExpectedTarget[] }) =>
+    reorder: <T extends LocalRecord = LocalRecord>(input: { parent: ExpectedTarget | null; items: Array<ExpectedTarget & { expectedPosition: number }> }) =>
         call<T[]>('local_reorder', { input }),
     delete: <T extends LocalRecord = LocalRecord>(input: ExpectedTarget & { expectedParentVersion?: number }) =>
         call<{ deletedId: string; parent: T | null }>('local_delete', { input }),

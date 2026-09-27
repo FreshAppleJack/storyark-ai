@@ -91,6 +91,44 @@ describe('ChapterNavigator', () => {
         expect(screen.queryByText('Chapter One')).not.toBeInTheDocument();
     });
 
+    it('commits a chapter reorder once on drop and ignores cancelled drags', () => {
+        const props = createProps();
+        const { container } = render(<ChapterNavigator {...props} />);
+        const first = container.querySelector('#sidebar-chapter-c1') as HTMLElement;
+        const second = container.querySelector('#sidebar-chapter-c2') as HTMLElement;
+
+        fireEvent.dragStart(first);
+        fireEvent.dragEnter(second);
+        fireEvent.dragOver(second);
+        expect(props.onReorderChapters).not.toHaveBeenCalled();
+        expect(second).toHaveClass('ring-2');
+        fireEvent.drop(second);
+        fireEvent.dragEnd(first);
+        expect(props.onReorderChapters).toHaveBeenCalledTimes(1);
+        expect(props.onReorderChapters).toHaveBeenCalledWith('v1', [book.volumes[0].chapters[1], book.volumes[0].chapters[0]]);
+
+        fireEvent.dragStart(first);
+        fireEvent.dragEnter(second);
+        fireEvent.dragEnd(first);
+        expect(props.onReorderChapters).toHaveBeenCalledTimes(1);
+    });
+
+    it('commits a volume reorder only after dropping on another volume', () => {
+        const props = createProps();
+        const { container } = render(<ChapterNavigator {...props} />);
+        fireEvent.click(screen.getByText('Volume 1'));
+        const first = container.querySelector('#sidebar-volume-v1') as HTMLElement;
+        const second = container.querySelector('#sidebar-volume-v2') as HTMLElement;
+
+        fireEvent.dragStart(first);
+        fireEvent.dragEnter(second);
+        expect(props.onReorderVolumes).not.toHaveBeenCalled();
+        fireEvent.drop(second);
+        fireEvent.dragEnd(first);
+        expect(props.onReorderVolumes).toHaveBeenCalledOnce();
+        expect(props.onReorderVolumes).toHaveBeenCalledWith([book.volumes[1], book.volumes[0]]);
+    });
+
     it('expands new volumes and removes deleted volume preferences', async () => {
         const user = userEvent.setup();
         const props = createProps();

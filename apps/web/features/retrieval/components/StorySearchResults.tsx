@@ -112,11 +112,10 @@ function renderIndexProgress(progress: RetrievalIndexProgress | null): ReactElem
     const percent = Math.min(100, Math.max(0, progress.percent));
     return (
         <div className="mt-2 rounded-md bg-slate-100 px-2 py-2 dark:bg-slate-950">
-            <div className="flex items-center justify-between text-[10px] text-slate-500 dark:text-slate-400">
-                <span>Approximate source progress</span>
+            <div className="text-center text-[10px] text-slate-500 dark:text-slate-400">
                 <span>{progress.totalSources === 0
                     ? 'No indexable sources'
-                    : `${progress.completedSources}/${progress.totalSources} sources · ${percent}%`}</span>
+                    : <>{progress.completedSources}/{progress.totalSources} sources · <strong className="font-semibold">{percent}%</strong></>}</span>
             </div>
             <div
                 className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"

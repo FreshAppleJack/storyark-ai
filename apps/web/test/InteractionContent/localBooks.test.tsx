@@ -204,8 +204,8 @@ describe('Local book mutations', () => {
             input: {
                 parent: { kind: 'volume', bookId: book.id, volumeId: volume.id, expectedDatabaseVersion: 1 },
                 items: [
-                    { kind: 'chapter', bookId: book.id, volumeId: volume.id, chapterId: secondChapter.id, expectedDatabaseVersion: 1 },
-                    { kind: 'chapter', bookId: book.id, volumeId: volume.id, chapterId: chapter.id, expectedDatabaseVersion: 1 },
+                    { kind: 'chapter', bookId: book.id, volumeId: volume.id, chapterId: secondChapter.id, expectedDatabaseVersion: 1, expectedPosition: secondChapter.position },
+                    { kind: 'chapter', bookId: book.id, volumeId: volume.id, chapterId: chapter.id, expectedDatabaseVersion: 1, expectedPosition: chapter.position },
                 ],
             },
         });

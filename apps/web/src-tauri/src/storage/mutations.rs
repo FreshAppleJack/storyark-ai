@@ -99,8 +99,8 @@ impl Database {
                 Target::Book { book_id } | Target::Volume { book_id, .. } => Some(book_id.clone()),
                 Target::Chapter { .. } => None,
             });
-        // A reorder never bumps the parent version: position is a child-row
-        // property, and callers update children from the returned records.
+        // Position has its own compare-and-swap below. A pure reorder must not
+        // change content versions or invalidate chapter summaries/embeddings.
         let child_table: &str = match &input.parent {
             None => "books",
             Some(parent) => {
@@ -138,7 +138,7 @@ impl Database {
         let mut seen = std::collections::HashSet::new();
         let mut ordered = Vec::with_capacity(input.items.len());
         for (index, item) in input.items.iter().enumerate() {
-            let belongs = match (&input.parent, &item.target) {
+            let belongs = match (&input.parent, &item.target.target) {
                 (None, Target::Book { .. }) => true,
                 (Some(parent), Target::Volume { book_id, .. }) => {
                     matches!(&parent.target, Target::Book { book_id: parent_id } if parent_id == book_id)
@@ -151,16 +151,38 @@ impl Database {
             if !belongs {
                 return Err(invalid());
             }
-            let located = locate(&tx, &item.target)?;
+            let located = locate(&tx, &item.target.target)?;
             if !seen.insert(located.id.clone()) {
                 return Err(invalid());
             }
             unlocked_ancestors(&located)?;
             unlocked(&located.row)?;
-            expected(&located.row, item.expected_database_version)?;
-            let changed = tx.execute(&format!("UPDATE {} SET position=?,database_version=database_version+1,updated_at=max(updated_at,?) WHERE id=? AND database_version=?", child_table), params![index as i64, now()?, located.id, item.expected_database_version])?;
-            if changed != 1 {
-                return Err(StorageError::new("VERSION_CONFLICT", "Record changed"));
+            expected(&located.row, item.target.expected_database_version)?;
+            if located.row["position"] != item.expected_position {
+                return Err(StorageError::new(
+                    "VERSION_CONFLICT",
+                    "Order changed; reload before reordering",
+                ));
+            }
+            if item.expected_position != index as i64 {
+                let changed = tx.execute(
+                    &format!(
+                        "UPDATE {} SET position=? WHERE id=? AND database_version=? AND position=?",
+                        child_table
+                    ),
+                    params![
+                        index as i64,
+                        located.id,
+                        item.target.expected_database_version,
+                        item.expected_position
+                    ],
+                )?;
+                if changed != 1 {
+                    return Err(StorageError::new(
+                        "VERSION_CONFLICT",
+                        "Order changed; reload before reordering",
+                    ));
+                }
             }
             ordered.push(record(&tx, child_table, &located.id)?);
         }
@@ -171,7 +193,7 @@ impl Database {
             return Err(invalid());
         }
         if let Some(book_id) = source_book_id {
-            super::retrieval_sources::sync_sources_in_transaction(&tx, &book_id)?;
+            super::retrieval_sources::sync_order_metadata_in_transaction(&tx, &book_id)?;
         }
         tx.commit()?;
         Ok(Value::Array(ordered))
