@@ -23,6 +23,7 @@
 }
 
 :root {
+  color-scheme: light;
   font-family: "Inter", system-ui, sans-serif;
   color: #1e293b;
   background: #f8fafc;
@@ -37,6 +38,7 @@
    page leaves the body shorter than the viewport, the uncovered area shows
    the html background. Keep it on-theme or dark mode flashes white. */
 :root.dark {
+  color-scheme: dark;
   color: #f1f5f9;
   background: #0f172a;
   scrollbar-color: rgb(148 163 184 / 30%) transparent;

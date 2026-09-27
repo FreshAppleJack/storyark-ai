@@ -105,6 +105,27 @@ describe('TiptapEditor', () => {
     expect(onUpdate).not.toHaveBeenCalled();
   });
 
+  it('scrolls smoothly to a lexical match and clears the selection for semantic navigation', () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    const ref = React.createRef<TiptapEditorRef>();
+    render(<TiptapEditor ref={ref} contentId="chapter-1" content={chapter('精确命中短语和其他正文')} characters={characters} onUpdate={vi.fn()} />);
+    const editor = ref.current!.editor!;
+    const locator = retrievalLocator(0, Array.from(editor.state.doc.textContent).length);
+
+    act(() => {
+      expect(ref.current!.focusRetrievalLocator(locator, { paragraphOrdinal: 0, textOffset: 0, textLength: 6 })).toBe(true);
+    });
+    expect(editor.state.selection.empty).toBe(false);
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }));
+
+    act(() => {
+      expect(ref.current!.focusRetrievalLocator(locator, null)).toBe(true);
+    });
+    expect(editor.state.selection.empty).toBe(true);
+    expect(scrollTo).toHaveBeenCalledTimes(2);
+    scrollTo.mockRestore();
+  });
+
   it('keeps blockquote paragraph ordinals aligned with the retrieval indexer', () => {
     const content = JSON.stringify({
       type: 'doc',

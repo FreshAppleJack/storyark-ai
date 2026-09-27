@@ -156,6 +156,20 @@ describe('ChapterNavigator', () => {
         expect(props.onSelectChapter).toHaveBeenCalledWith('c2');
     });
 
+    it('clears the search target outline when another chapter is selected', async () => {
+        const user = userEvent.setup();
+        const { container, rerender } = render(<ChapterNavigator {...createProps({ localMode: true })} />);
+        fireEvent.change(screen.getByPlaceholderText('Search chapters'), { target: { value: 'One' } });
+        await user.click(screen.getByRole('button', { name: /Chapter One.*Volume 1/ }));
+        rerender(<ChapterNavigator {...createProps({ localMode: true })} activeChapterId="c1" />);
+        expect(container.querySelector('#sidebar-chapter-c1')).toHaveClass('ring-1');
+
+        await user.click(screen.getByText('Chapter Two'));
+        rerender(<ChapterNavigator {...createProps({ localMode: true })} activeChapterId="c2" />);
+        expect(container.querySelector('#sidebar-chapter-c1')).not.toHaveClass('ring-1');
+        expect(container.querySelector('#sidebar-chapter-c2')).not.toHaveClass('ring-1');
+    });
+
     it('keeps the search form layout stable when a semantic search fails', async () => {
         const search = vi.spyOn(retrievalRepository, 'search').mockRejectedValue(new Error('Search probe failure'));
         const { container } = render(<ChapterNavigator {...createProps({ localMode: true })} />);

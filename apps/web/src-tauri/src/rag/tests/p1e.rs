@@ -33,7 +33,7 @@ fn chunk_ids_are_stable_and_include_all_identity_inputs() {
     let first = chunk_id("book:manuscript:chapter", 4, 2, &text_hash);
     let second = chunk_id("book:manuscript:chapter", 4, 2, &text_hash);
     assert_eq!(first, second);
-    assert!(first.contains(":v4:i1:o2:"));
+    assert!(first.contains(&format!(":v4:i{}:o2:", CHUNK_INDEX_VERSION)));
     assert_ne!(first, chunk_id("book:manuscript:chapter", 5, 2, &text_hash));
     assert_ne!(first, chunk_id("book:manuscript:chapter", 4, 3, &text_hash));
     assert_ne!(

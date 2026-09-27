@@ -248,11 +248,7 @@ fn chapter_sources(
             None
         };
         let body_supported = body_text.is_some();
-        let source_text = match body_text.as_deref() {
-            Some(body) if body.is_empty() => chapter.title.clone(),
-            Some(body) => format!("{}\n{}", chapter.title, body),
-            None => chapter.title.clone(),
-        };
+        let source_text = body_text.unwrap_or_default();
         let source_status = if chapter.content_format == "tiptap-json" && body_supported {
             RetrievalSourceStatus::Active
         } else {
@@ -680,19 +676,9 @@ fn blocks_for_source(draft: &SourceDraft, chapters: &[ChapterContext]) -> Vec<Ch
     let Ok(value) = serde_json::from_str::<Value>(&chapter.content) else {
         return Vec::new();
     };
-    let Some(mut body_blocks) = tiptap_blocks(&value) else {
+    let Some(body_blocks) = tiptap_blocks(&value) else {
         return Vec::new();
     };
-    body_blocks.insert(
-        0,
-        ChunkBlock {
-            text: chapter.title.clone(),
-            index_terms: Vec::new(),
-            node_path: Vec::new(),
-            paragraph_ordinal: None,
-            boundary_before: false,
-        },
-    );
     body_blocks
 }
 

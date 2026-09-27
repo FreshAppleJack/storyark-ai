@@ -1,7 +1,7 @@
 use super::contracts::{RetrievalChunkLocator, RetrievalParagraphSpan};
 use serde_json::Value;
 
-pub const CHUNK_INDEX_VERSION: i64 = 1;
+pub const CHUNK_INDEX_VERSION: i64 = 2;
 pub const TARGET_CONTENT_CHARS: usize = 600;
 pub const MAX_CHUNK_CHARS: usize = 800;
 pub const OVERLAP_CHARS: usize = 80;

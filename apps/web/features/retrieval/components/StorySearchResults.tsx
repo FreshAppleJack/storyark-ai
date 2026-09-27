@@ -177,7 +177,8 @@ function SearchHitCard({
 }): ReactElement {
     const excerpt = hitExcerpt(hit);
     const preview = buildSearchPreview(excerpt, query);
-    const highlightedPreview = splitPreviewHighlight(preview);
+    const isLexicalHit = hit.recallMethods.includes('lexical');
+    const highlightedPreview = isLexicalHit ? splitPreviewHighlight(preview) : null;
     const canExpand = Array.from(excerpt).length > SEARCH_PREVIEW_MAX_CHARACTERS;
     const chapterId = hit.chapterId || hit.locator.chapterId;
     const canLocateInManuscript = hit.sourceKind === 'manuscript'
@@ -233,7 +234,7 @@ function SearchHitCard({
                                 onOpenChapterSummary(chapterId);
                                 return;
                             }
-                            onSelect(canLocateInManuscript
+                            onSelect(canLocateInManuscript && highlightedPreview
                                 ? { chunkTextOffset: preview.chunkTextOffset, focusTextLength: preview.focusTextLength }
                                 : null);
                         }}

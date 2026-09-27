@@ -14,7 +14,7 @@ describe('StorySearchResults', () => {
             sourceVersion: 7,
             indexUpdatedAt: 1,
             freshness: 'fresh',
-            recallMethods: ['semantic'],
+            recallMethods: ['lexical'],
             chunk: { sourceText, shortQuote: sourceText.slice(0, 96) },
             locator: {
                 volumeTitleSnapshot: 'Volume 1',
@@ -128,7 +128,7 @@ describe('StorySearchResults', () => {
         expect(screen.queryByRole('button', { name: 'Open and locate' })).not.toBeInTheDocument();
     });
 
-    it('shows the same centered source excerpt that the semantic fallback location will use', () => {
+    it('opens a semantic-only excerpt without selecting or highlighting guessed text', () => {
         const sourceText = `${'开头叙述。'.repeat(40)}这是语义命中的中间独特段落。${'结尾叙述。'.repeat(40)}`;
         const hit = {
             hitId: 'semantic-hit-without-literal-match',
@@ -178,11 +178,9 @@ describe('StorySearchResults', () => {
         expect(excerpt?.textContent).not.toBe(sourceText);
         expect(excerpt?.textContent?.startsWith('…')).toBe(true);
         expect(Array.from(excerpt?.textContent ?? '').length).toBeLessThanOrEqual(122);
+        expect(excerpt?.querySelector('mark')).toBeNull();
 
         fireEvent.click(screen.getByRole('button', { name: 'Open and locate' }));
-        expect(onSelectHit).toHaveBeenCalledWith(hit, {
-            chunkTextOffset: Math.floor(Array.from(sourceText).length / 2),
-            focusTextLength: 24,
-        });
+        expect(onSelectHit).toHaveBeenCalledWith(hit, null);
     });
 });

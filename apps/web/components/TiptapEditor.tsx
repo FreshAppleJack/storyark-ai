@@ -29,6 +29,28 @@ import type { RetrievalChunkLocator, RetrievalTextFocus } from '../domain/retrie
 const EMPTY_CHARACTERS: Character[] = [];
 const RETRIEVAL_BLOCK_TYPES = new Set(['paragraph', 'heading', 'blockquote', 'codeBlock']);
 
+function scrollEditorTargetIntoView(editorDom: HTMLElement, target: { top: number; height: number }): void {
+    let scrollParent = editorDom.parentElement;
+    while (scrollParent && scrollParent !== document.body && scrollParent !== document.documentElement) {
+        const overflowY = window.getComputedStyle(scrollParent).overflowY;
+        if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay')
+            && scrollParent.scrollHeight > scrollParent.clientHeight) break;
+        scrollParent = scrollParent.parentElement;
+    }
+    const targetCenterY = target.top + target.height / 2;
+    if (scrollParent && scrollParent !== document.body && scrollParent !== document.documentElement) {
+        const parentRect = scrollParent.getBoundingClientRect();
+        const delta = targetCenterY - (parentRect.top + scrollParent.clientHeight / 2);
+        const maxTop = scrollParent.scrollHeight - scrollParent.clientHeight;
+        scrollParent.scrollTo({
+            top: Math.max(0, Math.min(maxTop, scrollParent.scrollTop + delta)),
+            behavior: 'smooth',
+        });
+    } else {
+        window.scrollTo({ top: window.scrollY + targetCenterY - window.innerHeight / 2, behavior: 'smooth' });
+    }
+}
+
 function positionAtRetrievalTextOffset(
     block: PMNode,
     blockPosition: number,
@@ -656,39 +678,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 return false;
             }
 
-            // Find the nearest scrollable ancestor of the editor. The actual
-            // scroll container is the outer `overflow-y-auto` page region,
-            // not the contenteditable itself.
-            const findScrollParent = (el: HTMLElement | null): HTMLElement | null => {
-                let cur: HTMLElement | null = el;
-                while (cur && cur !== document.body && cur !== document.documentElement) {
-                    const style = window.getComputedStyle(cur);
-                    const overflowY = style.overflowY;
-                    if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay')
-                        && cur.scrollHeight > cur.clientHeight) {
-                        return cur;
-                    }
-                    cur = cur.parentElement;
-                }
-                return null;
-            };
-
-            const scrollParent = findScrollParent(target.parentElement);
-            const targetRect = target.getBoundingClientRect();
-            const targetCenterY = targetRect.top + targetRect.height / 2;
-
-            if (scrollParent) {
-                const parentRect = scrollParent.getBoundingClientRect();
-                // How far the target center is from the container's center (in viewport space).
-                const delta = targetCenterY - (parentRect.top + scrollParent.clientHeight / 2);
-                const maxTop = scrollParent.scrollHeight - scrollParent.clientHeight;
-                const nextTop = Math.max(0, Math.min(maxTop, scrollParent.scrollTop + delta));
-                scrollParent.scrollTo({ top: nextTop, behavior: 'smooth' });
-            } else {
-                // Fallback: scroll the window.
-                const delta = targetCenterY - window.innerHeight / 2;
-                window.scrollTo({ top: window.scrollY + delta, behavior: 'smooth' });
-            }
+            scrollEditorTargetIntoView(editorDom, target.getBoundingClientRect());
             return true;
         },
         focusRetrievalLocator: (locator: RetrievalChunkLocator, focus?: RetrievalTextFocus | null) => {
@@ -713,9 +703,18 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
             if (!targetBlock) return false;
 
             const block = targetBlock as { node: PMNode; position: number };
+            const editorDom = editor.view.dom as HTMLElement;
+            if (!focus || focus.textLength <= 0) {
+                const targetElement = editor.view.nodeDOM(block.position);
+                if (!(targetElement instanceof Element)) return false;
+                const caret = TextSelection.near(editor.state.doc.resolve(block.position + 1));
+                editor.view.dispatch(editor.state.tr.setSelection(caret));
+                scrollEditorTargetIntoView(editorDom, targetElement.getBoundingClientRect());
+                return true;
+            }
             const fallbackOffset = firstSpan?.paragraphOrdinal === targetParagraph ? firstSpan.startOffset : 0;
             const startOffset = Math.max(0, focus?.textOffset ?? fallbackOffset);
-            const selectedLength = Math.max(0, focus?.textLength ?? 24);
+            const selectedLength = Math.max(0, focus.textLength);
             const from = positionAtRetrievalTextOffset(block.node, block.position, startOffset, 'start');
             const to = positionAtRetrievalTextOffset(block.node, block.position, startOffset + selectedLength, 'end');
             try {
@@ -725,8 +724,10 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                     doc.resolve(Math.max(0, Math.min(doc.content.size, to))),
                     1,
                 );
-                editor.view.dispatch(editor.state.tr.setSelection(selection).scrollIntoView());
-                editor.view.focus();
+                editor.view.dispatch(editor.state.tr.setSelection(selection));
+                editorDom.focus({ preventScroll: true });
+                const position = editor.view.coordsAtPos(selection.from);
+                scrollEditorTargetIntoView(editorDom, { top: position.top, height: position.bottom - position.top });
             } catch (error) {
                 dlog('focusRetrievalLocator: indexed offset could not be mapped', error);
                 return false;

@@ -53,6 +53,10 @@ fn source_registry_keeps_display_text_separate_and_invalidates_changed_versions(
     assert_eq!(manuscript["indexStatus"], "stale");
     assert!(manuscript["sourceText"].as_str().unwrap().contains("你好"));
     assert!(manuscript["indexText"].as_str().unwrap().contains("你好"));
+    assert!(!manuscript["sourceText"]
+        .as_str()
+        .unwrap()
+        .contains(&chapter.title));
     assert_ne!(manuscript["sourceText"], json!(""));
 
     let note = source(&sources, "foreshadowing_note");
@@ -65,7 +69,7 @@ fn source_registry_keeps_display_text_separate_and_invalidates_changed_versions(
     let changed = source(&db.sync_retrieval_sources(&book_id).unwrap(), "manuscript").clone();
     assert_eq!(changed["sourceVersion"], 3);
     assert_eq!(changed["indexStatus"], "stale");
-    assert!(changed["sourceText"]
+    assert!(!changed["sourceText"]
         .as_str()
         .unwrap()
         .contains("Renamed chapter"));
@@ -359,9 +363,20 @@ fn chunk_registry_keeps_locators_and_historical_version_identity() {
         .expect("a saved manuscript should produce a chunk");
     assert_eq!(first_chunk["bookId"], book_id);
     assert_eq!(first_chunk["sourceVersion"], 2);
-    assert_eq!(first_chunk["indexVersion"], 1);
+    assert_eq!(
+        first_chunk["indexVersion"],
+        crate::rag::chunking::CHUNK_INDEX_VERSION
+    );
     assert_eq!(first_chunk["locator"]["chapterId"], chapter.chapter_id);
     assert_eq!(first_chunk["locator"]["chapterTitleSnapshot"], "New title");
+    assert!(!first_chunk["sourceText"]
+        .as_str()
+        .unwrap()
+        .contains("New title"));
+    assert!(!first_chunk["indexText"]
+        .as_str()
+        .unwrap()
+        .contains("New title"));
     assert!(!first_chunk["locator"]["tiptapNodePaths"]
         .as_array()
         .unwrap()
@@ -436,7 +451,7 @@ fn lexical_search_uses_cjk_fts_and_returns_locators() {
             [&source_id],
         )
         .unwrap();
-    db.connection.execute("UPDATE retrieval_sources SET index_status='ready',index_version=1,embedding_fingerprint=? WHERE source_id=?", rusqlite::params![current_fingerprint(), source_id]).unwrap();
+    db.connection.execute("UPDATE retrieval_sources SET index_status='ready',index_version=?,embedding_fingerprint=? WHERE source_id=?", rusqlite::params![crate::rag::chunking::CHUNK_INDEX_VERSION, current_fingerprint(), source_id]).unwrap();
     let repaired = db.sync_retrieval_sources(&chapter.book_id).unwrap();
     assert_eq!(source(&repaired, "manuscript")["indexStatus"], "stale");
     assert_eq!(

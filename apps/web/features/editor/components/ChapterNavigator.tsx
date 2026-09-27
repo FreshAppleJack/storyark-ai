@@ -501,12 +501,6 @@ export function ChapterNavigator({
                 previewAnchor.focusTextLength,
             )
             : null;
-        if (!focus) {
-            setSidebarSearchTarget({ type: 'chapter', id: chapterId });
-            setSidebarSearchMessage(`Opened the source chapter: "${hit.locator.chapterTitleSnapshot || chapterId}". This excerpt has no precise manuscript position; refresh the local index and try again.`);
-            scrollSidebarItemIntoView('chapter', chapterId);
-            return;
-        }
         onOpenRetrievalLocator?.(chapterId, resolution.locator, focus);
         setSidebarSearchTarget({ type: 'chapter', id: chapterId });
         setSidebarSearchMessage(`Opened the source chapter: "${hit.locator.chapterTitleSnapshot || chapterId}". Located by ${resolution.matchedBy === 'version' ? 'source version' : 'unique text hash'}.`);
@@ -758,14 +752,18 @@ export function ChapterNavigator({
                                                             onDragEnter={(e) => handleDragEnter(e, 'chapter', cIndex, vol.id)}
                                                             onDragEnd={handleDragEnd}
                                                             onDragOver={(e) => e.preventDefault()}
-                                                            onClick={() => !isRenamingChap && onSelectChapter(chapter.id)}
+                                                            onClick={() => {
+                                                                if (isRenamingChap) return;
+                                                                setSidebarSearchTarget(null);
+                                                                void onSelectChapter(chapter.id);
+                                                            }}
                                                             className={`
                                                                 w-full flex items-center justify-between p-2 text-sm rounded-md transition-colors text-left group cursor-grab active:cursor-grabbing
                                                                 ${activeChapterId === chapter.id
                                                                 ? 'bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300 font-medium'
                                                                 : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
                                                             }
-                                                                ${sidebarSearchTarget?.type === 'chapter' && sidebarSearchTarget.id === chapter.id ? 'ring-1 ring-brand-200 dark:ring-brand-800' : ''}
+                                                                ${sidebarSearchTarget?.type === 'chapter' && sidebarSearchTarget.id === chapter.id && activeChapterId === chapter.id ? 'ring-1 ring-brand-200 dark:ring-brand-800' : ''}
                                                             `}
                                                         >
                                                             <div className="flex items-center gap-2 overflow-hidden flex-1">
