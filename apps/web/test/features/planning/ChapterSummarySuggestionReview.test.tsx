@@ -61,16 +61,19 @@ function renderReview(overrides: Partial<React.ComponentProps<typeof ChapterSumm
     return callbacks;
 }
 
-it('keeps the candidate marked unaccepted and reveals source comparison and provenance', () => {
+it('keeps the candidate separate from the manual summary without showing chapter source text', () => {
     const callbacks = renderReview();
 
-    expect(screen.getByText('Not accepted')).toBeTruthy();
-    expect(screen.getByText(/The current summary remains unchanged/)).toBeTruthy();
+    expect(screen.queryByText('Not accepted')).toBeNull();
+    expect(screen.getByText(/stays unchanged until you accept it/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Review' }));
     expect(screen.getByText('Manual: she opened the room.')).toBeTruthy();
     expect(screen.getByText('She entered the archive.')).toBeTruthy();
-    expect(screen.getByText(/She pushed open the archive door/)).toBeTruthy();
+    expect(screen.queryByText(/She pushed open the archive door/)).toBeNull();
     expect(screen.getByText(/No supporting retrieval sources matched/)).toBeTruthy();
+    const actions = screen.getByRole('button', { name: 'Accept' }).parentElement;
+    expect(actions).toContainElement(screen.getByRole('button', { name: 'Keep manual' }));
+    expect(actions).toContainElement(screen.getByRole('button', { name: 'Hide review' }));
     fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
     expect(callbacks.onAccept).toHaveBeenCalledWith(chapterId);
     fireEvent.click(screen.getByRole('button', { name: 'Keep manual' }));

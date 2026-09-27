@@ -68,6 +68,16 @@ beforeEach(() => {
 });
 
 describe('page draft and persistence boundaries', () => {
+    it('places the chapter summary workspace in the central desktop column', async () => {
+        renderPage(<StoryOutline />, '/books/1/story-outline');
+        const overview = await screen.findByRole('complementary', { name: 'Story overview' });
+        const summaries = screen.getByRole('main', { name: 'Chapter summaries workspace' });
+        expect(overview).toHaveClass('xl:order-1');
+        expect(summaries).toHaveClass('xl:order-2');
+        expect(screen.getByText('Story Synopsis')).toBeInTheDocument();
+        expect(screen.getByText('Chapter Summaries')).toBeInTheDocument();
+    });
+
     it('saves the current character before switching cards', async () => {
         renderPage(<CharacterSettings />, '/books/1/settings?charId=4');
         const name = await screen.findByDisplayValue('Alice');

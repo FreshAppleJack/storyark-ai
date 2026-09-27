@@ -151,7 +151,7 @@ describe('chapter summary generation context', () => {
             providerId: 'example.invalid',
             configId: config.id,
             modelId: 'model-a',
-            promptVersion: 'chapter-summary-v1',
+            promptVersion: 'chapter-summary-v2',
             source: {
                 bookId,
                 chapterId,
@@ -163,7 +163,8 @@ describe('chapter summary generation context', () => {
         });
         expect(validateChapterSummaryCandidate('  她打开了档案室。  ')).toEqual({ summary: '她打开了档案室。', error: null });
         expect(validateChapterSummaryCandidate('  ')).toMatchObject({ summary: null });
-        expect(validateChapterSummaryCandidate('超'.repeat(4_001))).toMatchObject({ summary: null });
+        expect(validateChapterSummaryCandidate('字'.repeat(250))).toMatchObject({ summary: '字'.repeat(250) });
+        expect(validateChapterSummaryCandidate('超'.repeat(251))).toMatchObject({ summary: null });
         expect(planning.chapterSummaries[0].summary).toBe('Manual: she opens the room.');
     });
 

@@ -10,9 +10,9 @@ import type { Book, Chapter, StoryPlanning } from '../../types';
 import type { AiConfigRecord } from '../../data/local/aiSettingsRepository';
 import type { ContextSection, GenerationTarget } from '../../data/local/aiGenerationRepository';
 
-export const CHAPTER_SUMMARY_PROMPT_VERSION = 'chapter-summary-v1';
+export const CHAPTER_SUMMARY_PROMPT_VERSION = 'chapter-summary-v2';
 export const CHAPTER_SUMMARY_CONTEXT_MAX_CHARS = 60_000;
-export const CHAPTER_SUMMARY_OUTPUT_CHARS = 4_000;
+export const CHAPTER_SUMMARY_OUTPUT_CHARS = 250;
 export const CHAPTER_SUMMARY_MAX_TEXT_CHARS = 52_000;
 export const CHAPTER_SUMMARY_RETRIEVAL_QUERY_CHARS = 4_000;
 

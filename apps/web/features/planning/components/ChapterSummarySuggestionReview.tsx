@@ -29,7 +29,7 @@ function statusText(suggestion: ChapterSummarySuggestion, isCurrent: boolean): s
         case 'starting': return 'Preparing the chapter snapshot and local supporting sources…';
         case 'streaming': return 'Streaming into a temporary suggestion. The saved summary is unchanged.';
         case 'candidate': return isCurrent
-            ? 'Not accepted. The current summary remains unchanged until you accept this suggestion.'
+            ? 'Suggestion ready. Your current summary stays unchanged until you accept it.'
             : 'The source changed after generation. This suggestion is preserved for review but cannot be accepted.';
         case 'invalid': return 'The response could not be used as a summary. Raw text is preserved below; the current summary is unchanged.';
         case 'cancelled': return 'Generation stopped. The current summary is unchanged.';
@@ -73,7 +73,6 @@ export function ChapterSummarySuggestionReview({
                 <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-200">
                     <Sparkles size={14} className="text-brand-500" />
                     Chapter summary suggestion
-                    {suggestion?.status === 'candidate' && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">Not accepted</span>}
                 </div>
                 {isStreaming ? (
                     <Button variant="secondary" size="sm" onClick={() => onStop(chapterId)} icon={<X size={14} />}>Stop</Button>
@@ -91,7 +90,7 @@ export function ChapterSummarySuggestionReview({
                 )}
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                Sends this chapter and any allowed local supporting excerpts to the configured AI provider. Generated text stays a suggestion until accepted.
+                Creates a third-person summary of about 200–250 Chinese characters. Generated text stays a suggestion until accepted.
             </p>
             {!hasWrittenText && <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">Add readable chapter text before generating. Manual summary editing remains available.</p>}
             {isReadOnly && <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">This book is locked. You can review the summary, but generation and acceptance are disabled.</p>}
@@ -102,28 +101,26 @@ export function ChapterSummarySuggestionReview({
                     {suggestion.sourceSnapshot && <p className="mb-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
                         Primary source: {volumeTitle} / {chapterTitle} · chapter v{suggestion.sourceSnapshot.chapterDatabaseVersion ?? 'unversioned'}
                     </p>}
-                    <div className="flex flex-wrap items-start justify-between gap-2">
-                        <p role="status" className={`min-w-0 flex-1 text-xs leading-5 ${suggestion.status === 'invalid' || suggestion.status === 'failed' || suggestion.status === 'stale' || suggestion.status === 'save-failed'
+                    <p role="status" className={`text-xs leading-5 ${suggestion.status === 'invalid' || suggestion.status === 'failed' || suggestion.status === 'stale' || suggestion.status === 'save-failed'
                             ? 'text-amber-700 dark:text-amber-300' : 'text-slate-600 dark:text-slate-300'}`}>
-                            {statusText(suggestion, isCurrent)}
-                        </p>
-                        <div className="flex flex-wrap gap-2">
-                            {(suggestion.suggestedSummary || suggestion.rawText) && (
-                                <Button variant="ghost" size="sm" onClick={() => setIsReviewOpen(open => !open)} icon={<Eye size={14} />}>
-                                    {isReviewOpen ? 'Hide review' : 'Review'}
-                                </Button>
-                            )}
-                            {hasCandidate && (
-                                <Button size="sm" disabled={!canAccept} onClick={() => { onAccept(chapterId); }} icon={<Check size={14} />}>
-                                    Accept
-                                </Button>
-                            )}
-                            {suggestion.status !== 'adopting' && (
-                                <Button variant="secondary" size="sm" disabled={isGenerating} onClick={() => onKeepManual(chapterId)}>
-                                    Keep manual
-                                </Button>
-                            )}
-                        </div>
+                        {statusText(suggestion, isCurrent)}
+                    </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
+                        {hasCandidate && (
+                            <Button size="sm" disabled={!canAccept} onClick={() => { onAccept(chapterId); }} icon={<Check size={14} />}>
+                                Accept
+                            </Button>
+                        )}
+                        {suggestion.status !== 'adopting' && (
+                            <Button variant="secondary" size="sm" disabled={isGenerating} onClick={() => onKeepManual(chapterId)}>
+                                Keep manual
+                            </Button>
+                        )}
+                        {(suggestion.suggestedSummary || suggestion.rawText) && (
+                            <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setIsReviewOpen(open => !open)} icon={<Eye size={14} />}>
+                                {isReviewOpen ? 'Hide review' : 'Review'}
+                            </Button>
+                        )}
                     </div>
                     {suggestion.errorMessage && <p role="alert" className="mt-2 text-xs leading-5 text-rose-700 dark:text-rose-300">{suggestion.errorMessage}</p>}
                     {suggestion.status === 'streaming' && suggestion.rawText && (
@@ -138,18 +135,13 @@ export function ChapterSummarySuggestionReview({
                     )}
                     {isReviewOpen && (
                         <div className="mt-3 grid grid-cols-1 gap-3">
-                            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
-                                <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Selected chapter source preview</h4>
-                                <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-slate-600 dark:text-slate-300">{suggestion.sourcePreview || 'The full chapter text was supplied; this preview is unavailable.'}</p>
-                                {suggestion.sourcePreview && <p className="mt-1 text-[11px] text-slate-400">Preview only; the full selected chapter text was supplied to the configured model.</p>}
-                            </div>
                             <div className="rounded-lg border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
-                                <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Current manual summary</h4>
-                                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">{suggestion.previousSummary || 'No existing summary.'}</p>
+                                <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Current summary</h4>
+                                <p className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">{suggestion.previousSummary || 'No existing summary.'}</p>
                             </div>
                             <div className="rounded-lg border border-brand-200 bg-white p-3 dark:border-brand-900/60 dark:bg-slate-900">
-                                <h4 className="text-[11px] font-semibold uppercase tracking-wide text-brand-600 dark:text-brand-300">New suggestion · not accepted</h4>
-                                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">{suggestion.suggestedSummary ?? suggestion.rawText ?? 'Waiting for model output…'}</p>
+                                <h4 className="text-[11px] font-semibold uppercase tracking-wide text-brand-600 dark:text-brand-300">Suggested summary</h4>
+                                <p className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap text-sm leading-6 text-slate-700 dark:text-slate-200">{suggestion.suggestedSummary ?? suggestion.rawText ?? 'Waiting for model output…'}</p>
                             </div>
                             <div>
                                 <RetrievalContextPanel

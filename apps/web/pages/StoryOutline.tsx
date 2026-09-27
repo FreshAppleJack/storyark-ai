@@ -82,7 +82,7 @@ function StoryOutlineContent({ bookId, localBook, persistence }: { bookId: strin
                     <Loader2 size={22} className="animate-spin mr-2" />Loading planning workspace...
                 </div>
             ) : (
-                <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[340px_minmax(420px,1fr)_380px] overflow-hidden">
+                <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto xl:grid-cols-[340px_minmax(420px,1fr)_380px] xl:overflow-hidden">
                     <ChapterSummariesPanel chapterOptions={editor.chapterOptions} targetChapterId={searchParams.get('chapterId')}
                         updateChapterSummary={editor.updateChapterSummary}
                         acknowledgeChapterSummaryChanges={editor.acknowledgeChapterSummaryChanges}

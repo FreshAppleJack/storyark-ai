@@ -18,7 +18,7 @@ export function PlotSettingsPanel({ planning, selectedPlotId, setSelectedPlotId,
     const confirmDeleteSelectedPlot = () => { deleteSelectedPlot(); setShowDeleteModal(false); };
     const selectPlot = (id: string) => { setSelectedPlotId(id); setLinkedChapterSearchQuery(''); setShowDeleteModal(false); };
     return <>
-        <aside className="min-h-0 bg-white dark:bg-slate-900 border-l border-slate-200 dark:border-slate-800 flex flex-col">
+        <aside className="order-3 flex min-h-[32rem] flex-col border-l border-slate-200 bg-white xl:min-h-0 dark:border-slate-800 dark:bg-slate-900">
             <div className="p-4 border-b border-slate-100 dark:border-slate-800">
                 <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">

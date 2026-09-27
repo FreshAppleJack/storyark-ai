@@ -218,7 +218,7 @@ describe('local chapter summary suggestion flow', () => {
             expectedDraftRevision: 6,
             generationMetadata: expect.objectContaining({
                 providerId: 'example.invalid',
-                promptVersion: 'chapter-summary-v1',
+                promptVersion: 'chapter-summary-v2',
                 source: expect.objectContaining({ bookId, chapterId, includesFuturePlan: false }),
             }),
         }));
@@ -244,6 +244,22 @@ describe('local chapter summary suggestion flow', () => {
         expect(result.current.suggestions[chapterId]).toMatchObject({ status: 'stale', rawText: 'A late stale summary.' });
         await act(async () => { await result.current.accept(chapterId); });
         expect(acceptSummary).not.toHaveBeenCalled();
+        expect(planning.chapterSummaries[0].summary).toBe('Keep my manual summary.');
+    });
+
+    it('stops an overlong streamed summary before it can replace manual text', async () => {
+        const adoptSummary = vi.fn(async () => 'saved' as const);
+        const { result } = renderHook(() => useChapterSummarySuggestions(options(6, adoptSummary)));
+        await waitFor(() => expect(result.current.modelAvailability).toBe('ready'));
+        await act(async () => { await result.current.generate(chapterId); });
+        const request = native.start.mock.calls[0][0];
+        const send = native.eventHandler;
+        await act(async () => {
+            send?.({ requestId: request.requestId, sessionId: request.sessionId, sequence: 0, payload: { kind: 'delta', text: '字'.repeat(251) } });
+        });
+        expect(result.current.suggestions[chapterId]).toMatchObject({ status: 'invalid', suggestedSummary: null });
+        expect(native.cancel).toHaveBeenCalledWith(request.requestId, request.sessionId);
+        expect(adoptSummary).not.toHaveBeenCalled();
         expect(planning.chapterSummaries[0].summary).toBe('Keep my manual summary.');
     });
 
