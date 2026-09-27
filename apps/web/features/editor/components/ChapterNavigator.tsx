@@ -557,7 +557,7 @@ export function ChapterNavigator({
 
                 {sidebarExpanded && (
                     <div className={`min-w-0 p-4 ${hideChapterTree ? 'flex min-h-0 flex-1 flex-col' : 'flex-shrink-0 border-b border-slate-100 dark:border-slate-800'}`}>
-                        <div className="flex items-center gap-3 mb-2">
+                        <div className="flex items-center gap-3">
                             <div className={`w-10 h-14 ${book.coverColor || 'bg-slate-700'} rounded shadow-sm flex-shrink-0`}></div>
                             <div className="overflow-hidden">
                                 <h2 className="font-semibold text-sm text-slate-900 dark:text-white truncate" title={book.title}>{book.title}</h2>
