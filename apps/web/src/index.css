@@ -44,6 +44,12 @@
   scrollbar-color: rgb(148 163 184 / 30%) transparent;
 }
 
+:root.dark .editor-toolbar-select,
+:root.dark .editor-toolbar-select option {
+  background-color: #0f172a;
+  color: #f1f5f9;
+}
+
 html,
 body,
 #root {

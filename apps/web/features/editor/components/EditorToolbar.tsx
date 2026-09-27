@@ -121,7 +121,7 @@ export function EditorToolbar({ editor, isEditable, onToggleReadOnly }: EditorTo
             className="flex h-full items-center gap-1 overflow-x-auto border-b border-slate-100 bg-white/85 px-4 select-none backdrop-blur transition-all scrollbar-hidden-x dark:border-slate-800 dark:bg-slate-950/85"
         >
             <select
-                className="h-8 text-xs border border-slate-200 dark:border-slate-700 rounded px-2 text-slate-600 dark:text-slate-300 outline-none focus:border-brand-500 bg-transparent w-24 truncate mr-1"
+                className="editor-toolbar-select h-8 text-xs border border-slate-200 dark:border-slate-700 rounded px-2 text-slate-600 dark:text-slate-300 outline-none focus:border-brand-500 bg-transparent w-24 truncate mr-1"
                 onMouseDown={saveSelection}
                 onKeyDown={saveSelection}
                 onChange={(e) => {
@@ -138,7 +138,7 @@ export function EditorToolbar({ editor, isEditable, onToggleReadOnly }: EditorTo
             </select>
 
             <select
-                className="h-8 text-xs border border-slate-200 dark:border-slate-700 rounded px-2 text-slate-600 dark:text-slate-300 outline-none focus:border-brand-500 bg-transparent w-24 truncate mr-2"
+                className="editor-toolbar-select h-8 text-xs border border-slate-200 dark:border-slate-700 rounded px-2 text-slate-600 dark:text-slate-300 outline-none focus:border-brand-500 bg-transparent w-24 truncate mr-2"
                 onMouseDown={saveSelection}
                 onKeyDown={saveSelection}
                 onChange={(e) => {
