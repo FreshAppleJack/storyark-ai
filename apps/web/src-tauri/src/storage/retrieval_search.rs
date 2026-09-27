@@ -153,20 +153,24 @@ fn lexical_recall(
         "SELECT f.chunk_id,bm25(retrieval_chunks_fts)
          FROM retrieval_chunks_fts f
          WHERE f.book_id=? AND retrieval_chunks_fts MATCH ?
-         ORDER BY bm25(retrieval_chunks_fts),f.chunk_id LIMIT ?",
+         ORDER BY bm25(retrieval_chunks_fts),f.chunk_id",
     )?;
-    let rows = statement.query_map(params![book_id, query, limit as i64], |row| {
+    let rows = statement.query_map(params![book_id, query], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, f64>(1)?))
     })?;
-    let mut recalls = Vec::new();
-    for (index, row) in rows.enumerate() {
+    let mut recalls = Vec::with_capacity(limit);
+    for row in rows {
         let (chunk_id, rank) = row?;
-        if chunks.contains_key(&chunk_id) {
-            recalls.push(RankedRecall {
-                chunk_id,
-                score: 1.0 / (1.0 + (-rank).max(0.0) as f32),
-                rank: index + 1,
-            });
+        if !chunks.contains_key(&chunk_id) {
+            continue;
+        }
+        recalls.push(RankedRecall {
+            chunk_id,
+            score: 1.0 / (1.0 + (-rank).max(0.0) as f32),
+            rank: recalls.len() + 1,
+        });
+        if recalls.len() >= limit {
+            break;
         }
     }
     Ok(recalls)

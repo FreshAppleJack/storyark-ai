@@ -77,6 +77,12 @@ export interface RetrievalParagraphSpan {
     endOffset: number;
 }
 
+export interface RetrievalTextFocus {
+    paragraphOrdinal: number;
+    textOffset: number;
+    textLength: number;
+}
+
 export interface RetrievalChunkLocator {
     chapterId: string | null;
     volumeId: string | null;

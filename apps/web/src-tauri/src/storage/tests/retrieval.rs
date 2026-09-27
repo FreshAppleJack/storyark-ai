@@ -469,6 +469,91 @@ fn lexical_search_uses_cjk_fts_and_returns_locators() {
 }
 
 #[test]
+fn lexical_search_applies_scope_before_its_result_limit() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let mut chapter = fixture(&mut db);
+    chapter.content = json!({
+        "type": "doc",
+        "content": [{
+            "type": "paragraph",
+            "content": [{"type": "text", "text": "她并不脆弱。"}]
+        }]
+    })
+    .to_string();
+    db.save_chapter(chapter.clone()).unwrap();
+
+    let (target_chunk_id, matching_document): (String, String) = db
+        .connection
+        .query_row(
+            "SELECT f.chunk_id,f.search_text
+             FROM retrieval_chunks_fts f
+             JOIN retrieval_chunks c ON c.chunk_id=f.chunk_id
+             JOIN retrieval_sources s ON s.source_id=c.source_id AND s.book_id=c.book_id
+             WHERE f.book_id=? AND s.source_kind='manuscript' AND c.source_text LIKE '%脆弱%'
+             LIMIT 1",
+            [&chapter.book_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+
+    // Excluded FTS rows used to fill SQL's top-N limit before scope filtering,
+    // hiding a valid manuscript match behind unrelated evidence sources.
+    for index in 0..12 {
+        db.connection
+            .execute(
+                "INSERT INTO retrieval_chunks_fts(chunk_id,book_id,source_id,source_version,index_version,search_text)
+                 VALUES (?,?,?,?,?,?)",
+                rusqlite::params![
+                    format!("!out-of-scope-decoy-{index:02}"),
+                    chapter.book_id,
+                    "excluded-source",
+                    1,
+                    1,
+                    matching_document,
+                ],
+            )
+            .unwrap();
+    }
+
+    let response = db
+        .search_retrieval(
+            RetrievalSearchRequest {
+                freshness_policy: None,
+                scope: RetrievalScope {
+                    book_id: chapter.book_id.clone(),
+                    allowed_source_kinds: vec![
+                        crate::rag::contracts::RetrievalSourceKind::Manuscript,
+                    ],
+                    allowed_chapter_ids: vec![chapter.chapter_id.clone()],
+                    before_chapter_order: None,
+                    before_anchor: None,
+                    include_future_plan: false,
+                    include_generated: false,
+                    include_stale: false,
+                    time_range: None,
+                },
+                query: "脆弱".into(),
+                mode: RetrievalSearchMode::Lexical,
+                limit: 3,
+                excluded_hit_ids: Vec::new(),
+                char_budget: 6_000,
+                token_budget: None,
+                adjacent_chunk_count: 0,
+                task: crate::rag::contracts::RetrievalTaskStrategy::Generic,
+                index_status: None,
+            },
+            None,
+            None,
+        )
+        .unwrap();
+
+    let hits = response["hits"].as_array().unwrap();
+    assert!(hits.iter().any(|hit| hit["chunkId"] == target_chunk_id));
+    assert!(hits.iter().all(|hit| hit["sourceKind"] == "manuscript"));
+}
+
+#[test]
 fn hybrid_search_without_local_embedding_reports_lexical_degradation() {
     let temp = TempDirectory::new();
     let mut db = Database::open(&temp.0).unwrap();

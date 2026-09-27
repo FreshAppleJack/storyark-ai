@@ -25,7 +25,7 @@ import { useChapterExport } from '../features/editor/export/useChapterExport';
 import { useWorkExport } from '../features/editor/export/useWorkExport';
 import { WorkExportPreview } from '../features/editor/components/WorkExportPreview';
 import { registerWorkDraftFlush } from '../services/workDraftFlushRegistry';
-import type { RetrievalChunkLocator } from '../domain/retrieval/contracts';
+import type { RetrievalChunkLocator, RetrievalTextFocus } from '../domain/retrieval/contracts';
 
 function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?: LocalPlanning }): React.ReactElement {
     const { bookId } = useParams<{ bookId: string }>();
@@ -67,6 +67,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
     const [pendingRetrievalFocus, setPendingRetrievalFocus] = useState<{
         chapterId: string;
         locator: RetrievalChunkLocator;
+        focus: RetrievalTextFocus | null;
     } | null>(null);
 
     const editorRef = useRef<TiptapEditorRef>(null);
@@ -292,7 +293,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         const pending = pendingRetrievalFocus;
         const delays = [160, 420, 800];
         const timers = delays.map(delay => window.setTimeout(() => {
-            const didFocus = editorRef.current?.focusRetrievalLocator(pending.locator);
+            const didFocus = editorRef.current?.focusRetrievalLocator(pending.locator, pending.focus);
             if (didFocus) {
                 setPendingRetrievalFocus(null);
             }
@@ -489,7 +490,8 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                 onReorderVolumes={handleReorderVolumes}
                 onReorderChapters={handleReorderChapters}
                 onOpenPlotSetting={(chapterId) => void navigateAfterSave(`/books/${bookId}/story-outline?chapterId=${chapterId}`)}
-                onOpenRetrievalLocator={(chapterId, locator) => setPendingRetrievalFocus({ chapterId, locator })}
+                onOpenChapterSummary={(chapterId) => void navigateAfterSave(`/books/${bookId}/story-outline?chapterId=${encodeURIComponent(chapterId)}`)}
+                onOpenRetrievalLocator={(chapterId, locator, focus) => setPendingRetrievalFocus({ chapterId, locator, focus })}
             />
 
             {/* Main Area */}

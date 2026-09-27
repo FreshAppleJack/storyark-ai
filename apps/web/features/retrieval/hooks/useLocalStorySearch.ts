@@ -128,13 +128,17 @@ function deriveIndexStatus(
     return { status: 'ready', progress };
 }
 
-const DEFAULT_FILTERS: RetrievalSearchFilters = {
-    sourceKinds: [...STORY_SEARCH_SOURCE_KINDS],
-    includePlanning: false,
-    chapterRange: 'all',
-    updatedAfter: null,
-    updatedBefore: null,
-};
+export function createDefaultStorySearchFilters(): RetrievalSearchFilters {
+    return {
+        sourceKinds: [...STORY_SEARCH_SOURCE_KINDS],
+        includePlanning: false,
+        chapterRange: 'all',
+        updatedAfter: null,
+        updatedBefore: null,
+    };
+}
+
+const DEFAULT_FILTERS = createDefaultStorySearchFilters();
 
 function buildScope(
     bookId: string,

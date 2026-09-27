@@ -24,9 +24,59 @@ import { calculateMixedWordCount } from '../utils/textUtils'; // Import common u
 import type { AiContinueAnchor } from '../features/editor/types/aiContinue';
 import { captureAiContinueAnchor, textBeforeAiContinueAnchor } from '../features/editor/utils/aiContinueAnchor';
 import { buildAiContinueContent } from '../features/editor/utils/aiContinueText';
-import type { RetrievalChunkLocator } from '../domain/retrieval/contracts';
+import type { RetrievalChunkLocator, RetrievalTextFocus } from '../domain/retrieval/contracts';
 
 const EMPTY_CHARACTERS: Character[] = [];
+const RETRIEVAL_BLOCK_TYPES = new Set(['paragraph', 'heading', 'blockquote', 'codeBlock']);
+
+function positionAtRetrievalTextOffset(
+    block: PMNode,
+    blockPosition: number,
+    textOffset: number,
+    bias: 'start' | 'end',
+): number {
+    let consumed = 0;
+    let resolvedPosition: number | null = null;
+
+    const visit = (parent: PMNode, contentStart: number) => {
+        parent.forEach((child, offset) => {
+            if (resolvedPosition !== null) return;
+            const childPosition = contentStart + offset;
+            if (child.isText) {
+                const text = child.text ?? '';
+                const length = Array.from(text).length;
+                if (textOffset <= consumed + length) {
+                    const localOffset = Math.max(0, Math.min(length, textOffset - consumed));
+                    resolvedPosition = childPosition + Array.from(text).slice(0, localOffset).join('').length;
+                    return;
+                }
+                consumed += length;
+            } else if (child.type.name === 'mention') {
+                const label = child.attrs.label || child.attrs.id;
+                const length = typeof label === 'string' ? Array.from(label).length : 0;
+                if (textOffset <= consumed + length) {
+                    const localOffset = Math.max(0, textOffset - consumed);
+                    resolvedPosition = localOffset === 0 || (localOffset < length && bias === 'start')
+                        ? childPosition
+                        : childPosition + child.nodeSize;
+                    return;
+                }
+                consumed += length;
+            } else if (child.type.name === 'hardBreak') {
+                if (textOffset <= consumed + 1) {
+                    resolvedPosition = childPosition + (textOffset > consumed && bias === 'end' ? child.nodeSize : 0);
+                    return;
+                }
+                consumed += 1;
+            } else if (child.content.size > 0) {
+                visit(child, childPosition + 1);
+            }
+        });
+    };
+
+    visit(block, blockPosition + 1);
+    return resolvedPosition ?? Math.max(blockPosition + 1, blockPosition + block.nodeSize - 1);
+}
 
 export interface TiptapEditorRef {
     insertContent: (content: string) => void;
@@ -39,7 +89,7 @@ export interface TiptapEditorRef {
     forceRefreshHighlights: () => void;
     removeForeshadowing: (id: string) => void;
     focusForeshadowing: (id: string) => boolean;
-    focusRetrievalLocator: (locator: RetrievalChunkLocator) => boolean;
+    focusRetrievalLocator: (locator: RetrievalChunkLocator, focus?: RetrievalTextFocus | null) => boolean;
 }
 
 interface TiptapEditorProps {
@@ -641,30 +691,46 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
             }
             return true;
         },
-        focusRetrievalLocator: (locator: RetrievalChunkLocator) => {
+        focusRetrievalLocator: (locator: RetrievalChunkLocator, focus?: RetrievalTextFocus | null) => {
             if (!editor || editor.isDestroyed) return false;
-            const targetParagraph = locator.paragraphSpans[0]?.paragraphOrdinal
+            const firstSpan = locator.paragraphSpans[0];
+            const targetParagraph = focus?.paragraphOrdinal
+                ?? firstSpan?.paragraphOrdinal
                 ?? locator.paragraphOrdinals[0];
             if (targetParagraph === undefined) {
-                editor.view.dom.scrollIntoView({ block: 'start', behavior: 'smooth' });
-                return true;
+                return false;
             }
 
             let paragraphOrdinal = 0;
-            let targetPosition: number | null = null;
+            let targetBlock: { node: PMNode; position: number } | null = null;
             editor.state.doc.descendants((node, position) => {
-                if (!['paragraph', 'heading', 'blockquote', 'codeBlock'].includes(node.type.name)) return;
-                if (paragraphOrdinal === targetParagraph && targetPosition === null) targetPosition = position;
+                if (!RETRIEVAL_BLOCK_TYPES.has(node.type.name)) return true;
+                if (paragraphOrdinal === targetParagraph && targetBlock === null) targetBlock = { node, position };
                 paragraphOrdinal += 1;
+                // Match the indexer's block traversal: a blockquote is one retrieval block.
+                return false;
             });
-            if (targetPosition === null) return false;
+            if (!targetBlock) return false;
 
-            const targetDom = editor.view.nodeDOM(targetPosition);
-            const target = targetDom instanceof HTMLElement
-                ? targetDom
-                : targetDom?.parentElement;
-            if (!target) return false;
-            target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+            const block = targetBlock as { node: PMNode; position: number };
+            const fallbackOffset = firstSpan?.paragraphOrdinal === targetParagraph ? firstSpan.startOffset : 0;
+            const startOffset = Math.max(0, focus?.textOffset ?? fallbackOffset);
+            const selectedLength = Math.max(0, focus?.textLength ?? 24);
+            const from = positionAtRetrievalTextOffset(block.node, block.position, startOffset, 'start');
+            const to = positionAtRetrievalTextOffset(block.node, block.position, startOffset + selectedLength, 'end');
+            try {
+                const doc = editor.state.doc;
+                const selection = TextSelection.between(
+                    doc.resolve(Math.max(0, Math.min(doc.content.size, from))),
+                    doc.resolve(Math.max(0, Math.min(doc.content.size, to))),
+                    1,
+                );
+                editor.view.dispatch(editor.state.tr.setSelection(selection).scrollIntoView());
+                editor.view.focus();
+            } catch (error) {
+                dlog('focusRetrievalLocator: indexed offset could not be mapped', error);
+                return false;
+            }
             return true;
         }
     }));

@@ -8,6 +8,8 @@ import type {
     RetrievalSearchHit,
     RetrievalSearchResponse,
 } from '../../../domain/retrieval/contracts';
+import { buildSearchPreview, SEARCH_PREVIEW_MAX_CHARACTERS, splitPreviewHighlight } from '../../../domain/retrieval/searchPreview';
+import type { SearchHitFocusAnchor } from '../../../domain/retrieval/searchPreview';
 import type { RetrievalIndexProgress, StorySearchChapterOption } from '../hooks/useLocalStorySearch';
 import { StorySearchFilters } from './StorySearchFilters';
 
@@ -28,7 +30,8 @@ interface StorySearchResultsProps {
     selectionMessage: string;
     onFiltersChange: (patch: Partial<RetrievalSearchFilters>) => void;
     onQueueIndex: () => void;
-    onSelectHit: (hit: RetrievalSearchHit) => void | Promise<void>;
+    onSelectHit: (hit: RetrievalSearchHit, focus: SearchHitFocusAnchor | null) => void | Promise<void>;
+    onOpenChapterSummary: (chapterId: string) => void;
 }
 
 const SOURCE_LABELS: Record<RetrievalSearchHit['sourceKind'], string> = {
@@ -159,17 +162,30 @@ function renderIndexAction(
 
 function SearchHitCard({
     hit,
+    query,
     expanded,
     onToggleExpanded,
     onSelect,
+    onOpenChapterSummary,
 }: {
     hit: RetrievalSearchHit;
+    query: string;
     expanded: boolean;
     onToggleExpanded: () => void;
-    onSelect: () => void;
+    onSelect: (focus: SearchHitFocusAnchor | null) => void;
+    onOpenChapterSummary: (chapterId: string) => void;
 }): ReactElement {
     const excerpt = hitExcerpt(hit);
-    const canExpand = excerpt.length > 240;
+    const preview = buildSearchPreview(excerpt, query);
+    const highlightedPreview = splitPreviewHighlight(preview);
+    const canExpand = Array.from(excerpt).length > SEARCH_PREVIEW_MAX_CHARACTERS;
+    const chapterId = hit.chapterId || hit.locator.chapterId;
+    const canLocateInManuscript = hit.sourceKind === 'manuscript'
+        && Boolean(hit.chunk.sourceText)
+        && Boolean(hit.locator.paragraphSpans?.length);
+    const actionLabel = hit.sourceKind === 'chapter_summary'
+        ? 'Open summary'
+        : canLocateInManuscript ? 'Open and locate' : 'Open chapter';
     const location = [hit.locator.volumeTitleSnapshot, hitTitle(hit)]
         .filter(Boolean)
         .join(' / ');
@@ -187,7 +203,13 @@ function SearchHitCard({
                 <span>{hit.freshness}</span>
             </div>
             <p className={`mt-1 text-xs leading-5 text-slate-700 dark:text-slate-300 ${expanded ? '' : 'line-clamp-3'}`}>
-                {excerpt}
+                {expanded ? excerpt : highlightedPreview ? <>
+                    {highlightedPreview.before}
+                    <mark className="rounded-sm bg-amber-200/80 text-slate-950 dark:bg-amber-500/40 dark:text-slate-50">
+                        {highlightedPreview.match}
+                    </mark>
+                    {highlightedPreview.after}
+                </> : preview.text}
             </p>
             {canExpand && (
                 <button
@@ -203,13 +225,21 @@ function SearchHitCard({
                 <span>{hit.recallMethods.join(' + ')}</span>
                 <span>•</span>
                 <span>Evidence object</span>
-                {hit.chapterId ? (
+                {chapterId ? (
                     <button
                         type="button"
-                        onClick={onSelect}
+                        onClick={() => {
+                            if (hit.sourceKind === 'chapter_summary') {
+                                onOpenChapterSummary(chapterId);
+                                return;
+                            }
+                            onSelect(canLocateInManuscript
+                                ? { chunkTextOffset: preview.chunkTextOffset, focusTextLength: preview.focusTextLength }
+                                : null);
+                        }}
                         className="ml-auto font-semibold text-brand-700 hover:underline dark:text-brand-300"
                     >
-                        Open and locate
+                        {actionLabel}
                     </button>
                 ) : (
                     <span className="ml-auto">Book-level source</span>
@@ -237,6 +267,7 @@ export function StorySearchResults({
     onFiltersChange,
     onQueueIndex,
     onSelectHit,
+    onOpenChapterSummary,
 }: StorySearchResultsProps): ReactElement {
     const [expandedHitIds, setExpandedHitIds] = useState<Set<string>>(() => new Set());
     const showInitialStatus = !response && !isSearching && !searchError;
@@ -309,11 +340,12 @@ export function StorySearchResults({
                         </p>
                     </div>
                     {response.hits.length > 0 && (
-                        <div className="max-h-96 space-y-1.5 overflow-y-auto">
+                        <div className="space-y-1.5">
                             {response.hits.map(hit => (
                                 <SearchHitCard
                                     key={hit.hitId}
                                     hit={hit}
+                                    query={lastQuery}
                                     expanded={expandedHitIds.has(hit.hitId)}
                                     onToggleExpanded={() => setExpandedHitIds(previous => {
                                         const next = new Set(previous);
@@ -321,7 +353,8 @@ export function StorySearchResults({
                                         else next.add(hit.hitId);
                                         return next;
                                     })}
-                                    onSelect={() => void onSelectHit(hit)}
+                                    onSelect={focus => void onSelectHit(hit, focus)}
+                                    onOpenChapterSummary={onOpenChapterSummary}
                                 />
                             ))}
                         </div>

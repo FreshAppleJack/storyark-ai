@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { retrievalRepository } from '../../../data/local/retrievalRepository';
 import { ChapterNavigator } from '../../../features/editor/components/ChapterNavigator';
 import { Book } from '../../../types';
 
@@ -43,6 +44,7 @@ function createProps(overrides: Record<string, unknown> = {}) {
         onReorderVolumes: vi.fn(),
         onReorderChapters: vi.fn(),
         onOpenPlotSetting: vi.fn(),
+        onOpenChapterSummary: vi.fn(),
         ...overrides,
     };
 }
@@ -152,6 +154,23 @@ describe('ChapterNavigator', () => {
         await user.click(result);
 
         expect(props.onSelectChapter).toHaveBeenCalledWith('c2');
+    });
+
+    it('keeps the search form layout stable when a semantic search fails', async () => {
+        const search = vi.spyOn(retrievalRepository, 'search').mockRejectedValue(new Error('Search probe failure'));
+        const { container } = render(<ChapterNavigator {...createProps({ localMode: true })} />);
+        const form = container.querySelector('form') as HTMLFormElement;
+        const initialFormClass = form.className;
+
+        fireEvent.click(screen.getByRole('button', { name: 'Semantic / Story' }));
+        fireEvent.change(screen.getByPlaceholderText('Search the story'), { target: { value: '脆弱' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+
+        await waitFor(() => expect(screen.getAllByRole('alert').some(alert => alert.textContent?.includes('Search probe failure'))).toBe(true));
+        expect(form.className).toBe(initialFormClass);
+        expect(form).not.toHaveClass('flex-1');
+        expect(form).not.toHaveClass('overflow-hidden');
+        search.mockRestore();
     });
 
     it('creates a volume with a generated title and starts renaming it', async () => {

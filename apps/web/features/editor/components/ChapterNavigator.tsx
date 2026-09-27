@@ -9,8 +9,9 @@ import { getFuzzyScore } from '../../../utils/search';
 import { StorySearchResults } from '../../retrieval/components/StorySearchResults';
 import { useLocalStorySearch } from '../../retrieval/hooks/useLocalStorySearch';
 import { retrievalRepository } from '../../../data/local/retrievalRepository';
-import { resolveRetrievalChunkLocator } from '../../../domain/retrieval/locator';
-import type { RetrievalChunkLocator, RetrievalSearchHit } from '../../../domain/retrieval/contracts';
+import { mapRetrievalChunkOffset, resolveRetrievalChunkLocator } from '../../../domain/retrieval/locator';
+import type { RetrievalChunkLocator, RetrievalSearchHit, RetrievalTextFocus } from '../../../domain/retrieval/contracts';
+import type { SearchHitFocusAnchor } from '../../../domain/retrieval/searchPreview';
 
 export type NavigatorItemType = 'volume' | 'chapter';
 
@@ -90,7 +91,8 @@ interface ChapterNavigatorProps {
     onReorderVolumes: (volumes: Volume[]) => void;
     onReorderChapters: (volumeId: string, chapters: Chapter[]) => void;
     onOpenPlotSetting: (chapterId: string) => void;
-    onOpenRetrievalLocator?: (chapterId: string, locator: RetrievalChunkLocator) => void;
+    onOpenChapterSummary: (chapterId: string) => void;
+    onOpenRetrievalLocator?: (chapterId: string, locator: RetrievalChunkLocator, focus: RetrievalTextFocus | null) => void;
 }
 
 /**
@@ -113,6 +115,7 @@ export function ChapterNavigator({
     onReorderVolumes,
     onReorderChapters,
     onOpenPlotSetting,
+    onOpenChapterSummary,
     onOpenRetrievalLocator,
 }: ChapterNavigatorProps): React.ReactElement {
     const [sidebarExpanded, setSidebarExpanded] = useState(true);
@@ -150,7 +153,6 @@ export function ChapterNavigator({
     );
     const hideChapterTree = storySearchMode === 'semantic'
         && (storySearch.isSearching || storySearch.response !== null || storySearch.searchError !== null);
-    const expandSemanticSearchPanel = storySearchMode === 'semantic' && hideChapterTree;
 
     // Only reconcile membership; content updates and reordering preserve user choices.
     const volumeIds = book.volumes.map(volume => volume.id);
@@ -428,7 +430,7 @@ export function ChapterNavigator({
         selectSidebarSearchResult(firstResult);
     };
 
-    const selectStorySearchResult = async (hit: RetrievalSearchHit) => {
+    const selectStorySearchResult = async (hit: RetrievalSearchHit, previewAnchor: SearchHitFocusAnchor | null) => {
         const chapterId = hit.chapterId || hit.locator.chapterId;
         if (!chapterId) return;
 
@@ -446,6 +448,13 @@ export function ChapterNavigator({
         const navigationAccepted = await onSelectChapter(chapterId);
         if (navigationAccepted === false) {
             setSidebarSearchMessage('The chapter could not be opened because the current draft was not saved.');
+            return;
+        }
+
+        if (hit.sourceKind !== 'manuscript') {
+            setSidebarSearchTarget({ type: 'chapter', id: chapterId });
+            setSidebarSearchMessage(`Opened the source chapter: "${hit.locator.chapterTitleSnapshot || chapterId}". This source has no precise manuscript paragraph location.`);
+            scrollSidebarItemIntoView('chapter', chapterId);
             return;
         }
 
@@ -486,7 +495,20 @@ export function ChapterNavigator({
             setSidebarSearchMessage(`${resolution.message} The excerpt remains available above; refresh or rebuild the local index.`);
             return;
         }
-        onOpenRetrievalLocator?.(chapterId, resolution.locator);
+        const focus = previewAnchor && hit.chunk.sourceText
+            ? mapRetrievalChunkOffset(
+                resolution.locator,
+                previewAnchor.chunkTextOffset,
+                previewAnchor.focusTextLength,
+            )
+            : null;
+        if (!focus) {
+            setSidebarSearchTarget({ type: 'chapter', id: chapterId });
+            setSidebarSearchMessage(`Opened the source chapter: "${hit.locator.chapterTitleSnapshot || chapterId}". This excerpt has no precise manuscript position; refresh the local index and try again.`);
+            scrollSidebarItemIntoView('chapter', chapterId);
+            return;
+        }
+        onOpenRetrievalLocator?.(chapterId, resolution.locator, focus);
         setSidebarSearchTarget({ type: 'chapter', id: chapterId });
         setSidebarSearchMessage(`Opened the source chapter: "${hit.locator.chapterTitleSnapshot || chapterId}". Located by ${resolution.matchedBy === 'version' ? 'source version' : 'unique text hash'}.`);
         scrollSidebarItemIntoView('chapter', chapterId);
@@ -535,7 +557,7 @@ export function ChapterNavigator({
                 </div>
 
                 {sidebarExpanded && (
-                    <div className={`min-w-0 border-b border-slate-100 p-4 dark:border-slate-800 ${expandSemanticSearchPanel ? 'min-h-0 flex flex-1 flex-col overflow-hidden' : 'flex-shrink-0'}`}>
+                    <div className="min-w-0 flex-shrink-0 border-b border-slate-100 p-4 dark:border-slate-800">
                         <div className="flex items-center gap-3 mb-2">
                             <div className={`w-10 h-14 ${book.coverColor || 'bg-slate-700'} rounded shadow-sm flex-shrink-0`}></div>
                             <div className="overflow-hidden">
@@ -543,7 +565,7 @@ export function ChapterNavigator({
                                 <p className="text-xs text-slate-500 dark:text-slate-400 truncate">by {book.author}</p>
                             </div>
                         </div>
-                        <form className={`mt-4 min-w-0 space-y-2 ${expandSemanticSearchPanel ? 'min-h-0 flex flex-1 flex-col overflow-hidden' : ''}`} onSubmit={handleSidebarSearchSubmit}>
+                        <form className="mt-4 min-w-0 space-y-2" onSubmit={handleSidebarSearchSubmit}>
                             {localMode && (
                                 <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 text-[11px] font-medium dark:bg-slate-900">
                                     {(['title', 'semantic'] as StorySearchMode[]).map((mode) => (
@@ -612,7 +634,7 @@ export function ChapterNavigator({
                                 </button>
                             </div>
                             {storySearchMode === 'semantic' ? (
-                                <div className={expandSemanticSearchPanel ? 'min-h-0 min-w-0 flex-1 overflow-y-auto pb-2 pr-1' : ''}>
+                                <div className="min-w-0 max-h-[min(60vh,36rem)] overflow-y-auto pb-2 pr-1">
                                     <StorySearchResults
                                         embeddingStatus={storySearch.embeddingStatus}
                                         indexStatus={storySearch.indexStatus}
@@ -631,6 +653,7 @@ export function ChapterNavigator({
                                         onFiltersChange={storySearch.updateFilters}
                                         onQueueIndex={() => void storySearch.queueIndex()}
                                         onSelectHit={selectStorySearchResult}
+                                        onOpenChapterSummary={onOpenChapterSummary}
                                     />
                                 </div>
                             ) : sidebarSearchQuery.trim() && sidebarSearchResults.length > 0 && (
