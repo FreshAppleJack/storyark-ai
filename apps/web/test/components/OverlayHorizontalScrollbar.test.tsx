@@ -25,5 +25,6 @@ it('keeps an accessible overlay track for a horizontally scrollable chapter stri
     const scrollbar = await screen.findByRole('scrollbar', { name: 'Chapter summaries' });
     await waitFor(() => expect(scrollbar).toHaveAttribute('aria-valuemax', '600'));
     expect(scrollbar).toHaveClass('absolute', 'opacity-100');
-    expect(scrollbar.querySelector('[data-scrollbar-thumb="true"]')).toHaveClass('group-hover:h-2');
+    expect(scrollbar).toHaveClass('h-2');
+    expect(scrollbar.querySelector('[data-scrollbar-thumb="true"]')).toHaveClass('h-1');
 });

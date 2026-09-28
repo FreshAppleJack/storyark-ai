@@ -167,6 +167,7 @@ export function EditorHeader({
                     scrollElementRef={actionsScrollRef}
                     scrollElementId={actionsScrollId}
                     ariaLabel="Editor header actions"
+                    bottomClassName="-bottom-2"
                 />
             </div>
         </header>
