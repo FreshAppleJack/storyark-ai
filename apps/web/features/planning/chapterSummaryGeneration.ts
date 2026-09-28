@@ -10,9 +10,9 @@ import type { Book, Chapter, StoryPlanning } from '../../types';
 import type { AiConfigRecord } from '../../data/local/aiSettingsRepository';
 import type { ContextSection, GenerationTarget } from '../../data/local/aiGenerationRepository';
 
-export const CHAPTER_SUMMARY_PROMPT_VERSION = 'chapter-summary-v2';
+export const CHAPTER_SUMMARY_PROMPT_VERSION = 'chapter-summary-v3';
 export const CHAPTER_SUMMARY_CONTEXT_MAX_CHARS = 60_000;
-export const CHAPTER_SUMMARY_OUTPUT_CHARS = 250;
+export const CHAPTER_SUMMARY_TARGET_CHARS = 250;
 export const CHAPTER_SUMMARY_MAX_TEXT_CHARS = 52_000;
 export const CHAPTER_SUMMARY_RETRIEVAL_QUERY_CHARS = 4_000;
 
@@ -102,7 +102,7 @@ export function buildChapterSummaryGenerationContext(
         target,
         sections,
         maxChars: CHAPTER_SUMMARY_CONTEXT_MAX_CHARS,
-        outputChars: CHAPTER_SUMMARY_OUTPUT_CHARS,
+        outputChars: CHAPTER_SUMMARY_TARGET_CHARS,
         draftRevision,
         sourceFingerprint,
         sourceSnapshot,
@@ -123,9 +123,6 @@ export function buildChapterSummaryGenerationContext(
 export function validateChapterSummaryCandidate(rawText: string): { summary: string; error: null } | { summary: null; error: string } {
     const summary = rawText.trim();
     if (!summary) return { summary: null, error: 'The model returned an empty summary. The existing summary is unchanged.' };
-    if (Array.from(summary).length > CHAPTER_SUMMARY_OUTPUT_CHARS) {
-        return { summary: null, error: `The suggestion exceeds ${CHAPTER_SUMMARY_OUTPUT_CHARS} characters. The existing summary is unchanged.` };
-    }
     return { summary, error: null };
 }
 

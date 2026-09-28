@@ -8,7 +8,6 @@ import { generationRetrievalTrace, retrievalContextSection } from '../../retriev
 import {
     buildChapterSummaryGenerationContext,
     buildChapterSummaryGenerationMetadata,
-    CHAPTER_SUMMARY_OUTPUT_CHARS,
     validateChapterSummaryCandidate,
     type ChapterSummaryGenerationContext,
 } from '../chapterSummaryGeneration';
@@ -285,19 +284,6 @@ export function useChapterSummarySuggestions({
                 return;
             case 'delta':
                 active.candidateText += event.payload.text;
-                if (Array.from(active.candidateText.trim()).length > CHAPTER_SUMMARY_OUTPUT_CHARS) {
-                    updateSuggestion(active.chapterId, failedAttempt(active, 'invalid', active.candidateText,
-                        `The suggestion exceeds ${CHAPTER_SUMMARY_OUTPUT_CHARS} characters. The existing summary is unchanged.`, metadata));
-                    cleanupActive(active);
-                    void aiGenerationRepository.cancel(active.requestId, active.sessionId).catch(() => undefined);
-                    return;
-                }
-                updateSuggestion(active.chapterId, {
-                    ...previous,
-                    status: 'streaming',
-                    rawText: active.candidateText,
-                    errorMessage: null,
-                });
                 return;
             case 'completed': {
                 active.candidateText = event.payload.text;

@@ -144,14 +144,14 @@ describe('chapter summary generation context', () => {
         expect(context.retrievalScope.allowedChapterIds).toEqual([chapterId]);
     });
 
-    it('records the actual retrieval contract and rejects malformed/oversized candidates without replacing manual text', () => {
+    it('records the retrieval contract and keeps non-empty over-target suggestions available for review', () => {
         const context = buildChapterSummaryGenerationContext(createBook(), planning, createChapter(), 3);
         const metadata = buildChapterSummaryGenerationMetadata(config, context, retrievalContext());
         expect(metadata).toMatchObject({
             providerId: 'example.invalid',
             configId: config.id,
             modelId: 'model-a',
-            promptVersion: 'chapter-summary-v2',
+            promptVersion: 'chapter-summary-v3',
             source: {
                 bookId,
                 chapterId,
@@ -164,7 +164,7 @@ describe('chapter summary generation context', () => {
         expect(validateChapterSummaryCandidate('  她打开了档案室。  ')).toEqual({ summary: '她打开了档案室。', error: null });
         expect(validateChapterSummaryCandidate('  ')).toMatchObject({ summary: null });
         expect(validateChapterSummaryCandidate('字'.repeat(250))).toMatchObject({ summary: '字'.repeat(250) });
-        expect(validateChapterSummaryCandidate('超'.repeat(251))).toMatchObject({ summary: null });
+        expect(validateChapterSummaryCandidate('超'.repeat(251))).toEqual({ summary: '超'.repeat(251), error: null });
         expect(planning.chapterSummaries[0].summary).toBe('Manual: she opens the room.');
     });
 

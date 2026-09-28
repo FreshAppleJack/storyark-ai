@@ -218,7 +218,7 @@ describe('local chapter summary suggestion flow', () => {
             expectedDraftRevision: 6,
             generationMetadata: expect.objectContaining({
                 providerId: 'example.invalid',
-                promptVersion: 'chapter-summary-v2',
+                promptVersion: 'chapter-summary-v3',
                 source: expect.objectContaining({ bookId, chapterId, includesFuturePlan: false }),
             }),
         }));
@@ -247,20 +247,30 @@ describe('local chapter summary suggestion flow', () => {
         expect(planning.chapterSummaries[0].summary).toBe('Keep my manual summary.');
     });
 
-    it('stops an overlong streamed summary before it can replace manual text', async () => {
+    it('keeps over-target streaming text hidden until completion and allows explicit acceptance', async () => {
         const adoptSummary = vi.fn(async () => 'saved' as const);
         const { result } = renderHook(() => useChapterSummarySuggestions(options(6, adoptSummary)));
         await waitFor(() => expect(result.current.modelAvailability).toBe('ready'));
         await act(async () => { await result.current.generate(chapterId); });
         const request = native.start.mock.calls[0][0];
         const send = native.eventHandler;
+        const longSummary = '字'.repeat(251);
         await act(async () => {
-            send?.({ requestId: request.requestId, sessionId: request.sessionId, sequence: 0, payload: { kind: 'delta', text: '字'.repeat(251) } });
+            send?.({ requestId: request.requestId, sessionId: request.sessionId, sequence: 0, payload: { kind: 'started' } });
+            send?.({ requestId: request.requestId, sessionId: request.sessionId, sequence: 1, payload: { kind: 'delta', text: longSummary } });
         });
-        expect(result.current.suggestions[chapterId]).toMatchObject({ status: 'invalid', suggestedSummary: null });
-        expect(native.cancel).toHaveBeenCalledWith(request.requestId, request.sessionId);
-        expect(adoptSummary).not.toHaveBeenCalled();
+        expect(result.current.suggestions[chapterId]).toMatchObject({ status: 'streaming', rawText: '', suggestedSummary: null });
+        expect(native.cancel).not.toHaveBeenCalled();
         expect(planning.chapterSummaries[0].summary).toBe('Keep my manual summary.');
+        await act(async () => {
+            send?.({ requestId: request.requestId, sessionId: request.sessionId, sequence: 2, payload: {
+                kind: 'completed', text: longSummary, finishReason: 'stop',
+                usage: { inputTokens: 50, outputTokens: 251, totalTokens: 301 },
+            } });
+        });
+        expect(result.current.suggestions[chapterId]).toMatchObject({ status: 'candidate', suggestedSummary: longSummary });
+        await act(async () => { await result.current.accept(chapterId); });
+        expect(adoptSummary).toHaveBeenCalledWith(expect.objectContaining({ summary: longSummary }));
     });
 
     it('does not start retrieval or generation when no default model is configured', async () => {

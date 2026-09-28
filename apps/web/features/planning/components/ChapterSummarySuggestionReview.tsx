@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Check, Eye, Loader2, Sparkles, Wand2, X } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import type { ChapterSummarySuggestion } from '../../../domain/chapterSummarySource';
+import { CHAPTER_SUMMARY_TARGET_CHARS } from '../chapterSummaryGeneration';
 import type { SummaryModelAvailability } from '../hooks/useChapterSummarySuggestions';
 import { RetrievalContextPanel } from '../../retrieval/components/RetrievalContextPanel';
 
@@ -27,7 +28,7 @@ interface Props {
 function statusText(suggestion: ChapterSummarySuggestion, isCurrent: boolean): string {
     switch (suggestion.status) {
         case 'starting': return 'Preparing the chapter snapshot and local supporting sources…';
-        case 'streaming': return 'Streaming into a temporary suggestion. The saved summary is unchanged.';
+        case 'streaming': return 'Generating a summary. The current summary remains unchanged.';
         case 'candidate': return isCurrent
             ? 'Suggestion ready. Your current summary stays unchanged until you accept it.'
             : 'The source changed after generation. This suggestion is preserved for review but cannot be accepted.';
@@ -66,6 +67,8 @@ export function ChapterSummarySuggestionReview({
     const canGenerate = hasWrittenText && !isReadOnly && !isAnyGenerating && !isAdopting && !generationUnavailable && suggestion?.status !== 'save-failed';
     const hasCandidate = suggestion?.status === 'candidate';
     const canAccept = hasCandidate && isCurrent && !isReadOnly && !isGenerating;
+    const isOverTarget = hasCandidate && suggestion.suggestedSummary !== null
+        && Array.from(suggestion.suggestedSummary).length > CHAPTER_SUMMARY_TARGET_CHARS;
 
     return (
         <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950">
@@ -81,7 +84,7 @@ export function ChapterSummarySuggestionReview({
                         variant="secondary"
                         size="sm"
                         disabled={!canGenerate}
-                        onClick={() => { onGenerate(chapterId); }}
+                        onClick={() => { setIsReviewOpen(false); onGenerate(chapterId); }}
                         icon={modelAvailability === 'checking' ? <Loader2 size={14} className="animate-spin" /> : <Wand2 size={14} />}
                         title={generationUnavailable ? modelNotice ?? undefined : undefined}
                     >
@@ -90,7 +93,7 @@ export function ChapterSummarySuggestionReview({
                 )}
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-500 dark:text-slate-400">
-                Creates a third-person summary of about 200–250 Chinese characters. Generated text stays a suggestion until accepted.
+                Aims for a third-person summary of about 200–250 Chinese characters. Generated text stays a suggestion until accepted.
             </p>
             {!hasWrittenText && <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">Add readable chapter text before generating. Manual summary editing remains available.</p>}
             {isReadOnly && <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">This book is locked. You can review the summary, but generation and acceptance are disabled.</p>}
@@ -105,6 +108,7 @@ export function ChapterSummarySuggestionReview({
                             ? 'text-amber-700 dark:text-amber-300' : 'text-slate-600 dark:text-slate-300'}`}>
                         {statusText(suggestion, isCurrent)}
                     </p>
+                    {isOverTarget && <p className="mt-2 text-xs leading-5 text-amber-700 dark:text-amber-300">The suggestion exceeds 250 characters. Please pay attention.</p>}
                     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
                         {hasCandidate && (
                             <Button size="sm" disabled={!canAccept} onClick={() => { onAccept(chapterId); }} icon={<Check size={14} />}>
@@ -116,16 +120,13 @@ export function ChapterSummarySuggestionReview({
                                 Keep manual
                             </Button>
                         )}
-                        {(suggestion.suggestedSummary || suggestion.rawText) && (
+                        {suggestion.status !== 'starting' && suggestion.status !== 'streaming' && (suggestion.suggestedSummary || suggestion.rawText) && (
                             <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setIsReviewOpen(open => !open)} icon={<Eye size={14} />}>
                                 {isReviewOpen ? 'Hide review' : 'Review'}
                             </Button>
                         )}
                     </div>
                     {suggestion.errorMessage && <p role="alert" className="mt-2 text-xs leading-5 text-rose-700 dark:text-rose-300">{suggestion.errorMessage}</p>}
-                    {suggestion.status === 'streaming' && suggestion.rawText && (
-                        <pre className="mt-3 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-slate-200 bg-white p-3 text-xs leading-5 text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">{suggestion.rawText}</pre>
-                    )}
                     {suggestion.lastAttempt && (
                         <details className="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-xs dark:border-amber-900/60 dark:bg-amber-950/20">
                             <summary className="cursor-pointer font-semibold text-amber-800 dark:text-amber-200">Review the latest unsuccessful attempt</summary>

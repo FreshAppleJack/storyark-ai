@@ -80,6 +80,32 @@ it('keeps the candidate separate from the manual summary without showing chapter
     expect(callbacks.onKeepManual).toHaveBeenCalledWith(chapterId);
 });
 
+it('keeps raw streaming output hidden until review is available', () => {
+    renderReview({
+        isGenerating: true,
+        isAnyGenerating: true,
+        suggestion: { ...suggestion(), status: 'streaming', rawText: '**Unprocessed model text**', suggestedSummary: null },
+    });
+
+    expect(screen.queryByText('**Unprocessed model text**')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Review' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Generating a summary.');
+});
+
+it('warns about an over-target candidate while leaving Accept available', () => {
+    const longSummary = '字'.repeat(251);
+    const callbacks = renderReview({ suggestion: { ...suggestion(), rawText: longSummary, suggestedSummary: longSummary } });
+
+    expect(screen.getByText('The suggestion exceeds 250 characters. Please pay attention.')).toHaveClass('text-amber-700');
+    expect(screen.getByRole('button', { name: 'Accept' })).toBeEnabled();
+    expect(screen.queryByText(longSummary)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+    expect(screen.getByText(longSummary)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Accept' }));
+    expect(callbacks.onAccept).toHaveBeenCalledWith(chapterId);
+});
+
 it('clearly disables generation when the default model is not configured', () => {
     const callbacks = renderReview({
         suggestion: undefined,
