@@ -6,6 +6,7 @@ import { AppProvider } from '../InteractionContent/AppContext';
 import { queryClient } from '../InteractionContent/queryClient';
 import { RouteError, RouteLoading, RouteShell } from './RouteShell';
 import { UnavailablePage } from '../pages/UnavailablePage';
+import { OverlayVerticalScrollbar } from '../components/ui/OverlayVerticalScrollbar';
 
 // Hash routing and lazy data routes preserve the editor's navigation blocker.
 const router = createHashRouter(createRoutesFromElements(
@@ -31,6 +32,6 @@ const router = createHashRouter(createRoutesFromElements(
 
 export default function App(): React.ReactElement {
     return <QueryClientProvider client={queryClient}>
-        <AppProvider mode="local"><RouterProvider router={router} /><Toaster /></AppProvider>
+        <AppProvider mode="local"><RouterProvider router={router} /><Toaster /><OverlayVerticalScrollbar /></AppProvider>
     </QueryClientProvider>;
 }

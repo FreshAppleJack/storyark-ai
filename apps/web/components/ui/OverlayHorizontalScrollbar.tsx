@@ -192,13 +192,13 @@ export function OverlayHorizontalScrollbar({
             onPointerUp={() => { pointerDragRef.current = null; }}
             onPointerCancel={() => { pointerDragRef.current = null; }}
             onKeyDown={handleKeyDown}
-            className={`absolute bottom-0.5 left-2 right-2 z-30 h-2 touch-none rounded-full bg-slate-500/10 transition-opacity dark:bg-slate-400/10 ${
+            className={`group absolute bottom-0.5 left-2 right-2 z-30 h-3 touch-none rounded-full bg-transparent transition-colors hover:bg-slate-500/10 dark:hover:bg-slate-400/10 ${
                 metrics.isScrollable ? 'cursor-pointer opacity-100' : 'pointer-events-none opacity-0'
             } focus-visible:outline focus-visible:outline-1 focus-visible:outline-brand-500`}
         >
             <span
                 data-scrollbar-thumb="true"
-                className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-slate-500/55 transition-colors hover:bg-slate-600/70 dark:bg-slate-300/45 dark:hover:bg-slate-200/65"
+                className="absolute top-1/2 h-1 -translate-y-1/2 rounded-full bg-slate-500/30 transition-[height,background-color] duration-200 group-hover:h-2 group-hover:bg-slate-500/55 dark:bg-slate-400/30 dark:group-hover:bg-slate-400/55"
                 style={{ left: `${thumbOffset}px`, width: `${metrics.thumbWidth}px` }}
             />
         </div>

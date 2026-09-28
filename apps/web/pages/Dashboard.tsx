@@ -209,8 +209,8 @@ const Dashboard: React.FC = () => {
                 </div>}
                 {showCreate && <form onSubmit={submitCreate} className="mb-6 rounded-xl border border-slate-300 bg-white p-6 space-y-4 dark:bg-slate-900">
                     <h2 className="text-lg font-semibold">Create a local book</h2>
-                    <label className="block">Title<input autoFocus required maxLength={512} value={newTitle} onChange={e => setNewTitle(e.target.value)} className="block w-full rounded border p-2 bg-transparent" /></label>
-                    <label className="block">Author (optional)<input maxLength={256} value={author} onChange={e => setAuthor(e.target.value)} className="block w-full rounded border p-2 bg-transparent" /></label>
+                    <label className="block">Title<input autoFocus required maxLength={512} value={newTitle} onChange={e => setNewTitle(e.target.value)} className="block w-full rounded border bg-transparent p-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40" /></label>
+                    <label className="block">Author (optional)<input maxLength={256} value={author} onChange={e => setAuthor(e.target.value)} className="block w-full rounded border bg-transparent p-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40" /></label>
                     <div className="flex gap-3"><Button type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create Book'}</Button>
                         <Button type="button" variant="secondary" disabled={creating} onClick={() => setShowCreate(false)}>Cancel</Button></div>
                 </form>}

@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { BookOpen, ChevronLeft, ChevronRight, Search, X } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { filterChapters, type ChapterOption } from '../planningSelectors';
 import { ChapterSummaryEditor } from './ChapterSummaryEditor';
+import { OverlayHorizontalScrollbar } from '../../../components/ui/OverlayHorizontalScrollbar';
 import type { ChapterSummarySuggestion } from '../../../domain/chapterSummarySource';
 import type { SummaryModelAvailability } from '../hooks/useChapterSummarySuggestions';
 
@@ -33,6 +34,8 @@ export function ChapterSummariesPanel({
     const [selectedChapterId, setSelectedChapterId] = useState<string | null>(targetChapterId);
     const [focusedChapterId, setFocusedChapterId] = useState<string | null>(null);
     const lastFocusedChapterIdRef = useRef<string | null>(null);
+    const chapterStripRef = useRef<HTMLDivElement>(null);
+    const chapterStripId = useId();
     const targetExists = chapterOptions.some(chapter => chapter.id === targetChapterId);
     const filteredChapters = useMemo(() => filterChapters(chapterOptions, chapterSearchQuery), [chapterOptions, chapterSearchQuery]);
     const selectedChapter = filteredChapters.find(chapter => chapter.id === selectedChapterId) ?? filteredChapters[0];
@@ -93,7 +96,8 @@ export function ChapterSummariesPanel({
 
             <nav className="shrink-0 border-b border-slate-200 bg-white px-5 py-3 dark:border-slate-800 dark:bg-slate-900" aria-label="Select a chapter summary">
                 {chapterSearchQuery.trim() && <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">{filteredChapters.length} matching chapters</p>}
-                <div className="flex gap-2 overflow-x-auto pb-1">
+                <div className="relative pb-4">
+                <div id={chapterStripId} ref={chapterStripRef} className="scrollbar-hidden-x flex gap-2 overflow-x-auto pb-1">
                     {filteredChapters.map(chapter => (
                         <button
                             id={`outline-selector-${chapter.id}`}
@@ -112,6 +116,8 @@ export function ChapterSummariesPanel({
                             </span>
                         </button>
                     ))}
+                </div>
+                <OverlayHorizontalScrollbar scrollElementRef={chapterStripRef} scrollElementId={chapterStripId} ariaLabel="Chapter summaries" />
                 </div>
             </nav>
 
