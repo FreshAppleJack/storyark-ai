@@ -105,4 +105,20 @@ describe('BrainstormResults', () => {
         expect(screen.getByText('A new route')).toBeInTheDocument();
         expect(screen.queryByText(/```json/)).toBeNull();
     });
+
+    it('keeps an editable result visible without calling it an empty brainstorm', () => {
+        const props = {
+            isGenerating: false, isSaving: false, handleGenerate: vi.fn(),
+            regenerate: vi.fn(async () => undefined), stopGeneration: vi.fn(), discardCandidate: vi.fn(),
+            generationAvailable: true, selectedChapterIds: ['chapter-1'], missingSummaryChapters: [],
+            isSnapshotStale: false, errorMessage: null, visibleOptions: [], hasSelectedOption: false,
+            workspace: { selectedOptionId: 'saved-1', finalContent: 'Hand-edited saved result' } as ComponentProps<typeof BrainstormResults>['workspace'],
+            chooseOption: vi.fn(), showAllOptions: vi.fn(), updateFinalContent: vi.fn(),
+            candidate: EMPTY_BRAINSTORM_CANDIDATE, isReadOnly: false, toggleRetrievalHit: vi.fn(),
+        } satisfies ComponentProps<typeof BrainstormResults>;
+
+        render(<BrainstormResults {...props} />);
+        expect(screen.getByRole('textbox')).toHaveValue('Hand-edited saved result');
+        expect(screen.queryByText('No brainstorm yet')).toBeNull();
+    });
 });

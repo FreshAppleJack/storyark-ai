@@ -1,6 +1,6 @@
 use super::records::{record, rows};
-use super::validation::{expected, invalid, now, ownership, unlocked, valid_id};
-use super::{Database, Result};
+use super::validation::{expected, invalid, ownership, unlocked, valid_id};
+use super::{Database, Result, StorageError};
 use rusqlite::{params, TransactionBehavior};
 use serde::Deserialize;
 use serde_json::Value;
@@ -10,6 +10,7 @@ use serde_json::Value;
 pub struct CharacterOrderItem {
     pub character_id: String,
     pub expected_database_version: i64,
+    pub expected_position: i64,
 }
 
 #[derive(Deserialize)]
@@ -47,11 +48,32 @@ impl Database {
             let character = record(&tx, "characters", &item.character_id)?;
             ownership(&character, "bookId", &input.book_id)?;
             expected(&character, item.expected_database_version)?;
+            if character["position"] != item.expected_position {
+                return Err(StorageError::new(
+                    "VERSION_CONFLICT",
+                    "Order changed; reload before reordering",
+                ));
+            }
         }
-        let time = now()?;
         for (position, item) in input.items.iter().enumerate() {
-            tx.execute("UPDATE characters SET position=?,database_version=database_version+1,updated_at=max(updated_at,?) WHERE id=?",
-                params![position as i64, time, item.character_id])?;
+            if item.expected_position == position as i64 {
+                continue;
+            }
+            let changed = tx.execute(
+                "UPDATE characters SET position=? WHERE id=? AND database_version=? AND position=?",
+                params![
+                    position as i64,
+                    item.character_id,
+                    item.expected_database_version,
+                    item.expected_position
+                ],
+            )?;
+            if changed != 1 {
+                return Err(StorageError::new(
+                    "VERSION_CONFLICT",
+                    "Order changed; reload before reordering",
+                ));
+            }
         }
         let result = rows(
             &tx,

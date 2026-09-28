@@ -139,7 +139,7 @@ fn character_validation_and_book_locks_are_enforced() {
 }
 
 #[test]
-fn character_order_is_atomic_versioned_and_survives_reopen() {
+fn character_order_is_atomic_position_guarded_and_survives_reopen() {
     let temp = TempDirectory::new();
     let mut db = Database::open(&temp.0).unwrap();
     let book = db
@@ -168,12 +168,13 @@ fn character_order_is_atomic_versioned_and_survives_reopen() {
             .map(|id| CharacterOrderItem {
                 character_id: id.clone(),
                 expected_database_version: version,
+                expected_position: ids.iter().position(|known| known == id).unwrap_or(0) as i64,
             })
             .collect(),
     };
     let before = db.list_characters(&book_id).unwrap();
     let reversed: Vec<_> = ids.iter().rev().cloned().collect();
-    db.connection.execute_batch("CREATE TRIGGER fail_order BEFORE UPDATE OF position ON characters WHEN NEW.position=1 BEGIN SELECT RAISE(ABORT, 'injected failure'); END;").unwrap();
+    db.connection.execute_batch("CREATE TRIGGER fail_order BEFORE UPDATE OF position ON characters WHEN NEW.position=0 BEGIN SELECT RAISE(ABORT, 'injected failure'); END;").unwrap();
     assert!(db.reorder_characters(request(&reversed, 1)).is_err());
     assert_eq!(db.list_characters(&book_id).unwrap(), before);
     db.connection
@@ -188,8 +189,9 @@ fn character_order_is_atomic_versioned_and_survives_reopen() {
         .is_err());
     let saved = db.reorder_characters(request(&reversed, 1)).unwrap();
     assert_eq!(saved[0]["id"], reversed[0]);
-    assert_eq!(saved[0]["databaseVersion"], 2);
-    assert_eq!(saved[0]["description"], before[0]["description"]);
+    assert_eq!(saved[0]["databaseVersion"], 1);
+    assert_eq!(saved[0]["updatedAt"], before[2]["updatedAt"]);
+    assert_eq!(saved[0]["description"], before[2]["description"]);
     assert_eq!(
         db.reorder_characters(request(&ids, 1)).unwrap_err().code,
         "VERSION_CONFLICT"
@@ -214,7 +216,7 @@ fn character_order_is_atomic_versioned_and_survives_reopen() {
     wrong[0] = other["character"]["id"].as_str().unwrap().into();
     assert_eq!(
         reopened
-            .reorder_characters(request(&wrong, 2))
+            .reorder_characters(request(&wrong, 1))
             .unwrap_err()
             .code,
         "OWNERSHIP_MISMATCH"

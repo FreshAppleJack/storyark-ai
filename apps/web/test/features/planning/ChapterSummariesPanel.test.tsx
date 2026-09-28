@@ -11,15 +11,15 @@ it('lets users resize the selected summary and acknowledge a possible source cha
         status: 'possibly-stale',
         sourceVersionChanged: true,
         changedBlocks: 0,
-        addedBlocks: 1,
+        addedBlocks: 0,
         removedBlocks: 0,
         addedCharacterIds: [],
         removedCharacterIds: [],
         addedForeshadowingIds: [],
         removedForeshadowingIds: [],
         changedForeshadowingNoteIds: [],
-        changedAllowedSourceIds: [],
-        reasons: ['paragraphs-added'],
+        changedAllowedSourceIds: ['book:character:character-1'],
+        reasons: ['allowed-setting-or-character-source-changed'],
     };
     const chapter: ChapterOption = {
         id: 'chapter-1',
@@ -56,7 +56,10 @@ it('lets users resize the selected summary and acknowledge a possible source cha
     expect(textarea.className).toContain('h-48');
     expect(textarea.className).toContain('min-h-48');
     expect(textarea.className).toContain('resize-y');
-    fireEvent.click(screen.getByRole('button', { name: 'Keep summary and mark reviewed' }));
+    const dismiss = screen.getByRole('button', { name: 'Dismiss' });
+    expect(dismiss).toHaveAttribute('title', 'Keep this summary and treat the current source as reviewed');
+    expect(dismiss.parentElement).toHaveTextContent('A setting or character source changed or is no longer available.');
+    fireEvent.click(dismiss);
     expect(acknowledge).toHaveBeenCalledWith(chapter.id);
 });
 

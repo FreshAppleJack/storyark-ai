@@ -2,6 +2,7 @@ import React from 'react';
 import type { ChapterSummarySuggestion } from '../../../domain/chapterSummarySource';
 import type { ChapterOption } from '../planningSelectors';
 import type { SummaryModelAvailability } from '../hooks/useChapterSummarySuggestions';
+import { Button } from '../../../components/ui/Button';
 import { ChapterSummarySuggestionReview } from './ChapterSummarySuggestionReview';
 
 const FRESHNESS_REASON_LABELS: Record<string, string> = {
@@ -94,16 +95,21 @@ export function ChapterSummaryEditor({
                     disabled={isReadOnly || chapter.isReadOnly}
                     className="h-48 min-h-48 w-full resize-y rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-7 text-slate-700 outline-none transition focus:border-brand-400 focus:bg-white disabled:opacity-60 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-brand-500 dark:focus:bg-slate-950"
                 />
-                {freshnessMessage && <p className={`mt-2 text-xs leading-5 ${chapter.sourceChanged ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}`}>{freshnessMessage}</p>}
-                {chapter.summaryFreshness?.status === 'possibly-stale' && !isReadOnly && !chapter.isReadOnly && (
-                    <button
-                        type="button"
-                        className="mt-2 text-xs font-semibold text-brand-700 hover:underline dark:text-brand-300"
-                        title="Keep this summary and treat the current source as reviewed"
-                        onClick={() => acknowledgeChapterSummaryChanges(chapter.id)}
-                    >
-                        Keep summary and mark reviewed
-                    </button>
+                {freshnessMessage && (
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <p className={`text-xs leading-5 ${chapter.sourceChanged ? 'text-amber-600 dark:text-amber-400' : 'text-slate-500 dark:text-slate-400'}`}>{freshnessMessage}</p>
+                        {chapter.summaryFreshness?.status === 'possibly-stale' && !isReadOnly && !chapter.isReadOnly && (
+                            <Button
+                                type="button"
+                                variant="secondary"
+                                size="sm"
+                                title="Keep this summary and treat the current source as reviewed"
+                                onClick={() => acknowledgeChapterSummaryChanges(chapter.id)}
+                            >
+                                Dismiss
+                            </Button>
+                        )}
+                    </div>
                 )}
             </div>
 

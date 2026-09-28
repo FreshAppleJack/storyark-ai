@@ -55,9 +55,8 @@ describe('RAG Brainstorm context snapshot', () => {
         expect(context.sections.find(section => section.kind === 'futurePlan')).toMatchObject({
             label: 'Existing plot plans', text: expect.stringContaining('The next chapter may reveal a witness.'),
         });
-        expect(context.retrievalScope).toMatchObject({
-            bookId: 'book-1', allowedChapterIds: ['chapter-1'], includeFuturePlan: false,
-        });
+        expect(context.retrievalScope).toBeNull();
+        expect(context.retrievalQuery).toBe('');
         expect(context.sourceSnapshot.sourceVersions).toMatchObject({
             workspaceDatabaseVersion: 4, planningDatabaseVersion: 5, graphDatabaseVersion: 9,
         });
@@ -107,6 +106,7 @@ describe('RAG Brainstorm context snapshot', () => {
         expect(selectedChapterSection?.text).toContain(currentText);
         expect(selectedChapterSection?.text).not.toContain('地下室已经停电');
         expect(context.sourceSnapshot.selectedChapters).toMatchObject([{ summarySource: 'stale-planning-summary' }]);
+        expect(context.retrievalScope).toMatchObject({ allowedSourceKinds: ['manuscript'], allowedChapterIds: ['chapter-1'] });
     });
 
     it('builds a usable prompt from chapter text when summaries, characters, and plans are absent', () => {
@@ -157,5 +157,27 @@ describe('RAG Brainstorm context snapshot', () => {
         expect(context.sections.find(section => section.label === 'Appearing character context')?.text).toBe('[]');
         expect(context.sections.find(section => section.label === 'Existing plot plans')?.text).toBe('[]');
         expect(context.retrievalQuery).toContain(currentText);
+    });
+
+    it('retrieves only chapters without a current summary', () => {
+        const expandedBook = {
+            ...book,
+            volumes: [{
+                ...book.volumes[0],
+                chapters: [...book.volumes[0].chapters, {
+                    id: 'chapter-2', title: 'The Hall', databaseVersion: 1, content: 'Ari enters the hall.',
+                }],
+            }],
+        } as unknown as Book;
+        const chapters: ChapterOption[] = [selectedChapters[0], {
+            id: 'chapter-2', title: 'The Hall', volumeTitle: 'Volume One', summary: '',
+            content: 'Ari enters the hall.', databaseVersion: 1,
+        }];
+        const result = buildBrainstormGenerationContext(expandedBook, planning, chapters, characters, relationships, versions, 15);
+        expect(result.retrievalScope).toMatchObject({
+            allowedSourceKinds: ['manuscript'], allowedChapterIds: ['chapter-2'], includeStale: false,
+        });
+        expect(result.retrievalQuery).toContain('Ari enters the hall.');
+        expect(result.retrievalQuery).not.toContain('Ari finds a sealed door.');
     });
 });

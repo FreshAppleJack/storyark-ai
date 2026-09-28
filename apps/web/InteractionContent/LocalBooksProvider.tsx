@@ -298,7 +298,7 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 const items = ordered.map(character => {
                     const record = stored.find(item => item.id === character.id);
                     if (!record) throw new Error('Character not found. Reopen the book.');
-                    return { characterId: record.id, expectedDatabaseVersion: record.databaseVersion };
+                    return { characterId: record.id, expectedDatabaseVersion: record.databaseVersion, expectedPosition: record.position };
                 });
                 const records = await localRepository.reorderCharacters({ bookId, expectedBookVersion: detail.book.databaseVersion, items });
                 client.setQueryData(localKeys.characters(bookId), records);

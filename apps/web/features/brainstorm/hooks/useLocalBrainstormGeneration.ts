@@ -346,23 +346,25 @@ export function useLocalBrainstormGeneration({
 
             let retrievalResponse: Awaited<ReturnType<typeof retrievalRepository.search>> | null = null;
             let retrievalNotice: string | null = null;
-            try {
-                retrievalResponse = await retrievalRepository.search({
-                    scope: source.retrievalScope,
-                    query: source.retrievalQuery,
-                    mode: 'hybrid',
-                    limit: 8,
-                    excludedHitIds: excludedHitIdsRef.current,
-                    charBudget: 8_000,
-                    tokenBudget: 2_000,
-                    adjacentChunkCount: 1,
-                    task: 'brainstorm',
-                    indexStatus: undefined,
-                    freshnessPolicy: { freshOnly: true, allowLexicalFallback: true, maxWaitMs: 500 },
-                });
-                retrievalNotice = retrievalStatusNotice(retrievalResponse);
-            } catch {
-                retrievalNotice = 'Retrieval was unavailable. The explicit chapter, planning, and character context remains in use.';
+            if (source.retrievalScope && source.retrievalQuery.trim()) {
+                try {
+                    retrievalResponse = await retrievalRepository.search({
+                        scope: source.retrievalScope,
+                        query: source.retrievalQuery,
+                        mode: 'hybrid',
+                        limit: 8,
+                        excludedHitIds: excludedHitIdsRef.current,
+                        charBudget: 8_000,
+                        tokenBudget: 2_000,
+                        adjacentChunkCount: 1,
+                        task: 'brainstorm',
+                        indexStatus: undefined,
+                        freshnessPolicy: { freshOnly: true, allowLexicalFallback: true, maxWaitMs: 500 },
+                    });
+                    retrievalNotice = retrievalStatusNotice(retrievalResponse);
+                } catch {
+                    retrievalNotice = 'Retrieval was unavailable. The explicit chapter, planning, and character context remains in use.';
+                }
             }
             if (!isActive(active)) return;
             const retrievalSection = retrievalResponse ? retrievalContextSection(retrievalResponse.context) : null;

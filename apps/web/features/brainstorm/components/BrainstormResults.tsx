@@ -68,13 +68,13 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, rege
                     />
                 )}
 
-                {visibleOptions.length === 0 ? (
+                {visibleOptions.length === 0 && !workspace.finalContent.trim() ? (
                     <section className="rounded-xl border border-dashed border-slate-300 bg-white py-16 text-center dark:border-slate-700 dark:bg-slate-900">
                         <BrainCircuit size={34} className="mx-auto mb-4 text-slate-300 dark:text-slate-600" />
                         <h3 className="text-lg font-semibold text-slate-900 dark:text-white">No brainstorm yet</h3>
                         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Select chapters, then generate three possible next directions.</p>
                     </section>
-                ) : (
+                ) : visibleOptions.length > 0 ? (
                     <div className="grid grid-cols-1 gap-4">
                         {visibleOptions.map(option => (
                             <article key={option.id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -105,7 +105,7 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, rege
                             </article>
                         ))}
                     </div>
-                )}
+                ) : null}
 
                 <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white">Editable Result</h3>

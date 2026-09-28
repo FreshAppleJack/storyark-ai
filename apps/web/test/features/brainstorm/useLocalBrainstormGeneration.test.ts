@@ -141,6 +141,22 @@ describe('useLocalBrainstormGeneration', () => {
         });
     });
 
+    it('uses explicit chapter summaries without retrieving duplicate evidence', async () => {
+        const summarizedContext = { ...context, retrievalScope: null, retrievalQuery: '' };
+        const { view } = setup({ getContext: () => summarizedContext });
+        await act(async () => { await view.result.current.generate(); });
+
+        expect(mocks.search).not.toHaveBeenCalled();
+        expect(mocks.prepareContext).toHaveBeenCalledWith(expect.objectContaining({
+            sections: summarizedContext.sections,
+        }));
+        expect(mocks.start.mock.calls[0][0].retrievalTrace).toBeNull();
+        emit(view, { kind: 'completed', text: JSON.stringify(response), usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 }, finishReason: 'stop' }, 0);
+        expect(view.result.current.candidate.options).toHaveLength(3);
+        expect(view.result.current.candidate.metadata?.retrieval).toBeNull();
+        expect(view.result.current.candidate.retrievalContext).toBeNull();
+    });
+
     it('keeps invalid generated text viewable without producing options', async () => {
         const { view } = setup();
         await act(async () => { await view.result.current.generate(); });

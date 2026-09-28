@@ -204,6 +204,83 @@ it('keeps the editable result untouched during generation and regeneration', asy
     expect(generation.acceptOption).toHaveBeenCalledTimes(1);
 });
 
+it('replaces an adopted round instead of bringing earlier directions back', async () => {
+    const option = (id: string, title: string) => ({
+        id, title, conflict: `${title} conflict`, motivation: `${title} motivation`,
+        consequences: `${title} consequences`, development: `${title} development`,
+    });
+    const firstRound = [option('first-1', 'First one'), option('first-2', 'First two'), option('first-3', 'First three')];
+    const secondRound = [option('second-1', 'Second one'), option('second-2', 'Second two'), option('second-3', 'Second three')];
+    const generationSource: NonNullable<BrainstormSources['generation']> = {
+        bookId: 'book', workspaceBookId: 'book', workspaceDatabaseVersion: 4,
+        planningBookId: 'book', planningDatabaseVersion: 2, graphBookId: 'book', graphDatabaseVersion: 3,
+    };
+    const save = vi.spyOn(brainstormRepository, 'save').mockImplementation(async input => ({
+        workspace: { ...input, databaseVersion: input.expectedDatabaseVersion + 1, bookId: 'book', updatedAt: 1 } as never,
+        sessionKey: input.sessionKey, revision: input.revision,
+    }));
+    generation.acceptOption.mockReturnValue(true);
+    generation.candidate = { ...generation.candidate, status: 'completed', options: firstRound };
+    const { result, rerender } = setup(initial, generationSource);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    act(() => result.current.chooseOption(firstRound[0]));
+    generation.candidate = { ...generation.candidate, status: 'adopted' };
+    rerender();
+    act(() => result.current.showAllOptions());
+    expect(result.current.visibleOptions.map(item => item.id)).toEqual(firstRound.map(item => item.id));
+
+    act(() => result.current.updateFinalContent('Hand-edited first direction'));
+    await act(async () => { await result.current.regenerate(); });
+    expect(result.current.workspace.finalContent).toBe('Hand-edited first direction');
+    generation.candidate = { ...generation.candidate, status: 'completed', options: secondRound };
+    rerender();
+    expect(result.current.visibleOptions.map(item => item.id)).toEqual(secondRound.map(item => item.id));
+    expect(result.current.workspace.finalContent).toBe('Hand-edited first direction');
+
+    act(() => result.current.chooseOption(secondRound[1]));
+    generation.candidate = { ...generation.candidate, status: 'adopted' };
+    rerender();
+    expect(result.current.workspace.generatedOptions.map(item => item.id)).toEqual(secondRound.map(item => item.id));
+    expect(result.current.workspace.finalContent).toContain('Second two');
+    act(() => result.current.showAllOptions());
+    expect(result.current.visibleOptions.map(item => item.id)).toEqual(secondRound.map(item => item.id));
+
+    await act(async () => { await result.current.handleSave(); });
+    expect(save.mock.calls[0][0].generatedOptions.map(item => item.id)).toEqual(secondRound.map(item => item.id));
+});
+
+it('does not restore saved direction cards after discarding a new candidate', async () => {
+    const saved = {
+        id: 'saved-1', title: 'Saved direction', conflict: 'Conflict', motivation: 'Motivation',
+        consequences: 'Consequences', development: 'Development',
+    };
+    const next = { ...saved, id: 'next-1', title: 'New candidate direction' };
+    const savedWorkspace = {
+        ...initial, generatedOptions: [saved], selectedOptionId: saved.id, finalContent: 'Hand-edited saved result',
+    };
+    const generationSource: NonNullable<BrainstormSources['generation']> = {
+        bookId: 'book', workspaceBookId: 'book', workspaceDatabaseVersion: 4,
+        planningBookId: 'book', planningDatabaseVersion: 2, graphBookId: 'book', graphDatabaseVersion: 3,
+    };
+    const { result, rerender } = setup(savedWorkspace, generationSource);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.visibleOptions.map(item => item.id)).toEqual([saved.id]);
+
+    generation.candidate = { ...generation.candidate, status: 'completed', options: [next] };
+    rerender();
+    expect(result.current.visibleOptions.map(item => item.id)).toEqual([next.id]);
+    act(() => result.current.discardCandidate());
+    generation.candidate = { ...generation.candidate, status: 'idle', options: [] };
+    rerender();
+
+    expect(generation.discardCandidate).toHaveBeenCalledOnce();
+    expect(result.current.visibleOptions).toEqual([]);
+    expect(result.current.workspace.generatedOptions).toEqual([saved]);
+    expect(result.current.workspace.finalContent).toBe('Hand-edited saved result');
+    expect(result.current.isDirty).toBe(false);
+});
+
 it('does not reuse the previous selection state when a new brainstorm candidate replaces it', async () => {
     const nextBook: Book = {
         ...book,

@@ -50,6 +50,7 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
     const [saveState, setSaveState] = useState<'idle' | 'dirty' | 'saved'>('idle');
     const [errorMessage, setErrorMessage] = useState('');
     const [remoteCandidate, setRemoteCandidate] = useState<BrainstormCandidate>(EMPTY_BRAINSTORM_CANDIDATE);
+    const [showStoredOptions, setShowStoredOptions] = useState(true);
     const mounted = useRef(false);
     const pendingOperation = useRef(false);
     const revision = useRef(0);
@@ -95,6 +96,7 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
                     setRelationships(buildRelationships(graph, loaders.current.book?.characters || []));
                 }
                 if (active) {
+                    setShowStoredOptions(true);
                     revision.current = 0;
                     savedRevision.current = 0;
                     setSaveState('idle');
@@ -145,10 +147,8 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
     const candidate = sources?.generation ? localGeneration.candidate : remoteCandidate;
     const candidateIsUsable = (candidate.status === 'completed' || candidate.status === 'adopted') && candidate.options.length > 0;
     const displayedOptions = candidateIsUsable
-        ? candidate.status === 'adopted'
-            ? [...candidate.options, ...workspace.generatedOptions.filter(option => !candidate.options.some(item => item.id === option.id))]
-            : candidate.options
-        : workspace.generatedOptions;
+        ? candidate.options
+        : candidate.status === 'idle' && showStoredOptions ? workspace.generatedOptions : [];
     const hasSelectedDisplayedOption = !!workspace.selectedOptionId
         && displayedOptions.some(option => option.id === workspace.selectedOptionId);
     const visibleOptions = hasSelectedDisplayedOption
@@ -182,7 +182,7 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
         }
         edit(prev => {
             const generatedOptions = isNewCandidateOption
-                ? [...prev.generatedOptions, ...candidate.options.filter(item => !prev.generatedOptions.some(existing => existing.id === item.id))]
+                ? candidate.options
                 : prev.generatedOptions;
             return {
                 ...prev,
@@ -330,6 +330,11 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
         }
     };
     const handleSave = async () => { if (loaders.current.sources) await flush(); else await handleLegacySave(); };
+    const discardCandidate = () => {
+        setShowStoredOptions(false);
+        if (sources?.generation) localGeneration.discardCandidate();
+        else setRemoteCandidate(EMPTY_BRAINSTORM_CANDIDATE);
+    };
     return {
         workspace, selectedChapterIds, chapterOptions, mentionedCharacters, missingSummaryChapters, visibleOptions,
         hasSelectedOption: hasSelectedDisplayedOption,
@@ -341,8 +346,8 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
         generationAvailable: !sources || !!sources.generation,
         stopGeneration: sources?.generation ? localGeneration.stop : () => undefined,
         regenerate: sources?.generation ? localGeneration.regenerate : handleGenerate,
-        discardCandidate: sources?.generation ? localGeneration.discardCandidate : () => setRemoteCandidate(EMPTY_BRAINSTORM_CANDIDATE),
-        closeCandidate: sources?.generation ? localGeneration.closeCandidate : () => setRemoteCandidate(EMPTY_BRAINSTORM_CANDIDATE),
+        discardCandidate,
+        closeCandidate: discardCandidate,
         toggleRetrievalHit: sources?.generation ? localGeneration.toggleRetrievalHit : () => undefined,
         toggleChapter, chooseOption, showAllOptions, updateFinalContent, handleGenerate, handleSave
     };
