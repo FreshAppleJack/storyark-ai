@@ -64,6 +64,45 @@ describe('BrainstormResults', () => {
         render(<BrainstormResults {...props} />);
 
         expect(screen.getAllByText(errorMessage)).toHaveLength(1);
-        expect(screen.getByText('{invalid')).toBeInTheDocument();
+        const rawDetails = screen.getByText('Review raw generation text').closest('details');
+        expect(rawDetails).not.toHaveAttribute('open');
+        expect(rawDetails).toContainElement(screen.getByText('{invalid'));
+    });
+
+    it('shows generation status and parsed directions without displaying raw output', () => {
+        const direction = {
+            id: 'direction-1', title: 'A new route', conflict: 'A blocked passage',
+            motivation: 'Find the missing friend', consequences: 'The search becomes urgent', development: 'Follow the clue',
+        };
+        const props = {
+            isGenerating: true,
+            isSaving: false,
+            handleGenerate: vi.fn(),
+            regenerate: vi.fn(async () => undefined),
+            stopGeneration: vi.fn(),
+            discardCandidate: vi.fn(),
+            generationAvailable: true,
+            selectedChapterIds: ['chapter-1'],
+            missingSummaryChapters: [],
+            isSnapshotStale: false,
+            errorMessage: null,
+            visibleOptions: [],
+            hasSelectedOption: false,
+            workspace: { selectedOptionId: null, finalContent: '' } as ComponentProps<typeof BrainstormResults>['workspace'],
+            chooseOption: vi.fn(),
+            showAllOptions: vi.fn(),
+            updateFinalContent: vi.fn(),
+            candidate: { ...EMPTY_BRAINSTORM_CANDIDATE, status: 'streaming' as const, rawText: '```json\n{"options":[' },
+            isReadOnly: false,
+            toggleRetrievalHit: vi.fn(),
+        } satisfies ComponentProps<typeof BrainstormResults>;
+
+        const { rerender } = render(<BrainstormResults {...props} />);
+        expect(screen.getByText(/Generating three directions/)).toBeInTheDocument();
+        expect(screen.queryByText(/```json/)).toBeNull();
+        rerender(<BrainstormResults {...props} isGenerating={false} visibleOptions={[direction]}
+            candidate={{ ...props.candidate, status: 'completed', rawText: '```json\n{"options":[...]}\n```' }} />);
+        expect(screen.getByText('A new route')).toBeInTheDocument();
+        expect(screen.queryByText(/```json/)).toBeNull();
     });
 });

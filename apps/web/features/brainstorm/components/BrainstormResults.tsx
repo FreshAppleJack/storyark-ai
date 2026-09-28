@@ -146,7 +146,7 @@ function CandidatePanel({
     const status = candidate.status === 'starting'
         ? 'Preparing the frozen chapter, planning, and relationship context...'
         : candidate.status === 'streaming'
-            ? 'Streaming into a temporary candidate. The saved workspace is unchanged.'
+            ? 'Generating three directions. Existing options and manual edits are unchanged.'
             : candidate.status === 'completed'
                 ? 'Candidate ready. Choose a direction to add it to the editable workspace.'
                 : candidate.status === 'adopted'
@@ -179,8 +179,11 @@ function CandidatePanel({
                     <Button variant="secondary" size="sm" onClick={discardCandidate} disabled={isGenerating || isSaving}>Discard candidate</Button>
                 </div>
             </div>
-            {candidate.rawText && (
-                <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-brand-100 bg-white px-4 py-3 text-xs leading-5 text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">{candidate.rawText}</pre>
+            {candidate.rawText && ['invalid', 'failed', 'cancelled', 'stale'].includes(candidate.status) && (
+                <details className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs dark:border-amber-900/70 dark:bg-amber-950/30">
+                    <summary className="cursor-pointer font-semibold text-amber-800 dark:text-amber-200">Review raw generation text</summary>
+                    <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-amber-200 bg-white px-3 py-2 leading-5 text-slate-700 dark:border-amber-900/70 dark:bg-slate-950 dark:text-slate-200">{candidate.rawText}</pre>
+                </details>
             )}
             {candidate.lastAttempt && (
                 <div role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">

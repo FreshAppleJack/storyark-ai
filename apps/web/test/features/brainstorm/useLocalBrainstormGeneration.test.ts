@@ -123,6 +123,7 @@ describe('useLocalBrainstormGeneration', () => {
         }));
         emit(view, { kind: 'delta', text: '{"options":[' }, 0);
         expect(view.result.current.candidate.status).toBe('streaming');
+        expect(view.result.current.candidate.rawText).toBe('');
         emit(view, { kind: 'completed', text: JSON.stringify(response), usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 }, finishReason: 'stop' }, 1);
         expect(view.result.current.candidate.status).toBe('completed');
         expect(view.result.current.candidate.options).toHaveLength(3);

@@ -215,7 +215,9 @@ export function useLocalBrainstormGeneration({
                 return;
             case 'delta':
                 active.candidateText += event.payload.text;
-                updateCandidate({ ...candidateRef.current, status: 'streaming', rawText: active.candidateText, errorMessage: null });
+                if (candidateRef.current.status !== 'streaming') {
+                    updateCandidate({ ...candidateRef.current, status: 'streaming', errorMessage: null });
+                }
                 return;
             case 'completed': {
                 active.candidateText = event.payload.text;
