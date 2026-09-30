@@ -6,6 +6,7 @@ import { Button } from '../../../components/ui/Button';
 import { SaveStatusIndicator } from '../../../components/ui/SaveStatusIndicator';
 import { OverlayHorizontalScrollbar } from '../../../components/ui/OverlayHorizontalScrollbar';
 import { ExportMenu } from './ExportMenu';
+import { chapterTitleOrDefault } from '../../../domain/chapterTitle';
 
 export type EditorSaveStatus = 'saved' | 'saving' | 'unsaved' | 'error';
 
@@ -63,23 +64,24 @@ export function EditorHeader({
 }: EditorHeaderProps): React.ReactElement {
     const actionsScrollId = useId();
     const actionsScrollRef = useRef<HTMLDivElement>(null);
+    const displayChapterTitle = chapterTitleOrDefault(chapterTitle);
 
     return (
-        <header className="flex h-14 min-w-0 flex-shrink-0 items-center justify-between overflow-visible border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-950">
-            <div className="min-w-0 flex-shrink">
+        <header className="flex h-14 min-w-0 flex-shrink-0 items-center justify-between gap-4 overflow-visible border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-950">
+            <div className="min-w-0 flex-1">
                 {hasActiveChapter ? (
                     <div className="flex flex-col">
                         <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                        {volumeTitle} <ChevronRight size={10}/>
+                        <span className="truncate" title={volumeTitle}>{volumeTitle}</span> <ChevronRight size={10} className="shrink-0"/>
                         </span>
-                        <span className="text-sm font-semibold text-slate-900 dark:text-white">{chapterTitle}</span>
+                        <span className="truncate text-sm font-semibold text-slate-900 dark:text-white" title={displayChapterTitle}>{displayChapterTitle}</span>
                     </div>
                 ) : (
-                    <span className="text-slate-400 dark:text-slate-500 text-sm">Select a chapter to start writing</span>
+                    <span className="block truncate text-slate-400 dark:text-slate-500 text-sm" title="Select a chapter to start writing">Select a chapter to start writing</span>
                 )}
             </div>
 
-            <div className="relative min-w-0 max-w-full flex-1">
+            <div className="relative min-w-0 w-max max-w-[75%] shrink-0">
                 <div
                     id={actionsScrollId}
                     ref={actionsScrollRef}

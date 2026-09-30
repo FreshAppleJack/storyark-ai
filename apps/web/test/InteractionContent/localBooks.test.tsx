@@ -6,6 +6,7 @@ import { AppProvider, useApp } from '../../InteractionContent/AppContext';
 import { localKeys, localRepository, projectBook, projectCharacter, type LocalBookDetail } from '../../data/local/repository';
 import type { LocalCharacter } from '../../data/local/contracts';
 import type { ChapterDraftSnapshot } from '../../features/editor/hooks/useChapterDraft';
+import { useChapterDraft } from '../../features/editor/hooks/useChapterDraft';
 
 const native = vi.hoisted(() => ({ invoke: vi.fn(), isTauri: vi.fn() }));
 const http = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() }));
@@ -19,10 +20,13 @@ const chapter = { ...volume, id: 'chapter-1', volumeId: volume.id, title: 'Chapt
 const detail: LocalBookDetail = { book, volumes: [volume], chapters: [chapter] };
 const snapshot: ChapterDraftSnapshot = { bookId: book.id, volumeId: volume.id, chapterId: chapter.id, title: 'Saved title', content: chapter.body.content, wordCount: 0, foreshadowings: [], revision: 1 };
 
-function setup() {
+function setupHook<T>(useSubject: () => T) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
     const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}><AppProvider mode="local">{children}</AppProvider></QueryClientProvider>;
-    return { ...renderHook(() => useApp(), { wrapper }), client };
+    return { ...renderHook(useSubject, { wrapper }), client };
+}
+function setup() {
+    return setupHook(useApp);
 }
 beforeEach(() => {
     vi.clearAllMocks(); native.isTauri.mockReturnValue(true);
@@ -32,6 +36,32 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Local books', () => {
+    it.each(['', '   '])('persists a blank editor title through desktop IPC with its body intact (%j)', async title => {
+        const projectedChapter = projectBook(book, detail).volumes[0].chapters[0];
+        const { result, client } = setupHook(() => ({
+            app: useApp(),
+            draft: useChapterDraft({ bookId: book.id, volumeId: volume.id, chapterId: chapter.id, chapter: projectedChapter }),
+        }));
+        await waitFor(() => expect(result.current.app.booksLoading).toBe(false));
+        client.setQueryData(localKeys.book(book.id), detail);
+        native.invoke.mockImplementation(async (_command, { input }) => input.title.trim() ? ({ ok: true, value: {
+            chapter: { ...chapter, title: input.title, body: { ...chapter.body, content: input.content }, databaseVersion: 2 },
+            sessionKey: input.sessionKey, revision: input.revision,
+        } }) : ({ ok: false, error: { code: 'INVALID_INPUT', message: 'Invalid storage request' } }));
+
+        act(() => result.current.draft.setTitle(title));
+        const draftSnapshot = result.current.draft.getSnapshot();
+        await act(async () => {
+            expect(await result.current.app.saveLocalSnapshot!(draftSnapshot, result.current.draft.sessionKey)).toBe(true);
+        });
+
+        expect(native.invoke).toHaveBeenLastCalledWith('local_save_chapter', expect.objectContaining({
+            input: expect.objectContaining({ title: 'Untitled Chapter', content: chapter.body.content }),
+        }));
+        expect(client.getQueryData<LocalBookDetail>(localKeys.book(book.id))?.chapters[0])
+            .toMatchObject({ title: 'Untitled Chapter', body: chapter.body });
+    });
+
     it('loads without a session and blocks legacy operations without HTTP', async () => {
         const { result } = setup();
         await waitFor(() => expect(result.current.booksLoading).toBe(false));

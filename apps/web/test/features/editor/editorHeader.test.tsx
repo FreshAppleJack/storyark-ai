@@ -28,6 +28,17 @@ function createProps(overrides: Record<string, unknown> = {}) {
 }
 
 describe('EditorHeader', () => {
+    it('exposes the full long chapter title on hover', () => {
+        const chapterTitle = '标题测试'.repeat(100);
+        render(<EditorHeader {...createProps({ chapterTitle })} />);
+        expect(screen.getByTitle(chapterTitle)).toHaveTextContent(chapterTitle);
+    });
+
+    it.each(['', '   '])('shows the default chapter name for a blank title (%j)', chapterTitle => {
+        render(<EditorHeader {...createProps({ chapterTitle })} />);
+        expect(screen.getByTitle('Untitled Chapter')).toHaveTextContent('Untitled Chapter');
+    });
+
     it('shows the volume and chapter breadcrumb', () => {
         render(<EditorHeader {...createProps()} />);
 
