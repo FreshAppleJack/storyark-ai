@@ -19,12 +19,11 @@ impl Adapter for AdapterImpl {
         key: &str,
         context: &str,
     ) -> Result<RequestBuilder> {
-        bearer(
-            client,
-            self.url()?,
-            key,
-            json!({"model":self.config.model_id,"messages":[{"role":"user","content":context}],"max_tokens":self.config.max_output_tokens,"stream":true}),
-        )
+        let mut body = json!({"model":self.config.model_id,"messages":[{"role":"user","content":context}],"stream":true});
+        if let Some(cap) = self.config.max_output_tokens {
+            body["max_tokens"] = json!(cap);
+        }
+        bearer(client, self.url()?, key, body)
     }
     fn event(&self, _name: Option<&str>, data: &str) -> Result<Option<ProviderEvent>> {
         if data == "[DONE]" {
@@ -84,7 +83,7 @@ mod tests {
             base_url: "https://api.example.com/v1".into(),
             model_id: "test-model".into(),
             timeout_ms: 30_000,
-            max_output_tokens: 128,
+            max_output_tokens: Some(128),
         })
     }
 

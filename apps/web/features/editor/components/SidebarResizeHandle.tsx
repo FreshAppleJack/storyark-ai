@@ -8,19 +8,24 @@ interface SidebarResizeHandleProps {
     max: number;
     onResize: (width: number) => void;
     onReset: () => void;
+    onDraggingChange?: (dragging: boolean) => void;
 }
 
-export function SidebarResizeHandle({ side, width, min, max, onResize, onReset }: SidebarResizeHandleProps) {
+export function SidebarResizeHandle({ side, width, min, max, onResize, onReset, onDraggingChange }: SidebarResizeHandleProps) {
     const drag = useRef<{ id: number; x: number; width: number } | null>(null);
     const restore = useRef<(() => void) | null>(null);
     const [dragging, setDragging] = useState(false);
-    useEffect(() => () => restore.current?.(), []);
+    useEffect(() => () => {
+        restore.current?.();
+        onDraggingChange?.(false);
+    }, [onDraggingChange]);
 
     const finish = () => {
         drag.current = null;
         restore.current?.();
         restore.current = null;
         setDragging(false);
+        onDraggingChange?.(false);
     };
     const direction = side === 'left' ? 1 : -1;
     const change = (value: number) => onResize(Math.min(max, Math.max(min, value)));
@@ -34,7 +39,7 @@ export function SidebarResizeHandle({ side, width, min, max, onResize, onReset }
         aria-valuenow={Math.round(width)}
         aria-valuetext={`${Math.round(width)} pixels`}
         tabIndex={0}
-        title="Drag to resize · Double-click to reset · Arrow keys to adjust"
+        title="Double-click to reset"
         className={`group absolute inset-y-0 z-40 w-2 cursor-col-resize touch-none select-none outline-none hover:bg-brand-500/15 focus-visible:bg-brand-500/20 ${side === 'left' ? 'right-0' : 'left-0'} ${dragging ? 'bg-brand-500/20' : ''}`}
         onPointerDown={event => {
             if (event.button !== 0 || drag.current) return;
@@ -48,6 +53,7 @@ export function SidebarResizeHandle({ side, width, min, max, onResize, onReset }
             document.body.style.cursor = 'col-resize';
             document.body.style.userSelect = 'none';
             setDragging(true);
+            onDraggingChange?.(true);
         }}
         onPointerMove={event => {
             const start = drag.current;

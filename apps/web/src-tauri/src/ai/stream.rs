@@ -266,7 +266,7 @@ mod tests {
             base_url: "http://127.0.0.1:1234".into(),
             model_id: "synthetic".into(),
             timeout_ms: 1000,
-            max_output_tokens: 128,
+            max_output_tokens: Some(128),
         });
         for (reason, expected) in [
             ("stop", FinishReason::Stop),
@@ -322,7 +322,7 @@ mod tests {
                 base_url: format!("http://127.0.0.1:{port}"),
                 model_id: "test-model".into(),
                 timeout_ms: 10_000,
-                max_output_tokens: 128,
+                max_output_tokens: Some(128),
             },
             key: Secret::new("synthetic-key".into()),
             context: "[Current draft]\nTest".into(),
@@ -389,7 +389,7 @@ mod tests {
                     base_url: format!("http://127.0.0.1:{port}"),
                     model_id: "synthetic-model".into(),
                     timeout_ms: 10_000,
-                    max_output_tokens: 128,
+                    max_output_tokens: Some(128),
                 },
                 key: Secret::new("synthetic-key".into()),
                 context: "synthetic chapter text".into(),

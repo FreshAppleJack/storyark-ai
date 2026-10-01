@@ -16,7 +16,7 @@ pub(super) fn fail(code: &str) -> StorageError {
 pub(super) fn row(conn: &Connection, id: &str) -> Result<Value> {
     valid_id(id)?;
     conn.query_row("SELECT name,protocol,base_url,model_id,timeout_ms,max_output_tokens,config_version,created_at,updated_at,credential_ref,credential_mode FROM ai_model_configs WHERE id=?", [id], |r| Ok(json!({
-        "id":id,"config":{"name":r.get::<_,String>(0)?,"protocol":r.get::<_,String>(1)?,"baseUrl":r.get::<_,String>(2)?,"modelId":r.get::<_,String>(3)?,"timeoutMs":r.get::<_,i64>(4)?,"maxOutputTokens":r.get::<_,i64>(5)?},
+        "id":id,"config":{"name":r.get::<_,String>(0)?,"protocol":r.get::<_,String>(1)?,"baseUrl":r.get::<_,String>(2)?,"modelId":r.get::<_,String>(3)?,"timeoutMs":r.get::<_,i64>(4)?,"maxOutputTokens":r.get::<_,Option<i64>>(5)?},
         "configVersion":r.get::<_,i64>(6)?,"createdAt":r.get::<_,i64>(7)?,"updatedAt":r.get::<_,i64>(8)?,"credentialRef":r.get::<_,Option<String>>(9)?,"credentialMode":r.get::<_,String>(10)?
     }))).optional()?.ok_or_else(|| fail("NOT_FOUND"))
 }

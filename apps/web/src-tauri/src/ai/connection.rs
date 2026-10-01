@@ -66,7 +66,7 @@ mod tests {
                 write!(socket, "HTTP/1.1 {status}\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
             });
             let result = tauri::async_runtime::block_on(test(Snapshot {
-                config: ConfigInput { name: "Synthetic".into(), protocol: Protocol::OpenaiResponses, base_url: format!("http://{address}"), model_id: "synthetic-model".into(), timeout_ms: 5000, max_output_tokens: 600000 },
+                config: ConfigInput { name: "Synthetic".into(), protocol: Protocol::OpenaiResponses, base_url: format!("http://{address}"), model_id: "synthetic-model".into(), timeout_ms: 5000, max_output_tokens: Some(600000) },
                 key: Secret::new("synthetic-key".into()),
             }));
             server.join().unwrap();

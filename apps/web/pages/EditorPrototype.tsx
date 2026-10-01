@@ -67,6 +67,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
     const plotSettings = localPlanning?.plotSettings ?? legacyPlotSettings;
     const [activeForeshadowingId, setActiveForeshadowingId] = useState<string | null>(null);
     const [isForeshadowingPanelOpen, setIsForeshadowingPanelOpen] = useState(false);
+    const [isSidebarResizing, setIsSidebarResizing] = useState(false);
     const {
         containerRef, leftExpanded, setLeftExpanded, leftWidth, rightWidth,
         leftOverlay, rightOverlay, leftMax, rightMax, resize, reset,
@@ -486,12 +487,14 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                 expanded={leftExpanded}
                 onExpandedChange={setLeftExpanded}
                 sidebarWidth={leftWidth}
+                isResizing={isSidebarResizing}
                 isOverlay={leftOverlay}
                 resizeHandle={<SidebarResizeHandle
                     side="left" width={leftWidth}
                     min={Math.min(SIDEBAR_LIMITS.left.min, leftMax)} max={leftMax}
                     onResize={width => resize('left', width)}
                     onReset={() => reset('left')}
+                    onDraggingChange={setIsSidebarResizing}
                 />}
                 localMode={isLocal}
                 key={book.id}
@@ -605,12 +608,14 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
 
                     <WritingContextPanel
                         sidebarWidth={rightWidth}
+                        isResizing={isSidebarResizing}
                         isOverlay={rightOverlay}
                         resizeHandle={<SidebarResizeHandle
                             side="right" width={rightWidth}
                             min={Math.min(SIDEBAR_LIMITS.right.min, rightMax)} max={rightMax}
                             onResize={width => resize('right', width)}
                             onReset={() => reset('right')}
+                            onDraggingChange={setIsSidebarResizing}
                         />}
                         isOpen={isForeshadowingPanelOpen}
                         foreshadowings={chapterDraft.foreshadowings}

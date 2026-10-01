@@ -16,8 +16,14 @@ pub struct ConfigInput {
     pub protocol: Protocol,
     pub base_url: String,
     pub model_id: String,
+    #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u32,
-    pub max_output_tokens: u32,
+    #[serde(default)]
+    pub max_output_tokens: Option<u32>,
+}
+
+fn default_timeout_ms() -> u32 {
+    300_000
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,7 +102,10 @@ impl ConfigInput {
             }
         }
         if !(1000..=600000).contains(&self.timeout_ms)
-            || !(1..=1000000).contains(&self.max_output_tokens)
+            || self
+                .max_output_tokens
+                .is_some_and(|cap| !(1..=1000000).contains(&cap))
+            || (self.protocol == Protocol::AnthropicMessages && self.max_output_tokens.is_none())
             || self.base_url.len() > 2048
             || self.base_url.chars().any(char::is_whitespace)
         {
@@ -126,6 +135,26 @@ impl ConfigInput {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn defaults_timeout_and_validates_protocol_specific_output_caps() {
+        let mut config: ConfigInput = serde_json::from_value(json!({
+            "name":"Test", "protocol":"openai-responses",
+            "baseUrl":"https://example.com/v1", "modelId":"fixture"
+        }))
+        .unwrap();
+        assert_eq!(config.timeout_ms, 300_000);
+        assert_eq!(config.max_output_tokens, None);
+        assert!(config.validate().is_ok());
+        config.protocol = Protocol::AnthropicMessages;
+        assert!(config.validate().is_err());
+        config.max_output_tokens = Some(4096);
+        assert!(config.validate().is_ok());
+        for cap in [0, 1_000_001] {
+            config.max_output_tokens = Some(cap);
+            assert!(config.validate().is_err());
+        }
+    }
 
     #[test]
     fn rejects_secret_fields_and_unsafe_endpoints() {

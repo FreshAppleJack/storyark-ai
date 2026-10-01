@@ -15,7 +15,8 @@ const MIGRATION_0009: &str = include_str!("../../migrations/0009_retrieval_index
 const MIGRATION_0010: &str = include_str!("../../migrations/0010_retrieval_audit.sql");
 const MIGRATION_0011: &str = include_str!("../../migrations/0011_retrieval_search_task.sql");
 const MIGRATION_0012: &str = include_str!("../../migrations/0012_retrieval_scheduler.sql");
-const LATEST_VERSION: i64 = 12;
+const MIGRATION_0013: &str = include_str!("../../migrations/0013_optional_ai_output_cap.sql");
+const LATEST_VERSION: i64 = 13;
 const RETRIEVAL_SEARCH_TASK_REPAIR: &str =
     "ALTER TABLE retrieval_search_events ADD COLUMN task TEXT NOT NULL DEFAULT 'generic' CHECK(length(trim(task)) BETWEEN 1 AND 64);";
 
@@ -79,6 +80,7 @@ impl Database {
             10 => {}
             11 => {}
             12 => {}
+            13 => {}
             _ => {
                 return Err(StorageError::new(
                     "STORAGE_FAILURE",
@@ -124,6 +126,10 @@ impl Database {
         if version < 12 {
             tx.execute_batch(MIGRATION_0012)?;
             tx.pragma_update(None, "user_version", 12)?;
+        }
+        if version < 13 {
+            tx.execute_batch(MIGRATION_0013)?;
+            tx.pragma_update(None, "user_version", 13)?;
         }
         tx.prepare("SELECT auto_index,database_version FROM retrieval_preferences LIMIT 0")?;
         tx.execute(

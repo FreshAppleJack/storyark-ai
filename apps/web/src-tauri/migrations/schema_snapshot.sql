@@ -2,7 +2,7 @@
 
 -- Full schema snapshot for NEW EMPTY databases only; not an incremental migration.
 
--- Based on the registered Rust migrations through version 12. No application data.
+-- Based on the registered Rust migrations through version 13. No application data.
 
 -- Do not add this file to the runtime migration registry or execute all *.sql files.
 
@@ -181,28 +181,6 @@ CREATE TABLE brainstorm_workspaces (
     FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TABLE ai_model_configs (
-    id TEXT PRIMARY KEY NOT NULL CHECK(length(id) = 36),
-    name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 120),
-    protocol TEXT NOT NULL CHECK(protocol IN ('openai-responses','openai-chat-completions','anthropic-messages')),
-    base_url TEXT NOT NULL CHECK(length(base_url) BETWEEN 1 AND 2048),
-    model_id TEXT NOT NULL CHECK(length(trim(model_id)) BETWEEN 1 AND 256),
-    timeout_ms INTEGER NOT NULL CHECK(timeout_ms BETWEEN 1000 AND 600000),
-    max_output_tokens INTEGER NOT NULL CHECK(max_output_tokens BETWEEN 1 AND 1000000),
-    credential_ref TEXT UNIQUE CHECK(credential_ref IS NULL OR length(credential_ref) = 36),
-    config_version INTEGER NOT NULL DEFAULT 1 CHECK(config_version > 0),
-    created_at INTEGER NOT NULL CHECK(created_at >= 0),
-    updated_at INTEGER NOT NULL CHECK(updated_at >= created_at)
-, credential_mode TEXT NOT NULL DEFAULT 'session'
-    CHECK(credential_mode IN ('session','system'))) STRICT;
-
-CREATE TABLE ai_generation_settings (
-    id INTEGER PRIMARY KEY CHECK(id = 1),
-    default_config_id TEXT REFERENCES ai_model_configs(id) ON DELETE RESTRICT,
-    database_version INTEGER NOT NULL DEFAULT 1 CHECK(database_version > 0),
-    updated_at INTEGER NOT NULL CHECK(updated_at >= 0)
-) STRICT;
-
 CREATE TABLE ai_credential_cleanup (
     credential_ref TEXT PRIMARY KEY NOT NULL CHECK(length(credential_ref)=36),
     credential_mode TEXT NOT NULL CHECK(credential_mode IN ('session','system'))
@@ -314,6 +292,29 @@ CREATE TABLE retrieval_dirty_sources (
     last_changed INTEGER NOT NULL
 );
 
+CREATE TABLE "ai_model_configs" (
+    id TEXT PRIMARY KEY NOT NULL CHECK(length(id) = 36),
+    name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 120),
+    protocol TEXT NOT NULL CHECK(protocol IN ('openai-responses','openai-chat-completions','anthropic-messages')),
+    base_url TEXT NOT NULL CHECK(length(base_url) BETWEEN 1 AND 2048),
+    model_id TEXT NOT NULL CHECK(length(trim(model_id)) BETWEEN 1 AND 256),
+    timeout_ms INTEGER NOT NULL CHECK(timeout_ms BETWEEN 1000 AND 600000),
+    max_output_tokens INTEGER CHECK(max_output_tokens BETWEEN 1 AND 1000000)
+        CHECK(protocol != 'anthropic-messages' OR max_output_tokens IS NOT NULL),
+    credential_ref TEXT UNIQUE CHECK(credential_ref IS NULL OR length(credential_ref) = 36),
+    config_version INTEGER NOT NULL DEFAULT 1 CHECK(config_version > 0),
+    created_at INTEGER NOT NULL CHECK(created_at >= 0),
+    updated_at INTEGER NOT NULL CHECK(updated_at >= created_at),
+    credential_mode TEXT NOT NULL DEFAULT 'session' CHECK(credential_mode IN ('session','system'))
+) STRICT;
+
+CREATE TABLE ai_generation_settings (
+    id INTEGER PRIMARY KEY CHECK(id = 1),
+    default_config_id TEXT REFERENCES ai_model_configs(id) ON DELETE RESTRICT,
+    database_version INTEGER NOT NULL DEFAULT 1 CHECK(database_version > 0),
+    updated_at INTEGER NOT NULL CHECK(updated_at >= 0)
+) STRICT;
+
 CREATE INDEX books_order ON books(position, id);
 
 CREATE INDEX volumes_order ON volumes(book_id, position, id);
@@ -350,7 +351,7 @@ CREATE INDEX ai_generation_events_book_time_idx
 
 CREATE INDEX retrieval_dirty_book ON retrieval_dirty_sources(book_id);
 
-PRAGMA user_version = 12;
+PRAGMA user_version = 13;
 
 COMMIT;
 

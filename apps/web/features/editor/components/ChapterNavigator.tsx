@@ -91,6 +91,7 @@ interface ChapterNavigatorProps {
     expanded?: boolean;
     onExpandedChange?: (expanded: boolean) => void;
     sidebarWidth?: number;
+    isResizing?: boolean;
     isOverlay?: boolean;
     resizeHandle?: React.ReactNode;
     localMode?: boolean;
@@ -120,6 +121,7 @@ export function ChapterNavigator({
     expanded,
     onExpandedChange,
     sidebarWidth,
+    isResizing = false,
     isOverlay,
     resizeHandle,
     localMode = false,
@@ -561,7 +563,7 @@ export function ChapterNavigator({
                 className={`h-full min-h-0 min-w-0 flex-shrink-0 overflow-hidden bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 duration-300 ease-in-out flex flex-col ${
                     sidebarWidth === undefined
                         ? `relative max-w-[50vw] transition-all max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:left-0 max-[900px]:z-30 max-[900px]:shadow-2xl ${sidebarExpanded ? 'w-80 xl:w-96' : 'w-16'}`
-                        : `transition-colors ${isOverlay ? 'absolute inset-y-0 left-0 z-30 shadow-2xl' : 'relative'}`
+                        : `${isResizing ? 'transition-none' : 'transition-[width,background-color,border-color] motion-reduce:transition-none'} ${isOverlay ? 'absolute inset-y-0 left-0 z-30 shadow-2xl' : 'relative'}`
                 }`}
             >
                 {sidebarExpanded && resizeHandle}

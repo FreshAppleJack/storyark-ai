@@ -2,10 +2,14 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { AiModels } from '../../../features/settings/components/AiModels';
+import { emptyAiConfig } from '../../../features/settings/useAiSettings';
 
 const mocks = vi.hoisted(() => ({ useAiSettings: vi.fn() }));
 
-vi.mock('../../../features/settings/useAiSettings', () => ({ useAiSettings: mocks.useAiSettings }));
+vi.mock('../../../features/settings/useAiSettings', async importOriginal => ({
+    ...await importOriginal<typeof import('../../../features/settings/useAiSettings')>(),
+    useAiSettings: mocks.useAiSettings,
+}));
 
 function createSettings(overrides: Record<string, unknown> = {}) {
     return {
@@ -42,6 +46,10 @@ function createSettings(overrides: Record<string, unknown> = {}) {
 }
 
 describe('AiModels', () => {
+    it('starts new configurations with a five minute timeout and no output override', () => {
+        expect(emptyAiConfig.timeoutMs).toBe(300000);
+        expect(emptyAiConfig.maxOutputTokens).toBeNull();
+    });
     it('allows a numeric limit to be cleared before entering a replacement value', async () => {
         const user = userEvent.setup();
         const settings = createSettings();
@@ -60,7 +68,7 @@ describe('AiModels', () => {
         expect(settings.change).toHaveBeenLastCalledWith({ maxOutputTokens: 4096 });
     });
 
-    it('restores the previous value when a numeric limit is left blank', async () => {
+    it('clears an optional output limit instead of restoring the previous override', async () => {
         const user = userEvent.setup();
         const settings = createSettings();
         mocks.useAiSettings.mockReturnValue(settings);
@@ -70,7 +78,30 @@ describe('AiModels', () => {
         await user.clear(outputLimit);
         await user.tab();
 
-        expect(outputLimit).toHaveValue('100000');
+        expect(outputLimit).toHaveValue('');
+        expect(outputLimit).not.toBeRequired();
+        expect(settings.change).toHaveBeenLastCalledWith({ maxOutputTokens: null });
+    });
+
+    it('requires an explicit cap for Anthropic and exposes the field', () => {
+        const settings = createSettings();
+        settings.form.protocol = 'anthropic-messages' as typeof settings.form.protocol;
+        mocks.useAiSettings.mockReturnValue(settings);
+        render(<AiModels />);
+        const outputLimit = screen.getByLabelText('Provider output cap (tokens)');
+        expect(outputLimit).toBeRequired();
+        expect(outputLimit.closest('details')).toHaveAttribute('open');
+    });
+
+    it('restores the timeout when it is left blank', async () => {
+        const user = userEvent.setup();
+        const settings = createSettings();
+        mocks.useAiSettings.mockReturnValue(settings);
+        render(<AiModels />);
+        const timeout = screen.getByLabelText('Request timeout (milliseconds)');
+        await user.clear(timeout);
+        await user.tab();
+        expect(timeout).toHaveValue('60000');
         expect(settings.change).not.toHaveBeenCalled();
     });
 
