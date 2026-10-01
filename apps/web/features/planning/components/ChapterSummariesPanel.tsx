@@ -68,15 +68,15 @@ export function ChapterSummariesPanel({
     return (
         <main className="order-1 flex min-h-[40rem] min-w-0 flex-col overflow-hidden bg-slate-50 xl:order-2 xl:min-h-0 dark:bg-slate-950" aria-label="Chapter summaries workspace">
             <div className="shrink-0 border-b border-slate-200 bg-white px-5 py-4 dark:border-slate-800 dark:bg-slate-900">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="min-w-0">
+                <div className="flex flex-wrap items-center justify-between gap-3 xl:flex-nowrap">
+                    <div className="min-w-0 xl:shrink-0">
                         <div className="flex items-center gap-2 text-sm font-bold text-slate-900 dark:text-white">
                             <BookOpen size={17} className="text-brand-500" />
                             Chapter Summaries
                         </div>
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">{summarizedCount} of {chapterOptions.length} chapters summarized</p>
+                        <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{summarizedCount} of {chapterOptions.length} chapters summarized</p>
                     </div>
-                    <div className="flex w-full max-w-sm items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100 dark:border-slate-800 dark:bg-slate-950 dark:focus-within:border-brand-500 dark:focus-within:ring-brand-900/40">
+                    <div className="flex w-full min-w-0 max-w-sm items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100 xl:w-auto xl:flex-1 dark:border-slate-800 dark:bg-slate-950 dark:focus-within:border-brand-500 dark:focus-within:ring-brand-900/40">
                         <Search size={15} className="shrink-0 text-slate-400" />
                         <input
                             value={chapterSearchQuery}
@@ -96,7 +96,7 @@ export function ChapterSummariesPanel({
 
             <nav className="shrink-0 border-b border-slate-200 bg-white px-5 py-3 dark:border-slate-800 dark:bg-slate-900" aria-label="Select a chapter summary">
                 {chapterSearchQuery.trim() && <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">{filteredChapters.length} matching chapters</p>}
-                <div className="relative pb-4">
+                <div className="relative">
                 <div id={chapterStripId} ref={chapterStripRef} className="scrollbar-hidden-x flex gap-2 overflow-x-auto pb-1">
                     {filteredChapters.map(chapter => (
                         <button
@@ -117,7 +117,7 @@ export function ChapterSummariesPanel({
                         </button>
                     ))}
                 </div>
-                <OverlayHorizontalScrollbar scrollElementRef={chapterStripRef} scrollElementId={chapterStripId} ariaLabel="Chapter summaries" />
+                <OverlayHorizontalScrollbar scrollElementRef={chapterStripRef} scrollElementId={chapterStripId} ariaLabel="Chapter summaries" bottomClassName="-bottom-2" />
                 </div>
             </nav>
 

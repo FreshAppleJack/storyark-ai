@@ -58,9 +58,6 @@ function ForeshadowingContent({ bookId, localBook, localNotes }: { bookId: strin
                         <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{book.title}</p>
                     </div>
                 </div>
-                <Button variant="secondary" size="sm" onClick={() => navigate(`/editor/${bookId}`)}>
-                    Back to Editor
-                </Button>
             </header>
 
             <main className="max-w-6xl mx-auto p-8">

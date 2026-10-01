@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Loader2, Save, Wand2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Save } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { SaveStatusIndicator } from '../components/ui/SaveStatusIndicator';
 import { useBooks } from '../InteractionContent/BooksContext';
@@ -23,7 +23,7 @@ function AiBrainstormContent({ bookId, localBook, sources }: { bookId: string; l
     const { getBook } = useBooks();
     const book = localBook ?? getBook(bookId);
     const editor = useBrainstormWorkspace(bookId, book, searchParams.get('chapterId'), sources);
-    const { isLoading, loadError, isSaving, isGenerating, saveState, handleSave, regenerate } = editor;
+    const { isLoading, loadError, isSaving, isGenerating, saveState, handleSave } = editor;
     if (!book) return <div className="min-h-screen flex items-center justify-center text-slate-400">Book not found</div>;
     return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
@@ -52,9 +52,8 @@ function AiBrainstormContent({ bookId, localBook, sources }: { bookId: string; l
                         <Button onClick={handleSave} disabled={isSaving || isGenerating || isLoading || loadError} icon={isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}>
                             {isSaving ? 'Saving...' : 'Save Result'}
                         </Button>
-                        <Button variant="secondary" onClick={() => { void regenerate(); }} disabled={!editor.generationAvailable || isGenerating || isSaving || isLoading || loadError}
-                            title={editor.generationAvailable ? undefined : 'Model integration is not available yet'} icon={isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}>
-                            {isGenerating ? 'Brainstorming...' : 'Regenerate'}
+                        <Button variant="secondary" onClick={() => navigate(`/editor/${bookId}`)} icon={<ArrowLeft size={16} />}>
+                            Back to Editor
                         </Button>
                     </div>
                 </div>
