@@ -88,6 +88,11 @@ interface SidebarSearchResult {
 }
 
 interface ChapterNavigatorProps {
+    expanded?: boolean;
+    onExpandedChange?: (expanded: boolean) => void;
+    sidebarWidth?: number;
+    isOverlay?: boolean;
+    resizeHandle?: React.ReactNode;
     localMode?: boolean;
     book: Book;
     activeChapterId: string;
@@ -112,6 +117,11 @@ interface ChapterNavigatorProps {
  * page through callbacks; this component owns only its local UI state.
  */
 export function ChapterNavigator({
+    expanded,
+    onExpandedChange,
+    sidebarWidth,
+    isOverlay,
+    resizeHandle,
     localMode = false,
     book,
     activeChapterId,
@@ -128,7 +138,9 @@ export function ChapterNavigator({
     onOpenChapterSummary,
     onOpenRetrievalLocator,
 }: ChapterNavigatorProps): React.ReactElement {
-    const [sidebarExpanded, setSidebarExpanded] = useState(true);
+    const [internalExpanded, setInternalExpanded] = useState(true);
+    const sidebarExpanded = expanded ?? internalExpanded;
+    const setSidebarExpanded = onExpandedChange ?? setInternalExpanded;
     const [expandedVolumes, setExpandedVolumes] = useState<Set<string>>(() => new Set(book.volumes.map(v => v.id)));
     const [storySearchMode, setStorySearchMode] = useState<StorySearchMode>('title');
     const [sidebarSearchMode, setSidebarSearchMode] = useState<SidebarSearchMode>('chapter');
@@ -544,7 +556,15 @@ export function ChapterNavigator({
 
     return (
         <>
-            <aside className={`relative h-full min-h-0 min-w-0 max-w-[50vw] flex-shrink-0 overflow-hidden bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 ease-in-out flex flex-col max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:left-0 max-[900px]:z-30 max-[900px]:shadow-2xl ${sidebarExpanded ? 'w-80 xl:w-96' : 'w-16'}`}>
+            <aside
+                style={sidebarWidth === undefined ? undefined : { width: sidebarWidth }}
+                className={`h-full min-h-0 min-w-0 flex-shrink-0 overflow-hidden bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 duration-300 ease-in-out flex flex-col ${
+                    sidebarWidth === undefined
+                        ? `relative max-w-[50vw] transition-all max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:left-0 max-[900px]:z-30 max-[900px]:shadow-2xl ${sidebarExpanded ? 'w-80 xl:w-96' : 'w-16'}`
+                        : `transition-colors ${isOverlay ? 'absolute inset-y-0 left-0 z-30 shadow-2xl' : 'relative'}`
+                }`}
+            >
+                {sidebarExpanded && resizeHandle}
                 {/* Sidebar Header */}
                 <div className="h-14 flex-shrink-0 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4">
                     {sidebarExpanded ? (
@@ -559,7 +579,7 @@ export function ChapterNavigator({
                             <ArrowLeft size={16}/>
                         </div>
                     )}
-                    <button onClick={() => setSidebarExpanded(!sidebarExpanded)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 focus:outline-none">
+                    <button onClick={() => setSidebarExpanded(!sidebarExpanded)} aria-label={sidebarExpanded ? 'Collapse chapter sidebar' : 'Expand chapter sidebar'} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 focus:outline-none">
                         {sidebarExpanded ? <ChevronDown className="rotate-90" size={18}/> : <ChevronRight size={18}/>}
                     </button>
                 </div>

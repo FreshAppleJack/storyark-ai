@@ -14,6 +14,9 @@ import { ChapterNavigator, NavigatorDeleteTarget } from '../features/editor/comp
 import { EditorHeader } from '../features/editor/components/EditorHeader';
 import { AiContinueCandidate } from '../features/editor/components/AiContinueCandidate';
 import { WritingContextPanel } from '../features/editor/components/WritingContextPanel';
+import { SidebarResizeHandle } from '../features/editor/components/SidebarResizeHandle';
+import { useEditorSidebarLayout } from '../features/editor/hooks/useEditorSidebarLayout';
+import { SIDEBAR_LIMITS } from '../features/editor/sidebarLayout';
 import { Button } from '../components/ui/Button';
 import { getForeshadowingExcerptMap } from '../domain/chapterContent';
 import { useChapterDraft } from '../features/editor/hooks/useChapterDraft';
@@ -64,6 +67,10 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
     const plotSettings = localPlanning?.plotSettings ?? legacyPlotSettings;
     const [activeForeshadowingId, setActiveForeshadowingId] = useState<string | null>(null);
     const [isForeshadowingPanelOpen, setIsForeshadowingPanelOpen] = useState(false);
+    const {
+        containerRef, leftExpanded, setLeftExpanded, leftWidth, rightWidth,
+        leftOverlay, rightOverlay, leftMax, rightMax, resize, reset,
+    } = useEditorSidebarLayout(isForeshadowingPanelOpen);
     const [pendingRetrievalFocus, setPendingRetrievalFocus] = useState<{
         chapterId: string;
         locator: RetrievalChunkLocator;
@@ -474,8 +481,18 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
     if (!book) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-400">Loading Book Data...</div>;
 
     return (
-        <div className="relative flex h-screen min-h-0 min-w-0 overflow-hidden bg-slate-50 font-sans transition-colors duration-300 dark:bg-slate-950">
+        <div ref={containerRef} className="relative flex h-screen min-h-0 min-w-0 overflow-hidden bg-slate-50 font-sans transition-colors duration-300 dark:bg-slate-950">
             <ChapterNavigator
+                expanded={leftExpanded}
+                onExpandedChange={setLeftExpanded}
+                sidebarWidth={leftWidth}
+                isOverlay={leftOverlay}
+                resizeHandle={<SidebarResizeHandle
+                    side="left" width={leftWidth}
+                    min={Math.min(SIDEBAR_LIMITS.left.min, leftMax)} max={leftMax}
+                    onResize={width => resize('left', width)}
+                    onReset={() => reset('left')}
+                />}
                 localMode={isLocal}
                 key={book.id}
                 book={book}
@@ -536,7 +553,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     onToggleRetrievalHit={aiContinue.toggleRetrievalHit}
                 />
 
-                <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100 dark:bg-slate-900">
+                <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100 dark:bg-slate-900">
                     <div className="flex min-h-0 min-w-0 flex-1 items-start justify-center overflow-y-auto px-4 pb-12">
                         <div className="relative mt-8 flex min-w-0 min-h-[1300px] w-full max-w-3xl flex-col border border-slate-200 bg-white shadow-md dark:border-slate-800 dark:bg-slate-950">
                             {activeChapter ? (
@@ -587,6 +604,14 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     </div>
 
                     <WritingContextPanel
+                        sidebarWidth={rightWidth}
+                        isOverlay={rightOverlay}
+                        resizeHandle={<SidebarResizeHandle
+                            side="right" width={rightWidth}
+                            min={Math.min(SIDEBAR_LIMITS.right.min, rightMax)} max={rightMax}
+                            onResize={width => resize('right', width)}
+                            onReset={() => reset('right')}
+                        />}
                         isOpen={isForeshadowingPanelOpen}
                         foreshadowings={chapterDraft.foreshadowings}
                         excerptMap={foreshadowingExcerptMap}
