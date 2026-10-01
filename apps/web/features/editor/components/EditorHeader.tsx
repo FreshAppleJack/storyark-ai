@@ -1,10 +1,9 @@
-import React, { useId, useRef } from 'react';
+import React from 'react';
 import {
     ChevronRight, Globe, ListTree, Loader2, PanelRightClose, PanelRightOpen, Settings, Wand2,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { SaveStatusIndicator } from '../../../components/ui/SaveStatusIndicator';
-import { OverlayHorizontalScrollbar } from '../../../components/ui/OverlayHorizontalScrollbar';
 import { ExportMenu } from './ExportMenu';
 import { chapterTitleOrDefault } from '../../../domain/chapterTitle';
 
@@ -62,13 +61,11 @@ export function EditorHeader({
     onExportPdf,
     onExportWorkJson,
 }: EditorHeaderProps): React.ReactElement {
-    const actionsScrollId = useId();
-    const actionsScrollRef = useRef<HTMLDivElement>(null);
     const displayChapterTitle = chapterTitleOrDefault(chapterTitle);
 
     return (
-        <header className="flex h-14 min-w-0 flex-shrink-0 items-center justify-between gap-4 overflow-visible border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-950">
-            <div className="min-w-0 flex-1">
+        <header className="flex min-h-14 min-w-0 flex-shrink-0 flex-wrap items-center justify-between gap-x-4 gap-y-2 overflow-visible border-b border-slate-200 bg-white px-6 py-2 dark:border-slate-800 dark:bg-slate-950">
+            <div className="min-w-0 flex-1 basis-36">
                 {hasActiveChapter ? (
                     <div className="flex flex-col">
                         <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
@@ -81,13 +78,7 @@ export function EditorHeader({
                 )}
             </div>
 
-            <div className="relative min-w-0 w-max max-w-[75%] shrink-0">
-                <div
-                    id={actionsScrollId}
-                    ref={actionsScrollRef}
-                    className="h-full w-full overflow-x-auto whitespace-nowrap scrollbar-hidden-x"
-                >
-                <div className="flex w-max min-w-full items-center justify-end gap-4 py-1">
+            <div className="ml-auto flex min-w-0 w-max max-w-full shrink-0 flex-wrap items-center justify-end gap-x-4 gap-y-2 whitespace-nowrap py-1 [&>*]:shrink-0">
                 <SaveStatusIndicator state={saveStatus} savedText={localMode ? 'Saved locally' : 'Saved'} onRetry={onRetrySave} />
 
                 <div className="h-4 mx-1 border-l border-slate-300 dark:border-slate-700" />
@@ -163,14 +154,6 @@ export function EditorHeader({
                 </Button>
 
                 <ExportMenu isExporting={isExporting} onExportWord={onExportWord} onExportPdf={onExportPdf} onExportWorkJson={onExportWorkJson} canExportWorkJson={localMode} />
-                </div>
-                </div>
-                <OverlayHorizontalScrollbar
-                    scrollElementRef={actionsScrollRef}
-                    scrollElementId={actionsScrollId}
-                    ariaLabel="Editor header actions"
-                    bottomClassName="-bottom-2"
-                />
             </div>
         </header>
     );
