@@ -43,7 +43,7 @@ import/export.
 Rust generates UUID v4 identities for new books, volumes, and chapters. Validate
 canonical lowercase UUID strings at every command boundary; TypeScript aliases
 and SQL TEXT columns alone do not enforce this. IDs survive rename, reorder,
-restart, and future export. No cloud user ID or synthetic authenticated account
+restart, and work export. No cloud user ID or synthetic authenticated account
 is needed. `author` is editable book metadata, not an identity or ownership key.
 Character and foreshadowing IDs inside legacy content remain opaque strings.
 
@@ -75,8 +75,8 @@ explicit lock prevents writes. Book/volume locks also protect descendants.
 - `contentVersion = 1`: StoryArk's supported Tiptap JSON document contract, not
   the installed Tiptap npm version. Legacy content uses version 0.
 - Export `schemaVersion = 1`: the whole-book interchange envelope defined in
-  [`storyark-work-exchange.md`](./storyark-work-exchange.md). The P0-A contract,
-  P0-B export, P0-C preflight and P0-D conflict-aware import are separate from
+  [`storyark-work-exchange.md`](./storyark-work-exchange.md). The exchange
+  format and import/export lifecycle are separate from
   the SQLite migration version. Restore remains controlled and must not replace
   a database while another StoryArk instance is running.
 
@@ -127,8 +127,8 @@ notes JSON until validated; corrupt notes block conversion rather than being res
 
 ## Business commands and transactions
 
-The TypeScript interface describes camelCase IPC payloads. Future Rust serde DTOs
-must match it, enforce numeric/UUID/title/status/content validation, and expose
+The TypeScript interface and Rust serde DTOs use camelCase IPC payloads.
+The native boundary enforces numeric/UUID/title/status/content validation and exposes
 business commands only (no arbitrary SQL or caller-selected database paths).
 
 | Command | Transaction rules |

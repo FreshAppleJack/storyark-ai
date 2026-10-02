@@ -37,7 +37,7 @@ and credential references; saved keys must never be returned to the WebView.
 | Command | Input | Success |
 | --- | --- | --- |
 | ai_list_configs | none | ConfigList |
-| ai_save_config | SaveConfig | ConfigRecord with committed configVersion |
+| ai_save_config | SaveSettings | committed id, configVersion and cleanupPending |
 | ai_delete_config | ConfigVersion plus expectedDefaultDatabaseVersion | ConfigList after commit |
 | ai_set_default | SetDefault | ConfigList after commit |
 | ai_test_connection | requestId and ConfigVersion | matching requestId, configVersion; validated text response only |
@@ -112,7 +112,7 @@ Run `schema:check` and `schema:test` after changing registered migrations.
 
 ## Configuration and credentials
 
-Configuration commands are now registered in `ai_commands.rs`. `ai_save_config`
+Configuration commands are registered in `ai_commands.rs`. `ai_save_config`
 accepts `SaveSettings` (id/null, expectedConfigVersion, config, credential action).
 The credential action is `keep` or `replace` with key and remember. A changed
 base URL or protocol requires replacement; a blank input never erases a key.
@@ -164,9 +164,11 @@ Provider-specific fields are not flattened into a pretend common request model.
 
 The SSE parser buffers bytes until complete UTF-8 lines, joins repeated `data`
 fields, ignores comments/heartbeats, rejects invalid UTF-8 and bounds both an
-event and the whole response. The stream layer applies connect/first-response,
-idle and total deadlines, an 8 MiB response cap and a two-task semaphore. A
-length/max-token termination is reported as `TRUNCATED`; no automatic replay is
+event and the whole response. The stream uses one absolute request deadline
+covering connection, first response and all streamed chunks; incoming chunks do
+not restart the timeout. It also enforces an 8 MiB response cap. The task runtime
+limits concurrent generation to two tasks. A length/max-token termination is
+reported as `TRUNCATED`; no automatic replay is
 attempted after any delta has been emitted.
 
 `AiRuntime` owns one-time context snapshots and active request IDs. The caller
@@ -185,7 +187,7 @@ A list refresh failure after commit is not represented as a failed database save
 
 ## AI Continue adoption boundary
 
-The local editor now uses `aiGenerationRepository` and Tauri IPC directly. The
+The local editor uses `aiGenerationRepository` and Tauri IPC directly. The
 local path no longer imports the legacy HTTP continuation service and does not
 retry or fall back to it when local generation fails.
 
@@ -226,7 +228,7 @@ acceptance remain separate evidence items.
 ## Brainstorm candidate boundary
 
 The local brainstorm page reuses its chapter picker, character and relationship
-context, candidate cards and editable final-content area, but generation now
+context, candidate cards and editable final-content area, and generation
 uses the configured-model IPC path. The prompt requests exactly three minimal
 structured options (`title`, `conflict`, `motivation`, `consequences` and
 `development`) as JSON. The frontend validates field types and bounded lengths;

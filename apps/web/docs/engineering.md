@@ -1,76 +1,102 @@
-# Frontend engineering checks
+# Engineering checks and configuration
 
-Run commands from `apps/web`:
+## Frontend checks
+
+Use Node.js 24 and run commands from `apps/web`:
 
 ```sh
 npm ci
-npm run typecheck
 npm run lint -- --max-warnings 0
 npm test
+npm run schema:check
+npm run schema:test
+node --test scripts/local-storage-schema.test.mjs
 npm run build
 ```
 
-`build` includes `typecheck`, so a local production build cannot silently bypass
-TypeScript. CI uses lint, tests and build without running typecheck twice.
-The lockfile is tracked so `npm ci` can reproduce the dependency resolution.
-CI uses Node 24 on GitHub-hosted Ubuntu and needs no database or provider keys.
-The workflow follows the official [checkout](https://github.com/actions/checkout)
-and [setup-node](https://github.com/actions/setup-node) usage, with read-only
-repository permissions and no persisted checkout credentials.
+`build` includes `npm run typecheck`, so a production build cannot silently bypass
+TypeScript. Run `npm run typecheck` separately for a quicker feedback cycle. The
+tracked lockfile makes `npm ci` reproducible. Schema tools use Node's built-in
+SQLite and temporary databases, never a personal database.
+
+## Native and desktop checks
+
+From `apps/web/src-tauri`, run `cargo fmt --check` and `cargo test --locked`.
+Hydrate Git LFS resources before native/resource tests. See
+[desktop.md](desktop.md) for actual WebView checks with disposable data.
+
+| CI workflow | Environment | Checks |
+| --- | --- | --- |
+| `.github/workflows/frontend.yml` | Ubuntu, Node 24 | Lint, Vitest, local SQLite schema contract and production build/typecheck. |
+| `.github/workflows/desktop.yml` | Windows, Rust stable, Git LFS checkout | Rust formatting and locked native tests. |
+
+Provider keys and a server database are not required for those fixture-based
+checks. CI does not establish live-provider support, installer behavior, signing
+or rendering on every platform. Run schema snapshot checks locally when changing
+migrations; follow the [migration guide](../src-tauri/migrations/README.md).
 
 ## Type and lint policy
 
 `strict: true` covers application code and Vite/Vitest configuration. The
 standalone check follows `tsconfig.json` project references. Test files run
 through Vitest and ESLint; they are not a separate TypeScript build project.
-`skipLibCheck` skips dependency declaration internals, not our calls into those
-dependencies. `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are
-separate future evaluations, not prerequisites for the local-first work.
+`skipLibCheck` skips dependency declaration internals, not our calls into them.
 
-HTTP bodies default to `unknown`, with named DTO contracts or validation at the
-data boundary. Authentication identity, numeric write IDs, AI continuation
-results and chapter notes have explicit checks. Malformed chapter notes fail
-loading instead of silently becoming an empty list that could later be saved.
-Legacy notes without timestamps use zero; graph handles normalize field by
-field. DTOs do not claim complete runtime schema validation of every endpoint.
+Validate untrusted payloads at data boundaries. Native writes must follow strict
+record/content validation; a permissive legacy read is not permission to write
+unvalidated data. Malformed notes must fail loading rather than become an empty
+list that could overwrite the original. HTTP adapters remain legacy code and do
+not replace the native desktop boundary.
 
-Prefer inferred callback types or the library's Editor, Node, Mark and
-JSONContent types over `any`. Explicit `any` is not a release gate: three local
-exceptions remain in partial Tiptap suggestion test fixtures, with inline
-reasons. The lint rule remains enabled elsewhere. Two editor effects also have
-local, explained exceptions because they restore external localStorage focus
-and selection requests after chapter data arrives. Existing provider/hook
-Fast Refresh exceptions remain scoped to their files.
+Prefer inferred callbacks and the library's Editor, Node, Mark and JSONContent
+types over `any`. Keep any necessary lint/hook/Fast Refresh exceptions local and
+explain their reason inline. Avoid recording counts of exceptions here because
+they drift as files change. Preserve editor identity when synchronizing external
+character data or restoring focus/selection.
 
-`React.FC<Props>` is valid and does not by itself make a component unsafe.
-Existing usages can remain. New or substantially edited components can use
-plain functions with explicit props; avoid unrelated style-only conversions.
+`React.FC<Props>` is valid. New or substantially edited components can use plain
+functions with explicit props; avoid unrelated style-only conversions.
 
-## Environment configuration
+## Desktop configuration
 
-Copy `apps/web/.env.example` to `apps/web/.env.local` and restart Vite after
+`npm run desktop:dev` starts Vite at `127.0.0.1:1420` through the Tauri
+configuration. Desktop storage, AI and retrieval use native commands, not `/api`.
+Configure generation providers in Settings. New provider configurations default
+to a 300,000 ms timeout; existing saved configurations keep their limit.
+OpenAI-compatible protocols may omit the output cap; Anthropic Messages requires
+one. These provider settings are separate from the legacy environment below.
+
+Data/log overrides are intended for isolated diagnostics; see
+[desktop.md](desktop.md) and [user-facing-errors.md](user-facing-errors.md).
+
+## Legacy HTTP/browser environment
+
+The retained HTTP adapters and browser preview use the following settings; they
+do not control native desktop AI requests. Copy `apps/web/.env.example` to
+`apps/web/.env.local` only when working on that path, and restart Vite after
 changes. The repository-root example is not Vite's environment directory.
 
-| Setting | Default | Purpose |
+| Setting | Default | Legacy purpose |
 | --- | --- | --- |
-| `VITE_API_BASE_URL` | `/api` | Public browser API base path or HTTP(S) URL |
-| `VITE_API_TIMEOUT_MS` | `10000` | Ordinary request timeout |
-| `VITE_AI_TIMEOUT_MS` | `60000` | Continuation and brainstorm timeout |
-| `STORYARK_WEB_HOST` | `0.0.0.0` | Development bind address |
-| `STORYARK_WEB_PORT` | `3000` | Development port; fail if occupied |
-| `STORYARK_API_PROXY_TARGET` | `http://localhost:8080` | Development backend target |
+| `VITE_API_BASE_URL` | `/api` | Browser API base path or HTTP(S) URL. |
+| `VITE_API_TIMEOUT_MS` | `10000` | Ordinary HTTP request timeout. |
+| `VITE_AI_TIMEOUT_MS` | `60000` | Legacy HTTP continuation/brainstorm timeout; not native generation. |
+| `STORYARK_WEB_HOST` | `0.0.0.0` | Browser-preview development bind address. |
+| `STORYARK_WEB_PORT` | `3000` | Browser-preview development port; fail if occupied. |
+| `STORYARK_API_PROXY_TARGET` | `http://localhost:8080` | Legacy development backend target. |
 
-Vite forwards `/api` requests to the configured backend during development,
-preserving the browser-facing Host. For production, serve `/api` behind a
-same-origin reverse proxy or set `VITE_API_BASE_URL` before building and
-configure the backend's credentialed CORS policy for that frontend origin.
-The dev proxy is not a production deployment configuration.
+Vite forwards `/api` to that backend in browser development. Its dev proxy is
+not a production deployment configuration. A separate HTTP deployment needs a
+same-origin reverse proxy or an explicit API base/CORS configuration; desktop
+users do not need to deploy that backend.
 
-`VITE_*` settings are embedded in the browser bundle at build time. Never put
-AI keys or other secrets in them. HTTP errors, including 401, reject back to
-the caller without forcing navigation and discarding a draft. The editor shows
-save failure and keeps its retry path; a full reauthentication flow is separate.
+`VITE_*` settings are public build-time values: never place API keys in them.
+Retained HTTP errors reject to the caller rather than forcing navigation and
+discarding a draft. Native save/error handling remains separate.
 
-Run `scripts/scan-secrets.ps1` from the repository root before committing. This
-local check scans the workspace and Git history; the frontend CI above covers
-typechecking, lint, behavior tests and bundling.
+## Before publication
+
+Run `scripts/scan-secrets.ps1` from the repository root, supplying `-GitleaksPath`
+if necessary. It scans the workspace and Git history. Resolve findings and report
+failed/unavailable checks honestly. Documentation-only changes need link and
+factual validation; do not imply the full application was retested.

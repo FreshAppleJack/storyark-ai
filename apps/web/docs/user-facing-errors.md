@@ -2,11 +2,11 @@
 
 ## Scope
 
-This first copy pass removes source/index versions, hashes, recall algorithms,
-draft revisions and export schema/index internals from the writing UI. It keeps
+The writing UI omits source/index versions, hashes, recall algorithms,
+draft revisions and export schema/index internals. It keeps
 chapter names, material types, outdated-summary warnings, unsaved changes,
 locks, replacement choices, backups and necessary AI configuration fields.
-The underlying source checks, export format and persistence rules are unchanged.
+Source checks, export validation and persistence guards remain enforced.
 
 Desktop errors retain their codes internally. The interface displays recovery
 advice; original diagnostics are recorded separately. Unknown frontend errors
@@ -47,10 +47,9 @@ it cannot turn a failed save into success or break error handling.
 ## Development console
 
 WebView console output does not automatically appear in the terminal running
-Cargo/Vite. Previously, native failures were usually returned to the UI without
-printing, and SQLite/filesystem conversions discarded their original details.
-The new logger mirrors diagnostics to stderr in debug builds. This appears in
-IntelliJ when the desktop process is launched from that terminal/run configuration.
+Cargo/Vite. The native logger mirrors diagnostics to stderr in debug builds.
+This appears in IntelliJ when the desktop process is launched from that terminal
+or run configuration.
 An independently launched executable's stderr is not attached to IntelliJ.
 Restart the desktop process after rebuilding Rust; frontend hot reload alone does
 not add native logging commands to an already-running executable.

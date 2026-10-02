@@ -62,9 +62,8 @@ rest of the book's IDs.
 Generation metadata is retained only for an adopted AI summary. Unaccepted
 suggestions remain candidate state and are not written to the planning row.
 Chapter references and metadata shapes are validated in the write transaction.
-P1-SUM1 establishes the provenance and freshness contract. P1-SUM2 adds
-Story Outline card actions for generating a suggestion, reviewing old versus
-new text, accepting, or keeping the manual summary. The suggestion is transient
+Story Outline provides card actions for generating a suggestion, reviewing old
+versus new text, accepting, or keeping the manual summary. The suggestion is transient
 until acceptance; acceptance uses the ordinary optimistic planning save. The
 selected chapter body is the only source for events. Retrieved confirmed
 settings and character profiles may clarify terminology but cannot supply
@@ -95,7 +94,7 @@ legacy-ID mapping tables. The versioned whole-work JSON schema and local export
 flow are implemented separately. Import ID mappings are transient transaction
 state; they are not a database table and are never reused across imports.
 
-## IPC contract (names fixed at implementation time)
+## IPC contract
 
 Business commands only — no arbitrary SQL or path access. All mutations take
 expected versions and return the committed record(s) inside the existing
@@ -106,18 +105,18 @@ CONTENT_INCOMPATIBLE, STORAGE_FAILURE).
 | Command | Shape | Semantics |
 | --- | --- | --- |
 | local_list_characters | `{ bookId }` → `LocalCharacter[]` | Active + archived, ordered. |
-| local_create_character | `{ input: { bookId, name, role, aliases, description, color, tags, avatar?, handleConfig? } }` → character | Rust assigns UUID/position; book must be unlocked. |
+| local_create_character | `{ input: { bookId, expectedBookVersion, name, role, aliases, description, color, tags, avatar?, handleConfig? } }` → `{ character, book }` | Rust assigns UUID/position; book must be unlocked. |
 | local_update_character | `{ input: { bookId, characterId, expectedDatabaseVersion, ...fields } }` → character | Version-guarded partial update; never touches chapter content. |
 | local_archive_character | `{ input: { bookId, characterId, expectedDatabaseVersion, isArchived } }` → character | Archive/unarchive; references preserved. |
 | local_reorder_characters | `{ input: { bookId, expectedBookVersion, items: [{ characterId, expectedDatabaseVersion }] } }` → ordered characters | Complete set including archived characters; validate ownership, book lock and all versions, then commit positions atomically. Only character versions advance. |
 | local_read_graph | `{ bookId }` → `{ graph, nodes, edges } \| null` | `null` means "not initialized yet" — never an empty-graph lie. Load failure is an error, not null. |
 | local_initialize_graph | `{ input: { bookId } }` → `{ graph, nodes: [], edges: [] }` | Explicit first-time creation, persisted; seeding from characters is a separate explicit call, not an automatic side effect of opening the page. |
 | local_save_graph | `{ input: { bookId, expectedGraphVersion, nodes, edges } }` → `{ graph, nodes, edges }` | Whole-snapshot write in one transaction: endpoint ownership, dangling edges, coordinate/handle validation; stale version rejected. |
-| local_read_planning / local_save_planning | `{ bookId }` / `{ input: { bookId, expectedDatabaseVersion, ...aggregate } }` | Per-book aggregate; chapterIds validated in-transaction. |
+| local_read_planning / local_save_planning | `{ bookId }` → planning / `{ input: { bookId, expectedDatabaseVersion, sessionKey, revision, ...aggregate } }` → `{ planning, sessionKey, revision }` | Per-book aggregate; chapterIds validated in-transaction. |
 | local_read_book | `{ bookId }` → full chapter snapshots | Board aggregates notes from this consistent SQLite read; ordered by volume/chapter position. |
 | local_update_note | `{ input: { bookId, chapterId, noteId, expectedDatabaseVersion, note?, isRecovered? } }` → committed chapter | Patch only the target note in a transaction; preserve body and unknown fields. |
 | local_read_preferences / local_save_preferences | none / `{ input: { expectedDatabaseVersion, ...fields } }` | Single-row application preferences, optimistic version. |
-| local_read_brainstorm / local_save_brainstorm | `{ bookId }` / `{ input: { bookId, expectedDatabaseVersion, ...workspace } }` | Workspace aggregate; selected chapter IDs validated in-transaction. |
+| local_read_brainstorm / local_save_brainstorm | `{ bookId }` → workspace / `{ input: { bookId, expectedDatabaseVersion, sessionKey, revision, ...workspace } }` → `{ workspace, sessionKey, revision }` | Workspace aggregate; selected chapter IDs validated in-transaction. |
 
 ## Locking, versions and deletion impact
 
@@ -175,7 +174,7 @@ the reconcile pass updates only label/color drift. Archived characters keep
 their mentions and graph references, disappear from `@` suggestions and new
 auto-matches, and show an "Archived" badge in the list.
 
-The character settings page is back on its own route and loads the book
+The character settings page has its own route and loads the book
 detail plus characters through the local queries; the editor's world-
 building button and mention clicks navigate there through the existing
 flush-protected navigation. Avatars stay audit-compliant with the contract:
@@ -198,7 +197,7 @@ handle configuration — character defaults are copied when a node is added or
 loaded and are never written back from the graph, which keeps one owner per
 config. The viewport stays session UI state.
 
-The canvas page is back on its route, loads book detail, characters and the
+The canvas page has its own route, loads book detail, characters and the
 graph through local queries, and opens an uninitialized book straight into an
 empty canvas (matching the legacy page): the page issues the idempotent
 initialize command itself — reads still never seed graphs, failures still
@@ -256,10 +255,9 @@ and live plot links, retaining plot text and adding `missingChapterIds` for
 inline missing-link feedback. Existing brainstorm live selections are cleaned;
 opaque historical snapshots survive with `deletedChapterIds` annotations.
 Changed planning/workspace versions advance atomically with deletion. A failed
-step rolls back all of these changes. Whole-work JSON export is implemented at
-the P0-B boundary. P0-C preflight and P0-D conflict-aware import now consume
-the same envelope; restore remains a controlled backup operation after all
-running instances have stopped.
+step rolls back all of these changes. Whole-work import/export uses the
+[exchange contract](storyark-work-exchange.md). Database restoration is a
+controlled backup operation after all running instances have stopped.
 
 ## Application preferences and the brainstorm workspace
 
@@ -282,7 +280,7 @@ their first run), and a change made during loading wins over the arriving row
 and is persisted. Every UI change applies instantly as a visual preview and
 is serialized through a save queue with the optimistic version; failures are
 announced, never shown as saved, and leave the visible choice for retry.
-Preferences are unaffected by book locks. The settings page is back at
+Preferences are unaffected by book locks. The settings page is available at
 `/settings` without login/register/account sections.
 
 The brainstorm workspace keeps persistence separate from AI generation.
@@ -303,66 +301,25 @@ writes into chapter content.
 
 ## Bookshelf management
 
-Bookshelf management is fully wired: the context menu works in local mode,
+Bookshelf actions use the local context menu;
 `local_update_book` renames and toggles lifecycle status in one
 version-checked write (locks and stale versions refuse), and deleting a book
 cascades volumes, chapters, characters, the graph, planning and the
 brainstorm workspace in the existing transaction — the confirmation dialog
-now names those attachments. New books receive one accent from the fixed
+names those attachments. New books receive one accent from the fixed
 legacy palette (blue/emerald/rose/amber/purple 600), persisted in the
 `cover_color` column added by migration 0003 (additive, backup-first like
-0002). The editor's settings button is enabled again now that `/settings`
-exists. `local_list_characters` reports NOT_FOUND for deleted books, matching
+0002). `local_list_characters` reports NOT_FOUND for deleted books, matching
 every other read.
 
 ## Whole-book JSON interchange
 
-The v1 contract and local export path are implemented and verified separately
-from the SQL migration. P0-C preflight and P0-D conflict-aware import now use
-the same contract; restore remains a controlled backup operation and is never
-performed over a running database.
+The authoritative envelope, entity/reference rules, exclusions, copy ID
+remapping, replacement backups and export write sequence are documented in
+[storyark-work-exchange.md](storyark-work-exchange.md).
 
-The editor's local Export menu flushes mounted work-surface drafts, obtains a
-single Rust/SQLite snapshot, validates the complete reference graph, presents a
-preview, and writes only after the author chooses a destination. A unique
-temporary sibling is read back and checked for UTF-8, size, hash and envelope
-validity before it replaces the selected destination. See
-[`storyark-work-exchange.md`](./storyark-work-exchange.md) for the detailed
-P0-B sequence and excluded state.
-
-Snapshot entity set (one document per book, `schemaVersion` stamped):
-book record (title/author/status/cover color/position/lock), volumes with
-positions, chapters with typed bodies (`format`/`version`/`content`,
-`originalContent`/`originalFormat`, word count, foreshadowing notes with all
-unknown fields preserved verbatim), characters (including archived ones and
-their handle defaults), the relationship graph (graph version, node
-instances keyed by `nodeKey` with per-node handle overrides, edges with
-handles/labels), the planning aggregate (story summary/background, chapter
-summaries with source versions, plot settings with chapter references and
-missing-link annotations), and the brainstorm workspace (live selection,
-historical context snapshot, generated options, selection, final content).
-Application preferences are explicitly excluded; API keys never appear.
-
-Reference checks on import: chapter→volume, everything→book, graph node
-→character (same book), graph edge→node instances, chapter summary→chapter,
-plot setting chapterIds, workspace selectedChapterIds, and foreshadowing
-mark IDs↔chapter note IDs. Violations are reported, never silently dropped.
-
-Asset boundary: avatar presets/colors are inline values and travel with the
-document; machine-local file paths are never required and never written into
-the snapshot. The style library stays outside (localStorage today).
-
-ID rewriting when adding a copy: every entity ID (book/volume/chapter/
-character/nodeKey/edge/note/plot entry and saved brainstorm option) is
-re-allocated on import so the copy can never collide with the original; every
-reference above is rewritten through the same mapping in one transaction, and
-content strings that embed IDs (mentions, foreshadowing marks) are rewritten
-with documented coverage — unknown content formats keep their original text
-untouched. Replace first creates and verifies an online backup, then replaces
-the whole cascade in one transaction after a second target-version check.
-
-The implementation is split into `storage/import/validation.rs` (defensive
-contract and reference checks), `mapping.rs` (copy ID allocation and content
-reference rewriting), and `persistence.rs` (conflict statistics and ordered
-SQLite insertion). `local_prepare_work_import` is read-only; `local_import_work`
-is the only command that mutates a work.
+Import/export includes saved book content and the brainstorm workspace, but not
+application preferences, API credentials, temporary candidates or retrieval
+indexes. Export flushes mounted drafts before reading a consistent SQLite
+snapshot. The JSON sample stays in this repository because automated exchange
+tests import it. Restoration of a database backup requires all instances to stop.

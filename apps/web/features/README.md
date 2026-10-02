@@ -13,6 +13,9 @@ another book.
 | `books` | Bookshelf actions and inline rename drafts; the page keeps its search and navigation. |
 | `foreshadowing` | Card derivation and recovery/retry state; writes still use BooksContext's shared chapter queue. |
 | `settings` | Profile form state and preference controls; persistence stays in the existing providers. |
+| `editor` | Chapter editing UI, sidebar resizing, toolbar and draft interactions; document persistence remains in the shared save queue. |
+| `retrieval` | Search results, source navigation and generation evidence presentation; indexing and search storage stay behind native repositories. |
+| `help` | English question-and-answer content and help search; the help page owns layout and expansion state. |
 
 Desktop data remains owned by LocalBooksProvider and its shared Query cache.
 Session and preferences remain in their focused providers. Feature hooks do not

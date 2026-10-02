@@ -7,8 +7,10 @@ backend. AI generation uses the configured provider through native commands.
 ## Prerequisites
 
 Use a Node.js version supported by `package.json`. The schema tools require
-Node.js 24 with built-in SQLite. Install Rust and the native build prerequisites
-for the target platform. Windows builds require the MSVC toolchain, Microsoft C++
+Node.js 24 with built-in SQLite. Install Git LFS and run `git lfs pull`
+from the repository root to hydrate the bundled embedding model. Install Rust
+and the native build prerequisites for the target platform. Windows builds
+require the MSVC toolchain, Microsoft C++
 build tools with a Windows SDK, and WebView2.
 
 ## Development
@@ -40,7 +42,12 @@ npm run tauri -- info
 `desktop:build` runs the frontend build and `tauri build --no-bundle`. On Windows,
 the executable is `src-tauri/target/release/storyark-desktop.exe`. Installer builds
 use `npm run tauri -- build` and the platform configuration files. Packaging or
-signing success must be checked on each target platform.
+signing success must be checked on each target platform. The Windows and macOS
+Tauri configurations include the embedding model resource directory. The model
+is tracked through Git LFS and verified against pinned hashes at runtime; see
+[MODEL-NOTICE.md](../src-tauri/resources/embedding/multilingual-e5-small/MODEL-NOTICE.md).
+The `--no-bundle` executable alone is not an installer or a complete portable
+distribution: packaging must include the required resources.
 
 Follow [engineering.md](engineering.md) for frontend checks. From `src-tauri`, run
 `cargo fmt --check` and `cargo test --locked`. Native compilation alone does not

@@ -1,4 +1,4 @@
-# P1-R1: Shared retrieval context for generation
+# Shared retrieval context for generation
 
 AI Continue, Brainstorm, and chapter-summary suggestions use the same retrieval
 contract. A page does not read retrieval tables or assemble database rows
@@ -63,5 +63,9 @@ regeneration keeps them and sends them in the next `RetrievalRequest`.
 
 Candidate identity still comes from the existing session, draft revision,
 chapter/workspace versions, insertion anchor, and read-only checks. Retrieval
-context is transient candidate data and is not written into the saved manuscript
-or brainstorm workspace by this change.
+excerpts are transient candidate data and are not saved as an additional
+retrieval-text copy in a manuscript or brainstorm workspace. An adopted brainstorm
+option can retain non-secret generation metadata in the saved context snapshot,
+including retrieval/source versions and included hit IDs. This trace metadata is
+distinct from the temporary evidence excerpts; see
+[ai-contracts.md](ai-contracts.md) and [local-content.md](local-content.md).
