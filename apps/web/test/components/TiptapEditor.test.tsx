@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import TiptapEditor, { TiptapEditorRef } from '../../components/TiptapEditor';
@@ -60,6 +60,22 @@ function renderEditor() {
 }
 
 describe('TiptapEditor', () => {
+  it('reports native typing but does not count programmatic insertion or loading a chapter', async () => {
+    const onTypedText = vi.fn();
+    const ref = React.createRef<TiptapEditorRef>();
+    const props = { contentId: 'chapter-1', content: chapter('已有正文'), characters, onUpdate: vi.fn(), onTypedText };
+    const { container, rerender } = render(<TiptapEditor {...props} ref={ref} />);
+    const surface = container.querySelector<HTMLElement>('.tiptap')!;
+    focusAtEnd(surface);
+    await userEvent.setup().keyboard('hi');
+    expect(onTypedText.mock.calls).toEqual([['h'], ['i']]);
+    onTypedText.mockClear();
+    act(() => ref.current!.insertContent('AI generated text'));
+    fireEvent.input(surface, { inputType: 'insertFromPaste', data: 'pasted text' });
+    rerender(<TiptapEditor {...props} ref={ref} contentId="chapter-2" content={chapter('另一章')} />);
+    expect(onTypedText).not.toHaveBeenCalled();
+  });
+
   it('displays an existing saved chapter without reporting a user edit', () => {
     const { surface, onUpdate } = renderEditor();
     expect(surface).toHaveTextContent('已有正文');

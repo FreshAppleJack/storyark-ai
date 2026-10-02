@@ -3,6 +3,7 @@ import { dlog, type MentionDebugEntry } from '../features/editor/debug/editorDeb
 import { createMentionSuggestion } from '../features/editor/integrations/mentionSuggestion';
 import { createCharacterTooltipHandler } from '../features/editor/integrations/characterTooltip';
 import { getCharacterDisplayTerms } from '../domain/characters';
+import { createTypingInputObserver } from '../features/editor/typingSpeed';
 import React, {useEffect, useEffectEvent, useState, useImperativeHandle, forwardRef, useMemo, useRef} from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import type { Editor, JSONContent } from '@tiptap/core';
@@ -118,6 +119,7 @@ interface TiptapEditorProps {
     contentId: string; // Unique identifier (ChapterID)
     content: string;
     onUpdate: (html: string, wordCount: number) => void;
+    onTypedText?: (text: string) => void;
     /**
      * Fired once after a chapter switch when the schema normalized the loaded
      * document (e.g. injected default attrs), so the parent can adopt the
@@ -144,6 +146,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                                                                          contentId, // Key parameter
                                                                          content,
                                                                          onUpdate,
+                                                                         onTypedText,
                                                                          isEditable = true,
                                                                          placeholder = "Start writing...",
                                                                          className,
@@ -184,6 +187,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
     const onForeshadowingClickRef = useRef(onForeshadowingClick);
     const onForeshadowingCreateRef = useRef(onForeshadowingCreate);
     const onUpdateRef = useRef(onUpdate);
+    const onTypedTextRef = useRef(onTypedText);
     const onContentNormalizedRef = useRef(onContentNormalized);
     const lastContentIdRef = useRef<string>(contentId);
 
@@ -206,11 +210,17 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
     useEffect(() => { onForeshadowingClickRef.current = onForeshadowingClick; }, [onForeshadowingClick]);
     useEffect(() => { onForeshadowingCreateRef.current = onForeshadowingCreate; }, [onForeshadowingCreate]);
     useEffect(() => { onUpdateRef.current = onUpdate; }, [onUpdate]);
+    useEffect(() => { onTypedTextRef.current = onTypedText; }, [onTypedText]);
     useEffect(() => { onContentNormalizedRef.current = onContentNormalized; }, [onContentNormalized]);
 
     // Character updates have their own highlight reconciliation. Do not reload
     // the document merely because a callback's character snapshot changed.
     const reconcileContentMentions = useEffectEvent((target: Editor) => forceDowngradeMentions(target, characters));
+    const typingInputObserver = useMemo(() => createTypingInputObserver(
+        text => onTypedTextRef.current?.(text),
+        () => contentId === lastContentIdRef.current && isEditableRef.current && !isSilentUpdateRef.current,
+    ), [contentId]);
+    const { handleTextInput, ...typingDOMEvents } = typingInputObserver;
 
     // Extensions stay referentially stable: character data flows through the
     // CharacterData storage instead of extension options, so updates never
@@ -291,7 +301,9 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 return false;
             },
             // Handle context menu events for character mentions
+            handleTextInput,
             handleDOMEvents: {
+                ...typingDOMEvents,
                 contextmenu: (view, event) => {
                     const target = event.target as HTMLElement;
                     // Detect if clicked on mention element

@@ -19,7 +19,9 @@ import { SidebarResizeHandle } from '../features/editor/components/SidebarResize
 import { useEditorSidebarLayout } from '../features/editor/hooks/useEditorSidebarLayout';
 import { SIDEBAR_LIMITS } from '../features/editor/sidebarLayout';
 import { Button } from '../components/ui/Button';
-import { getForeshadowingExcerptMap } from '../domain/chapterContent';
+import { getEditorPlainText, getForeshadowingExcerptMap } from '../domain/chapterContent';
+import { calculateCharacterCount } from '../utils/textUtils';
+import { useTypingSpeed } from '../features/editor/hooks/useTypingSpeed';
 import { useChapterDraft } from '../features/editor/hooks/useChapterDraft';
 import { useChapterLock } from '../features/editor/hooks/useChapterLock';
 import { useChapterAutosave } from '../features/editor/hooks/useChapterAutosave';
@@ -64,6 +66,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
     // The chapter draft (values + revision + dirty tracking) lives in a hook;
     // this page only keeps UI state and the save lifecycle.
     const chapterDraft = useChapterDraft({ bookId, volumeId: activeVolume?.id, chapterId: activeChapterId, chapter: activeChapter });
+    const characterCount = useMemo(() => calculateCharacterCount(getEditorPlainText(chapterDraft.content)), [chapterDraft.content]);
     const [legacyPlotSettings, setPlotSettings] = useState<PlotSetting[]>([]);
     const plotSettings = localPlanning?.plotSettings ?? legacyPlotSettings;
     const [activeForeshadowingId, setActiveForeshadowingId] = useState<string | null>(null);
@@ -363,6 +366,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
     });
 
     const handleToggleReadOnly = chapterLock.toggle;
+    const typing = useTypingSpeed(chapterDraft.sessionKey, !!activeChapter && !chapterDraft.isReadOnly && !chapterLock.isChangingLock);
     // --- Editor Interaction Handlers ---
     const handleEditorUpdate = (newContent: string, newWordCount: number) => {
         chapterDraft.applyEditorUpdate(newContent, newWordCount);
@@ -587,6 +591,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                                         characters={book?.characters}
                                         autoHighlightCharacters={autoHighlightCharacters}
                                         onUpdate={handleEditorUpdate}
+                                        onTypedText={typing.recordTypedText}
                                         onContentNormalized={chapterDraft.adoptLoaded}
                                         onCharacterClick={handleCharacterClick}
                                         onForeshadowingCreate={handleForeshadowingCreate}
@@ -633,11 +638,12 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     />
                 </div>
 
-                <footer className="h-8 bg-white dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 text-xs text-slate-500 dark:text-slate-400 select-none flex-shrink-0 z-20">
-                    <div className="flex gap-4">
+                <footer className="h-8 bg-white dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4 overflow-x-auto whitespace-nowrap px-4 text-xs text-slate-500 dark:text-slate-400 select-none flex-shrink-0 z-20">
+                    <div className="flex shrink-0 gap-4">
                         <span>Words: <span className="font-mono text-slate-700 dark:text-slate-200">{chapterDraft.wordCount}</span></span>
+                        <span>Characters: <span className="font-mono text-slate-700 dark:text-slate-200">{characterCount}</span></span>
                     </div>
-                    <div><span>{isLocal ? 'Local storage · AI uses the configured desktop model' : 'StoryArk Sprint 5'}</span></div>
+                    <div className="shrink-0">Typing: <span className="font-mono text-slate-700 dark:text-slate-200">{typing.speed}</span> chars/min</div>
                 </footer>
             </main>
 
