@@ -95,6 +95,15 @@ Rebuild and restart the native application after replacing icons. Frontend hot
 reload does not update the executable icon. Rebuild installers before distributing
 the new artwork; Windows shortcuts may retain a cached icon until refreshed.
 
+The native build watches `src-tauri/icons`, so replacing a generated icon also
+triggers recompilation on the next build. `cargo check` checks Rust code but does
+not rebuild the executable. If development mode still shows an old title-bar icon,
+stop the running app in the IDE (or press Ctrl+C in its terminal), then run
+`npm run desktop:dev` from `apps/web` or restart the IDE's Cargo run configuration.
+Do not launch the existing `target/debug/storyark-desktop.exe` directly before
+rebuilding. If the title-bar icon is updated but a pinned taskbar shortcut still
+shows the old artwork, unpin that shortcut and pin the rebuilt app again.
+
 Compare the installed Windows app alongside other taskbar icons in light and
 dark themes. On a Mac, rebuild the `.app`/DMG and compare its Dock icon with
 Finder and Safari. This Windows development environment can validate PNG/ICO/

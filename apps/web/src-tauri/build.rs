@@ -1,4 +1,6 @@
 fn main() {
+    // Native resources and the default window icon are embedded during compilation.
+    println!("cargo:rerun-if-changed=icons");
     let attributes = tauri_build::Attributes::new();
     let msvc = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
         && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc");
