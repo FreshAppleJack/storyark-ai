@@ -1,3 +1,4 @@
+import { DelayedLoading, PageLoading } from '../components/ui/DelayedLoading';
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Book } from '../types';
@@ -79,7 +80,7 @@ function StoryOutlineContent({ bookId, localBook, persistence }: { bookId: strin
                 </div>
             ) : isLoading ? (
                 <div className="flex-1 flex items-center justify-center text-slate-400">
-                    <Loader2 size={22} className="animate-spin mr-2" />Loading planning workspace...
+                    <DelayedLoading identity={bookId}><span role="status" className="flex items-center"><Loader2 size={22} className="animate-spin mr-2" />Loading planning workspace...</span></DelayedLoading>
                 </div>
             ) : (
                 <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto xl:grid-cols-[340px_minmax(420px,1fr)_380px] xl:overflow-hidden">
@@ -124,6 +125,7 @@ function LocalOutline({ bookId }: { bookId: string }) {
         ? projectBook(detail.data.book, detail.data, characters.data.map(projectCharacter))
         : undefined, [detail.data, characters.data]);
     const error = detail.error ?? characters.error ?? planning.error;
+    if (!error && (!book || !planning.data || detail.isFetching || characters.isFetching || planning.isFetching)) return <PageLoading identity={bookId}>Loading planning workspace...</PageLoading>;
     if (error || !book || !planning.data || detail.isFetching || characters.isFetching || planning.isFetching) return <main className="p-8">
         <p role={error ? 'alert' : 'status'}>{error?.message ?? 'Loading planning workspace...'}</p>
         {error && <Button onClick={() => { void detail.refetch(); void characters.refetch(); void planning.refetch(); }}>Retry</Button>}

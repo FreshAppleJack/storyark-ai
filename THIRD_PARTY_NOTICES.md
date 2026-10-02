@@ -1,7 +1,7 @@
 # Third-party components and resources
 
 StoryArk uses third-party software and model resources. They retain their own
-copyrights and licenses regardless of the license selected for StoryArk's source.
+copyrights and licenses independently of the [MIT License](LICENSE) for StoryArk's source.
 Keep upstream license and attribution texts when redistributing covered material.
 
 This source-level inventory was checked against lockfiles and locally installed

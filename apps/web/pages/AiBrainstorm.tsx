@@ -1,3 +1,4 @@
+import { DelayedLoading, PageLoading } from '../components/ui/DelayedLoading';
 import React, { useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -65,7 +66,7 @@ function AiBrainstormContent({ bookId, localBook, sources }: { bookId: string; l
                 </div>
             ) : isLoading ? (
                 <div className="flex-1 flex items-center justify-center text-slate-400">
-                    <Loader2 size={22} className="animate-spin mr-2" />Loading brainstorm workspace...
+                    <DelayedLoading identity={bookId}><span role="status" className="flex items-center"><Loader2 size={22} className="animate-spin mr-2" />Loading brainstorm workspace...</span></DelayedLoading>
                 </div>
             ) : (
                 <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[340px_minmax(520px,1fr)_340px] overflow-hidden">
@@ -102,7 +103,7 @@ function LoadedLocalBrainstorm({ book, planning, initial }: { book: Book; planni
         }),
         persistence,
     }), [book.id, book.characters, graph.data, initial.bookId, initial.databaseVersion, planning, persistence]);
-    if (graph.isPending || graph.isFetching) return <main className="p-8"><p role="status">Loading brainstorm workspace...</p></main>;
+    if (!graph.error && (graph.isPending || graph.isFetching)) return <PageLoading identity={book.id}>Loading brainstorm workspace...</PageLoading>;
     if (graph.error) return <main className="p-8 space-y-4">
         <p role="alert">{graph.error.message}</p>
         <Button onClick={() => { void graph.refetch(); }}>Retry</Button>
@@ -118,6 +119,7 @@ function LocalBrainstormRoute({ bookId }: { bookId: string }) {
         ? projectBook(detail.data.book, detail.data, characters.data?.map(projectCharacter))
         : undefined, [detail.data, characters.data]);
     const error = detail.error ?? characters.error ?? planning.error ?? workspace.error;
+    if (!error && (!book || !planning.data || !workspace.data || detail.isFetching || planning.isFetching || workspace.isFetching)) return <PageLoading identity={bookId}>Loading brainstorm workspace...</PageLoading>;
     if (error || !book || !planning.data || !workspace.data || detail.isFetching || planning.isFetching || workspace.isFetching) return <main className="p-8 space-y-4">
         <p role={error ? 'alert' : 'status'}>{error?.message ?? 'Loading brainstorm workspace...'}</p>
         {error && <Button onClick={() => { void detail.refetch(); void characters.refetch(); void planning.refetch(); void workspace.refetch(); }}>Retry</Button>}

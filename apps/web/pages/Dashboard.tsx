@@ -1,3 +1,4 @@
+import { DelayedLoading } from '../components/ui/DelayedLoading';
 import React, { useCallback, useRef, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -203,7 +204,7 @@ const Dashboard: React.FC = () => {
                 </div>
 
                 {isLocal && <p className="mb-4 text-sm text-slate-500">Create books, volumes and chapters, then write locally. Configure a model in Settings to use AI Continue.</p>}
-                {booksLoading && <p role="status">Loading local books...</p>}
+                {booksLoading && !booksError && <DelayedLoading identity="bookshelf"><p role="status">Loading local books...</p></DelayedLoading>}
                 {booksError && <div role="alert" className="mb-6 rounded border border-rose-300 p-4">
                     <p>{booksError}</p><Button variant="secondary" onClick={() => void refreshBooks?.()}>Retry</Button>
                 </div>}

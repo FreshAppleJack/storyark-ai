@@ -31,6 +31,8 @@
   },
   "bundle": {
     "active": true,
+    "license": "MIT",
+    "licenseFile": "../../../LICENSE",
     "useLocalToolsDir": true,
     "targets": "all",
     "icon": [

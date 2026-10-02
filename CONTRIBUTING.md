@@ -72,3 +72,8 @@ concrete behavior risks; avoid tests that merely duplicate implementation detail
 Include light/dark screenshots for visible layout changes using invented data.
 State whether verification used fixtures, the actual WebView, a live provider or
 a packaged application. Do not describe unperformed checks as passing.
+
+## License
+
+Contributions to StoryArk are provided under the project's [MIT License](LICENSE).
+Preserve the original licenses and notices when adding third-party code or resources.

@@ -1,3 +1,4 @@
+import { PageLoading } from '../components/ui/DelayedLoading';
 import React, { useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, MessageSquareText, Search, X } from 'lucide-react';
@@ -144,6 +145,7 @@ function LoadedLocalBoard({ detail }: { detail: LocalBookDetail }) {
 }
 function LocalBoard({ bookId }: { bookId: string }) {
     const query = useQuery({ ...localFullBookOptions(bookId), refetchOnMount: 'always' });
+    if (!query.error && (!query.data || query.isFetching)) return <PageLoading identity={bookId}>Loading foreshadowing...</PageLoading>;
     if (query.error || !query.data || query.isFetching) return <main className="p-8">
         <p role={query.error ? 'alert' : 'status'}>{query.error?.message ?? 'Loading foreshadowing...'}</p>
         {query.error && <Button onClick={() => { void query.refetch(); }}>Retry</Button>}

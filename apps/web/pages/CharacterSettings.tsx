@@ -1,3 +1,4 @@
+import { PageLoading } from '../components/ui/DelayedLoading';
 import React, { useEffect } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -41,9 +42,10 @@ function CharacterSettingsContent({ bookId }: { bookId: string }) {
     if (isLocal) {
         const pending = detailQuery.isPending || charactersQuery.isPending;
         const error = detailQuery.error ?? charactersQuery.error;
+        if (pending && !error) return <PageLoading identity={bookId}>Loading local book...</PageLoading>;
         if (pending || error) {
             return <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
-                {pending ? <p role="status">Loading local book...</p> : <>
+                {pending && !error ? <p role="status">Loading local book...</p> : <>
                     <p role="alert">{error?.message}</p>
                     <Button variant="secondary" onClick={() => { void detailQuery.refetch(); void charactersQuery.refetch(); }}>Retry</Button>
                 </>}

@@ -1,3 +1,4 @@
+import { DelayedLoading, PageLoading } from '../components/ui/DelayedLoading';
 import { userErrorMessage } from '../data/diagnostics';
 import React, { useState, useEffect, useEffectEvent, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useBlocker, NavigateOptions, Link } from 'react-router-dom';
@@ -494,7 +495,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         void workExport.prepare();
     };
 
-    if (!book) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-400">Loading Book Data...</div>;
+    if (!book) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-400"><DelayedLoading identity={bookId ?? "legacy-book"}>Loading Book Data...</DelayedLoading></div>;
 
     return (
         <div ref={containerRef} className="relative flex h-screen min-h-0 min-w-0 overflow-hidden bg-slate-50 font-sans transition-colors duration-300 dark:bg-slate-950">
@@ -721,8 +722,9 @@ function LocalEditorRoute({ bookId }: { bookId: string }) {
     </>;
     const pending = query.isPending || query.isFetching || charactersQuery.isPending;
     const error = query.error ?? charactersQuery.error;
+    if (pending && !error) return <PageLoading identity={bookId}>Loading local book...</PageLoading>;
     return <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
-        {pending ? <p role="status">Loading local book...</p> : <>
+        {pending && !error ? <p role="status">Loading local book...</p> : <>
             <p role="alert">{error?.message ?? 'Book not found.'}</p>
             <button onClick={() => { void query.refetch(); void charactersQuery.refetch(); }}>Retry</button>
         </>}

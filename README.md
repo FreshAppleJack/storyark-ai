@@ -87,7 +87,8 @@ establish live-provider compatibility, installer signing or macOS release readin
 
 ## License
 
-The project source license is awaiting the maintainer's selection. Third-party
-components and bundled resources retain their own licenses; see
-[third-party notices](THIRD_PARTY_NOTICES.md). Public source access alone is not a
-replacement for an explicit project license.
+StoryArk's source code and documentation are licensed under the
+[MIT License](LICENSE). Copyright (c) 2026 FreshAppleJack.
+
+Third-party components and bundled resources retain their own licenses; see
+[third-party notices](THIRD_PARTY_NOTICES.md).

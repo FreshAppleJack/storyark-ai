@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { Chapter } from '../../../types';
 import { localKeys, localRepository } from '../../../data/local/repository';
 import { chapterBodyCache } from '../../../data/local/chapterBodyCache';
+import { useDelayedLoading } from '../../../components/hooks/useDelayedLoading';
 
 export function useLoadedChapter(bookId: string, metadata: Chapter | undefined) {
     const client = useQueryClient();
@@ -32,16 +33,7 @@ export function useLoadedChapter(bookId: string, metadata: Chapter | undefined) 
     }, [metadata, needsBody, query.data]);
     const isLoading = needsBody && query.isPending;
     const identity = JSON.stringify([bookId, metadata?.id]);
-    const [status, setStatus] = useState({ identity, pending: isLoading, visible: false });
-    // Reset during render so a different chapter or retry cannot inherit an old indicator.
-    if (status.identity !== identity || status.pending !== isLoading) {
-        setStatus({ identity, pending: isLoading, visible: false });
-    }
-    useEffect(() => {
-        if (!isLoading) return;
-        const timer = window.setTimeout(() => setStatus({ identity, pending: true, visible: true }), 200);
-        return () => window.clearTimeout(timer);
-    }, [identity, isLoading]);
-    return { chapter, isLoading, showLoading: isLoading && status.identity === identity && status.visible,
+    const showLoading = useDelayedLoading(isLoading, identity);
+    return { chapter, isLoading, showLoading,
         error: needsBody ? query.error : null, retry: query.refetch };
 }
