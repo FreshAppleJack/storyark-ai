@@ -57,18 +57,18 @@ export const MentionList = forwardRef<MentionListHandle, MentionListProps>((prop
     }));
 
     return (
-        <div className="bg-white rounded-md shadow-xl border border-slate-200 overflow-hidden min-w-[180px] py-1 z-50 animate-in fade-in zoom-in duration-75">
+        <div className="bg-white dark:bg-slate-900 rounded-md shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden min-w-[180px] py-1 z-50 animate-in fade-in zoom-in duration-75">
             {props.items.length ? (
                 props.items.map((item: Character, index: number) => (
                     <button
                         key={item.id}
                         className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors ${
-                            index === selectedIndex ? 'bg-brand-50 text-brand-700' : 'text-slate-700 hover:bg-slate-50'
+                            index === selectedIndex ? 'bg-brand-50 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300' : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800'
                         }`}
                         onClick={() => selectItem(index)}
                     >
                         <div
-                            className="w-4 h-4 rounded-full flex-shrink-0 border border-slate-100 shadow-sm"
+                            className="w-4 h-4 rounded-full flex-shrink-0 border border-slate-100 dark:border-slate-700 shadow-sm"
                             style={{ backgroundColor: item.color }}
                         />
                         <span className="truncate font-medium">{item.name}</span>

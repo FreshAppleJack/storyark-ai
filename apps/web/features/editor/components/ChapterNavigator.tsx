@@ -895,7 +895,7 @@ export function ChapterNavigator({
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] backdrop-blur-sm">
                     <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-xl max-w-sm w-full mx-4 border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200">
                         <div className="flex items-center gap-3 mb-4 text-rose-600">
-                            <div className="p-2 bg-rose-100 rounded-full"><AlertTriangle size={24} /></div>
+                            <div className="p-2 bg-rose-100 dark:bg-rose-950/60 rounded-full"><AlertTriangle size={24} /></div>
                             <h3 className="text-lg font-bold text-slate-900 dark:text-white">Delete {itemToDelete.type === 'volume' ? 'Volume' : 'Chapter'}?</h3>
                         </div>
                         <p className="text-slate-600 dark:text-slate-300 mb-6 text-sm leading-relaxed">
@@ -905,7 +905,7 @@ export function ChapterNavigator({
                         </p>
                         <div className="flex justify-end gap-3">
                             <Button variant="ghost" onClick={() => { setShowDeleteModal(false); setItemToDelete(null); }}>Cancel</Button>
-                            <Button variant="primary" className="bg-rose-600 hover:bg-rose-700 text-white border-none shadow-md shadow-rose-200" onClick={confirmDelete}>Delete</Button>
+                            <Button variant="primary" className="bg-rose-600 hover:bg-rose-700 text-white border-none shadow-md shadow-rose-200 dark:shadow-rose-950/40" onClick={confirmDelete}>Delete</Button>
                         </div>
                     </div>
                 </div>

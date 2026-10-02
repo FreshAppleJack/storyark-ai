@@ -5,7 +5,7 @@ import type { Character } from '../../../types';
 export const buildCharacterTooltipContent = (char: Character): string => {
     const initial = char.name.charAt(0);
     return `
-        <div class="p-3 bg-white text-slate-800 rounded-lg shadow-xl border border-slate-100 max-w-xs animate-in fade-in zoom-in duration-100 font-sans text-left">
+        <div class="p-3 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 rounded-lg shadow-xl border border-slate-100 dark:border-slate-700 max-w-xs animate-in fade-in zoom-in duration-100 font-sans text-left">
             <div class="flex items-start gap-3 mb-2">
                 <div class="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-sm flex-shrink-0" style="background-color: ${char.color}">
                     ${initial}
@@ -18,12 +18,12 @@ export const buildCharacterTooltipContent = (char: Character): string => {
             ${char.tags && char.tags.length > 0 ? `
                 <div class="flex flex-wrap gap-1 mb-2">
                     ${char.tags.map(tag =>
-        `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600 border border-slate-200">${tag}</span>`
+        `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">${tag}</span>`
     ).join('')}
                 </div>
             ` : ''}
             ${char.description ? `
-                <div class="text-xs text-slate-600 leading-relaxed line-clamp-4 border-t border-slate-50 pt-2 mt-1">
+                <div class="text-xs text-slate-600 dark:text-slate-300 leading-relaxed line-clamp-4 border-t border-slate-50 dark:border-slate-800 pt-2 mt-1">
                     ${char.description}
                 </div>
             ` : ''}

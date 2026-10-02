@@ -23,6 +23,10 @@
 }
 
 :root {
+  --toast-background: #ffffff;
+  --toast-text: #1e293b;
+  --toast-border: #e2e8f0;
+  --toast-shadow: rgb(15 23 42 / 12%);
   color-scheme: light;
   font-family: "Inter", system-ui, sans-serif;
   color: #1e293b;
@@ -38,6 +42,10 @@
    page leaves the body shorter than the viewport, the uncovered area shows
    the html background. Keep it on-theme or dark mode flashes white. */
 :root.dark {
+  --toast-background: #0f172a;
+  --toast-text: #f1f5f9;
+  --toast-border: #334155;
+  --toast-shadow: rgb(0 0 0 / 30%);
   color-scheme: dark;
   color: #f1f5f9;
   background: #0f172a;

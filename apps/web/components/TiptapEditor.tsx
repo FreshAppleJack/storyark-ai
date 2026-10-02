@@ -1062,6 +1062,9 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 .tippy-arrow {
                     color: white !important;
                 }
+                .dark .tippy-arrow {
+                    color: #0f172a !important;
+                }
                 .mention {
                     cursor: pointer;
                     font-size: inherit; 

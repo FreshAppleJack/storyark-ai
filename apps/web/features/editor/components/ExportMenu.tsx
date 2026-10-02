@@ -125,7 +125,7 @@ export function ExportMenu({ isExporting, onExportWord, onExportPdf, onExportWor
                         onClick={handleExportWord}
                         className="w-full text-left px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-brand-50 dark:hover:bg-brand-950/40 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-3 transition-colors"
                     >
-                        <div className="p-1.5 bg-blue-100 text-blue-600 rounded">
+                        <div className="p-1.5 bg-blue-100 dark:bg-blue-950/60 text-blue-600 dark:text-blue-300 rounded">
                             <FileText size={16} />
                         </div>
                         <div>
@@ -139,7 +139,7 @@ export function ExportMenu({ isExporting, onExportWord, onExportPdf, onExportWor
                         onClick={handleExportPdf}
                         className="w-full text-left px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-brand-50 dark:hover:bg-brand-950/40 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-3 transition-colors"
                     >
-                        <div className="p-1.5 bg-red-100 text-red-600 rounded">
+                        <div className="p-1.5 bg-red-100 dark:bg-red-950/60 text-red-600 dark:text-red-300 rounded">
                             <FileType size={16} />
                         </div>
                         <div>
@@ -157,7 +157,7 @@ export function ExportMenu({ isExporting, onExportWord, onExportPdf, onExportWor
                             onClick={handleExportWorkJson}
                             className="w-full text-left px-4 py-3 text-sm text-slate-700 dark:text-slate-200 hover:bg-brand-50 dark:hover:bg-brand-950/40 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-3 transition-colors"
                         >
-                            <div className="p-1.5 bg-emerald-100 text-emerald-600 rounded">
+                            <div className="p-1.5 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-300 rounded">
                                 <FileJson size={16} />
                             </div>
                             <div>

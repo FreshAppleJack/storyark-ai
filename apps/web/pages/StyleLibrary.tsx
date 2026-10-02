@@ -61,8 +61,8 @@ const StyleLibrary: React.FC = () => {
                     <div className={`w-16 h-16 rounded-lg shadow-inner flex-shrink-0 ${color.class}`}></div>
                     <div className="min-w-0">
                       <h3 className="font-semibold text-slate-900 dark:text-white truncate">{color.name}</h3>
-                      <p className="text-xs font-mono text-slate-500 uppercase">{color.hex}</p>
-                      <p className="text-xs text-slate-500 mt-1 line-clamp-2">{color.usage}</p>
+                      <p className="text-xs font-mono text-slate-500 dark:text-slate-400 uppercase">{color.hex}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 line-clamp-2">{color.usage}</p>
                     </div>
                   </div>
               ))}
@@ -71,33 +71,33 @@ const StyleLibrary: React.FC = () => {
 
           {/* Typography */}
           <section className="space-y-6">
-            <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <div className="w-2 h-8 bg-brand-600 rounded-sm"></div>
               Typography
             </h2>
-            <p className="text-slate-600 max-w-2xl">
+            <p className="text-slate-600 dark:text-slate-400 max-w-2xl">
               Dual typeface system: <strong>Inter</strong> (Sans-serif) for application UI elements, and a comfortable <strong>System Serif</strong> font for the main editor canvas.
             </p>
-            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
               <table className="w-full text-left">
-                <thead className="bg-slate-50 border-b border-slate-200">
+                <thead className="bg-slate-50 dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800">
                 <tr>
-                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Role</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Spec</th>
-                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider w-1/2">Sample</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Role</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Spec</th>
+                  <th className="px-6 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider w-1/2">Sample</th>
                 </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-200">
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                 {typography.map((type) => (
                     <tr key={type.role}>
-                      <td className="px-6 py-4 text-sm font-medium text-slate-900">{type.role}</td>
-                      <td className="px-6 py-4 text-sm text-slate-500">
+                      <td className="px-6 py-4 text-sm font-medium text-slate-900 dark:text-white">{type.role}</td>
+                      <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">
                         <div className="flex flex-col">
                           <span>{type.font}</span>
                           <span className="text-xs opacity-75">{type.size}</span>
                         </div>
                       </td>
-                      <td className={`px-6 py-4 text-slate-800 ${type.font.includes('Serif') ? 'font-serif text-lg' : 'font-sans'} ${type.font === 'JetBrains Mono' ? 'font-mono' : ''}`} style={{ fontWeight: type.weight }}>
+                      <td className={`px-6 py-4 text-slate-800 dark:text-slate-200 ${type.font.includes('Serif') ? 'font-serif text-lg' : 'font-sans'} ${type.font === 'JetBrains Mono' ? 'font-mono' : ''}`} style={{ fontWeight: type.weight }}>
                         {type.sample}
                       </td>
                     </tr>
@@ -109,7 +109,7 @@ const StyleLibrary: React.FC = () => {
 
           {/* UI Components */}
           <section className="space-y-6">
-            <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <div className="w-2 h-8 bg-brand-600 rounded-sm"></div>
               Core Components & States
             </h2>
@@ -117,18 +117,18 @@ const StyleLibrary: React.FC = () => {
 
               {/* Buttons */}
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-slate-800">Buttons</h3>
-                <div className="p-6 bg-white rounded-xl border border-slate-200 shadow-sm space-y-4">
+                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Buttons</h3>
+                <div className="p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
                   <div className="flex flex-wrap gap-4 items-center">
                     <Button variant="primary">Primary Action</Button>
                     <Button variant="secondary">Secondary</Button>
                     <Button variant="ghost">Ghost</Button>
                   </div>
-                  <div className="flex flex-wrap gap-4 items-center pt-4 border-t border-slate-100">
+                  <div className="flex flex-wrap gap-4 items-center pt-4 border-t border-slate-100 dark:border-slate-800">
                     {/* Updated Danger button to use Rose instead of Red */}
                     <Button className="bg-rose-600 hover:bg-rose-700 text-white" icon={<Trash2 size={16} />}>Delete (Destructive)</Button>
                   </div>
-                  <div className="flex flex-wrap gap-4 items-center pt-4 border-t border-slate-100">
+                  <div className="flex flex-wrap gap-4 items-center pt-4 border-t border-slate-100 dark:border-slate-800">
                     <Button icon={<Save size={16} />}>Save Progress</Button>
                     <Button variant="secondary" icon={<PenTool size={16} />}>Edit</Button>
                   </div>
@@ -137,8 +137,8 @@ const StyleLibrary: React.FC = () => {
 
               {/* Document States */}
               <div className="space-y-4">
-                <h3 className="text-lg font-semibold text-slate-800">Document Status Indicators</h3>
-                <div className="p-6 bg-white rounded-xl border border-slate-200 shadow-sm space-y-6">
+                <h3 className="text-lg font-semibold text-slate-800 dark:text-slate-200">Document Status Indicators</h3>
+                <div className="p-6 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-6">
                   <div className="flex items-center gap-2 text-sm font-medium">
                     <CheckCircle2 size={16} className="text-emerald-500" />
                     <span className="text-slate-400">Saved (Auto-sync)</span>
@@ -157,27 +157,27 @@ const StyleLibrary: React.FC = () => {
           </section>
 
           <section className="space-y-6">
-            <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <div className="w-2 h-8 bg-brand-600 rounded-sm"></div>
               Settings & Theme Components
             </h2>
-            <p className="text-slate-600 max-w-2xl">
+            <p className="text-slate-600 dark:text-slate-400 max-w-2xl">
               Global settings use large rounded panels, calm slate surfaces, brand-blue active states, and immediate visual feedback for theme switching.
             </p>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-6 shadow-sm">
                 <div className="flex items-start gap-4">
                   <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-brand-50 text-brand-600">
                     <Settings size={22} />
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-semibold text-slate-900">Settings Panel</h3>
-                    <p className="mt-1 text-sm leading-6 text-slate-500">Panels pair a clear icon, concise description, and right-aligned controls for fast scanning.</p>
-                    <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <h3 className="font-semibold text-slate-900 dark:text-white">Settings Panel</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-400">Panels pair a clear icon, concise description, and right-aligned controls for fast scanning.</p>
+                    <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 p-4">
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-sm font-semibold text-slate-900">Dark Mode</p>
-                          <p className="text-xs text-slate-500">Immediate UI response</p>
+                          <p className="text-sm font-semibold text-slate-900 dark:text-white">Dark Mode</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Immediate UI response</p>
                         </div>
                         <div className="relative h-8 w-14 rounded-full bg-brand-600">
                           <div className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-md">
@@ -215,30 +215,30 @@ const StyleLibrary: React.FC = () => {
 
           {/* Layout Patterns */}
           <section className="space-y-6">
-            <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
               <div className="w-2 h-8 bg-brand-600 rounded-sm"></div>
               Layout & Spacing
             </h2>
-            <div className="p-8 bg-slate-200 rounded-xl border border-slate-300">
-              <div className="grid grid-cols-12 gap-4 text-center text-xs font-mono text-slate-500">
-                <div className="col-span-3 bg-white p-4 rounded shadow-sm flex flex-col gap-2 h-48">
-                  <div className="font-semibold text-slate-400 pb-2 border-b border-slate-100">Sidebar (Collapsible)</div>
-                  <div className="bg-slate-50 flex-1 rounded border border-slate-100 flex items-center justify-center">Chapter Tree</div>
+            <div className="p-8 bg-slate-200 dark:bg-slate-900 rounded-xl border border-slate-300 dark:border-slate-700">
+              <div className="grid grid-cols-12 gap-4 text-center text-xs font-mono text-slate-500 dark:text-slate-400">
+                <div className="col-span-3 bg-white dark:bg-slate-900 p-4 rounded shadow-sm flex flex-col gap-2 h-48">
+                  <div className="font-semibold text-slate-400 pb-2 border-b border-slate-100 dark:border-slate-800">Sidebar (Collapsible)</div>
+                  <div className="bg-slate-50 dark:bg-slate-950 flex-1 rounded border border-slate-100 dark:border-slate-800 flex items-center justify-center">Chapter Tree</div>
                 </div>
                 <div className="col-span-9 grid grid-cols-1 gap-2">
-                  <div className="bg-white p-3 rounded shadow-sm flex justify-between items-center">
+                  <div className="bg-white dark:bg-slate-900 p-3 rounded shadow-sm flex justify-between items-center">
                     <span>Top Bar (Title & Document Status)</span>
                   </div>
-                  <div className="bg-white p-2 rounded shadow-sm text-left px-4 flex gap-2">
+                  <div className="bg-white dark:bg-slate-900 p-2 rounded shadow-sm text-left px-4 flex gap-2">
                     <span>Formatting Toolbar (B, I, U, Align)</span>
                   </div>
-                  <div className="bg-white p-4 rounded shadow-sm h-28 flex items-center justify-center text-slate-300 italic">
+                  <div className="bg-white dark:bg-slate-900 p-4 rounded shadow-sm h-28 flex items-center justify-center text-slate-300 italic">
                     Centered Canvas (contentEditable)
                   </div>
                 </div>
               </div>
             </div>
-            <p className="text-sm text-slate-600">
+            <p className="text-sm text-slate-600 dark:text-slate-400">
               The layout follows a "Focused Productivity" pattern: Collapsible Sidebar for navigation, Sticky Header for status, native format Toolbar, and a constrained Canvas for reading/writing comfort.
             </p>
           </section>

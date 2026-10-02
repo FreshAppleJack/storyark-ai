@@ -32,6 +32,12 @@ const router = createHashRouter(createRoutesFromElements(
 
 export default function App(): React.ReactElement {
     return <QueryClientProvider client={queryClient}>
-        <AppProvider mode="local"><RouterProvider router={router} /><Toaster /></AppProvider>
+        <AppProvider mode="local"><RouterProvider router={router} /><Toaster toastOptions={{
+            style: {
+                background: 'var(--toast-background)', color: 'var(--toast-text)',
+                border: '1px solid var(--toast-border)',
+                boxShadow: '0 3px 12px var(--toast-shadow)',
+            },
+        }} /></AppProvider>
     </QueryClientProvider>;
 }
