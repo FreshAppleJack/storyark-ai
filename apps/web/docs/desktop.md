@@ -55,6 +55,29 @@ verify WebView rendering. The main-window permissions are explicitly listed in
 `capabilities/default.json`; custom commands also belong in `build.rs` and the
 handler registry. Keep permissions scoped to the operations the application needs.
 
+## Application icons
+
+The source artwork is [`app-icon.png`](../app-icon.png), a square RGBA image with
+transparent outer corners. Its flat book-and-star design uses layered pages and
+a cover in muted teal, with an apricot star on a pale mint tile. The artwork was
+generated with the built-in image generation tool for StoryArk.
+
+From `apps/web`, regenerate platform assets with the
+[Tauri icon command](https://v2.tauri.app/develop/icons/):
+
+```sh
+npm run tauri -- icon app-icon.png
+```
+
+The command updates `src-tauri/icons`, including Windows `icon.ico`, macOS
+`icon.icns`, and PNG sizes. It also generates mobile directories; the desktop
+project only needs the files directly inside `icons`. `bundle.icon` in
+`tauri.conf.json` already points to the desktop assets.
+
+Rebuild and restart the native application after replacing icons. Frontend hot
+reload does not update the executable icon. Rebuild installers before distributing
+the new artwork; Windows shortcuts may retain a cached icon until refreshed.
+
 ## Local data and recovery
 
 The stable app identifier is `io.github.freshapplejack.storyark`. SQLite lives in
