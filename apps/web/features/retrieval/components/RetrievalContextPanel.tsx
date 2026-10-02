@@ -64,7 +64,7 @@ export function RetrievalContextPanel({
                                         <span className="ml-auto shrink-0">v{material.sourceVersion}</span>
                                     </span>
                                     {title && <span className="mt-1 block font-semibold text-slate-800 dark:text-slate-100">{title}</span>}
-                                    {details && <span className="mt-1 block line-clamp-3 whitespace-pre-wrap leading-5 text-slate-700 dark:text-slate-200">{details}</span>}
+                                    {details && <span className="mt-1 line-clamp-3 whitespace-pre-wrap leading-5 text-slate-700 dark:text-slate-200">{details}</span>}
                                     {isExcluded && <span className="mt-1 block text-[11px] text-amber-700 dark:text-amber-300">Excluded from next generation</span>}
                                 </span>
                             </label>

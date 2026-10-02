@@ -68,10 +68,10 @@ export function AiContinueCandidate({
 
     return (
         <section
-            className="mx-6 mt-4 rounded-lg border border-brand-200 bg-brand-50/70 p-4 dark:border-brand-900 dark:bg-brand-950/30"
+            className="mx-6 mt-4 flex max-h-[50%] min-h-0 shrink-0 flex-col overflow-hidden rounded-lg border border-brand-200 bg-brand-50/70 p-4 dark:border-brand-900 dark:bg-brand-950/30"
             aria-label="AI continuation candidate"
         >
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex shrink-0 items-center justify-between gap-3">
                 <div>
                     <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">AI Continue candidate</h2>
                     <p className="text-xs text-slate-500 dark:text-slate-400">{statusLabel(candidate.status)} · {candidate.status === 'adopted' ? persistenceMessage : 'The original draft is unchanged until adoption.'}</p>
@@ -83,29 +83,31 @@ export function AiContinueCandidate({
                 )}
             </div>
 
-            <div className="mt-3 max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white p-3 font-serif text-sm leading-6 whitespace-pre-wrap text-slate-800 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
-                {candidate.text || (isAiLoading ? 'Waiting for model output...' : 'No candidate text was produced.')}
+            <div className="mt-3 min-h-0 overflow-y-auto" role="region" aria-label="AI continuation review" tabIndex={0}>
+                <div className="max-h-48 overflow-y-auto rounded-md border border-slate-200 bg-white p-3 font-serif text-sm leading-6 whitespace-pre-wrap text-slate-800 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">
+                    {candidate.text || (isAiLoading ? 'Waiting for model output...' : 'No candidate text was produced.')}
+                </div>
+
+                {candidate.errorMessage && (
+                    <p className="mt-2 text-xs text-amber-700 dark:text-amber-300" role="status">
+                        {candidate.errorMessage}
+                    </p>
+                )}
+
+                <RetrievalContextPanel
+                    context={candidate.source?.retrievalContext ?? null}
+                    notice={candidate.source?.retrievalNotice ?? null}
+                    excludedHitIds={candidate.source?.retrievalContext?.excludedHitIds ?? []}
+                    onToggleHit={onToggleRetrievalHit}
+                    disabled={isAiLoading || candidate.status === 'validating'}
+                />
+
+                {candidate.status === 'completed' && !canAdopt && adoptDisabledReason && (
+                    <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{adoptDisabledReason}</p>
+                )}
             </div>
 
-            {candidate.errorMessage && (
-                <p className="mt-2 text-xs text-amber-700 dark:text-amber-300" role="status">
-                    {candidate.errorMessage}
-                </p>
-            )}
-
-            <RetrievalContextPanel
-                context={candidate.source?.retrievalContext ?? null}
-                notice={candidate.source?.retrievalNotice ?? null}
-                excludedHitIds={candidate.source?.retrievalContext?.excludedHitIds ?? []}
-                onToggleHit={onToggleRetrievalHit}
-                disabled={isAiLoading || candidate.status === 'validating'}
-            />
-
-            {candidate.status === 'completed' && !canAdopt && adoptDisabledReason && (
-                <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{adoptDisabledReason}</p>
-            )}
-
-            <div className="mt-3 flex flex-wrap items-center gap-2">
+            <div className="mt-3 flex shrink-0 flex-wrap items-center gap-2">
                 {isAiLoading && (
                     <Button variant="secondary" size="sm" onClick={onStop}>
                         <Square size={14} className="mr-2" />
