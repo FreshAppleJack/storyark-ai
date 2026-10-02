@@ -19,6 +19,7 @@ const router = createHashRouter(createRoutesFromElements(
         <Route path="/editor/:bookId" lazy={async () => ({ Component: (await import('../pages/EditorPrototype')).default })} />
         <Route path="/style-library" lazy={async () => ({ Component: (await import('../pages/StyleLibrary')).default })} />
         <Route path="/settings" lazy={async () => ({ Component: (await import('../pages/UserSettings')).default })} />
+        <Route path="/help" lazy={async () => ({ Component: (await import('../pages/Help')).default })} />
         <Route path="/books/:bookId/settings" lazy={async () => ({ Component: (await import('../pages/CharacterSettings')).default })} />
         <Route path="/books/:bookId/foreshadowing" lazy={async () => ({ Component: (await import('../pages/Foreshadowing')).default })} />
         <Route path="/books/:bookId/story-outline" lazy={async () => ({ Component: (await import('../pages/StoryOutline')).default })} />

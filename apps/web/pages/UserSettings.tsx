@@ -1,6 +1,6 @@
 import React from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Info, Moon, Sun } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ArrowLeft, CircleHelp, Info, Moon, Sun } from 'lucide-react';
 import { usePreferences } from '../InteractionContent/PreferencesContext';
 import { SettingShell, ToggleControl } from '../features/settings/components/SettingControls';
 import { WritingPreferences } from '../features/settings/components/WritingPreferences';
@@ -31,9 +31,20 @@ const UserSettings: React.FC = () => {
                             <h1 className="text-2xl font-bold tracking-tight text-slate-950 dark:text-white">User Settings</h1>
                         </div>
                     </div>
-                    <div className="hidden items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 sm:flex">
+                    <div className="flex shrink-0 items-center gap-3">
+                        <div className="hidden items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 sm:flex">
                         {isDarkMode ? <Moon size={16} className="text-brand-300" /> : <Sun size={16} className="text-amber-500" />}
                         {isDarkMode ? 'Dark workspace active' : 'Light workspace active'}
+                        </div>
+                        <Link
+                            to="/help"
+                            state={{ settingsReturnTo: returnTo }}
+                            aria-label="Help"
+                            title="Help"
+                            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-brand-300 hover:bg-brand-50 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:border-brand-700 dark:hover:bg-brand-950/50 dark:hover:text-brand-300"
+                        >
+                            <CircleHelp size={20} aria-hidden="true" />
+                        </Link>
                     </div>
                 </div>
             </header>

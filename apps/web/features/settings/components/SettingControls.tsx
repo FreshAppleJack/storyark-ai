@@ -1,7 +1,8 @@
 import React from 'react';
 import { Check } from 'lucide-react';
+import { Card } from '../../../components/ui/Card';
 export const SettingShell: React.FC<{ title: string; description: string; icon: React.ReactNode; children: React.ReactNode; badge?: string }> = ({ title, description, icon, children, badge }) => (
-    <section className="rounded-2xl border border-slate-200 bg-white/90 p-6 shadow-sm shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80 dark:shadow-black/20">
+    <Card>
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex gap-4">
                 <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300">
@@ -17,7 +18,7 @@ export const SettingShell: React.FC<{ title: string; description: string; icon: 
             </div>
             <div className="w-full lg:w-[360px]">{children}</div>
         </div>
-    </section>
+    </Card>
 );
 
 export const ToggleControl: React.FC<{ enabled: boolean; onChange?: () => void; disabled?: boolean; ariaLabel?: string }> = ({ enabled, onChange, disabled, ariaLabel }) => (
