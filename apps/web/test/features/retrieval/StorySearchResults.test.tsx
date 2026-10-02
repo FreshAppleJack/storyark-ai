@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { StorySearchResults } from '../../../features/retrieval/components/StorySearchResults';
 import type { RetrievalSearchFilters, RetrievalSearchHit, RetrievalSearchResponse } from '../../../domain/retrieval/contracts';
@@ -21,9 +21,38 @@ describe('StorySearchResults', () => {
         expect(excerpts[0].textContent).toContain('\n\u3000\u3000第二句包含 English words.\n');
         expect(excerpts[0].querySelector('mark')).not.toBeNull();
         expect(excerpts[1].querySelector('mark')).toBeNull();
+        const cards = container.querySelectorAll('article');
+        expect(within(cards[0]).getByLabelText('Match types')).toHaveTextContent('Lexical');
+        expect(within(cards[0]).queryByText('Semantic')).not.toBeInTheDocument();
+        expect(within(cards[1]).getByLabelText('Match types')).toHaveTextContent('Semantic');
+        expect(within(cards[1]).queryByText('Lexical')).not.toBeInTheDocument();
         for (const excerpt of excerpts) expect(excerpt).toHaveClass('whitespace-pre-wrap');
         screen.getAllByRole('button', { name: 'Show full excerpt' }).forEach(button => fireEvent.click(button));
         for (const excerpt of excerpts) expect(excerpt.textContent).toBe(sourceText);
+    });
+
+    it('shows every actual match type and identifies neighboring context without highlighting it', () => {
+        const hits = [
+            { hitId: 'mixed', recallMethods: ['lexical', 'semantic', 'alias'] },
+            { hitId: 'neighbor', recallMethods: ['adjacent'] },
+        ].map(hit => ({
+            ...hit, chapterId: 'chapter-1', sourceKind: 'manuscript', freshness: 'fresh',
+            chunk: { sourceText: 'A matching phrase in a passage.' },
+            locator: { chapterId: 'chapter-1', chapterTitleSnapshot: 'Chapter One', paragraphSpans: [] },
+        })) as unknown as RetrievalSearchHit[];
+        const { container } = render(<StorySearchResults
+            embeddingStatus={null} indexStatus={null} indexProgress={null} statusError={null} isStatusLoading={false}
+            isIndexing={false} isSearching={false} searchError={null}
+            response={{ hits, status: 'ready', effectiveMode: 'hybrid', degraded: false } as RetrievalSearchResponse}
+            lastQuery="matching phrase" filters={{ sourceKinds: [], includePlanning: false, chapterRange: 'all', updatedAfter: null, updatedBefore: null }}
+            chapters={[]} activeChapterId="chapter-1" selectionMessage="" onFiltersChange={vi.fn()} onQueueIndex={vi.fn()}
+            onSelectHit={vi.fn()} onOpenChapterSummary={vi.fn()} />);
+        const cards = container.querySelectorAll('article');
+        for (const label of ['Lexical', 'Semantic', 'Alias']) expect(within(cards[0]).getByText(label)).toBeInTheDocument();
+        expect(within(cards[1]).getByLabelText('Match types')).toHaveTextContent('Adjacent');
+        expect(within(cards[1]).queryByText('Semantic')).not.toBeInTheDocument();
+        expect(cards[0].querySelector('mark')).not.toBeNull();
+        expect(cards[1].querySelector('mark')).toBeNull();
     });
 
     it('shows a compact query-centered excerpt and sends its offset to Open and locate', () => {

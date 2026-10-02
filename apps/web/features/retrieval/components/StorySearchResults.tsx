@@ -4,6 +4,7 @@ import type { ReactElement } from 'react';
 import type {
     EmbeddingStatus,
     RetrievalIndexStatus,
+    RetrievalRecallMethod,
     RetrievalSearchFilters,
     RetrievalSearchHit,
     RetrievalSearchResponse,
@@ -12,6 +13,13 @@ import { buildSearchPreview, SEARCH_PREVIEW_MAX_CHARACTERS, splitPreviewHighligh
 import type { SearchHitFocusAnchor } from '../../../domain/retrieval/searchPreview';
 import type { RetrievalIndexProgress, StorySearchChapterOption } from '../hooks/useLocalStorySearch';
 import { StorySearchFilters } from './StorySearchFilters';
+
+const MATCH_LABELS: Record<RetrievalRecallMethod, { label: string; description: string }> = {
+    semantic: { label: 'Semantic', description: 'Matched by meaning; the wording may differ.' },
+    lexical: { label: 'Lexical', description: 'Matched by indexed words or phrases.' },
+    adjacent: { label: 'Adjacent', description: 'A nearby passage included for context, not a direct match.' },
+    alias: { label: 'Alias', description: 'Matched through a character name or alias.' },
+};
 
 interface StorySearchResultsProps {
     embeddingStatus: EmbeddingStatus | null;
@@ -209,7 +217,15 @@ function SearchHitCard({
                     {expanded ? 'Show less' : 'Show full excerpt'}
                 </button>
             )}
-            <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
+                <div className="flex flex-wrap gap-1" aria-label="Match types">
+                    {hit.recallMethods.map(method => (
+                        <span key={method} title={MATCH_LABELS[method].description}
+                            className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                            {MATCH_LABELS[method].label}
+                        </span>
+                    ))}
+                </div>
                 {chapterId ? (
                     <button
                         type="button"
