@@ -620,7 +620,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                                     {chapterLoad.error ? <div role="alert">
                                         <p>This chapter could not be loaded. Try again.</p>
                                         <Button onClick={() => void chapterLoad.retry()}>Retry</Button>
-                                    </div> : chapterLoad.isLoading ? <p role="status">Loading chapter...</p>
+                                    </div> : chapterLoad.isLoading ? (chapterLoad.showLoading ? <p role="status">Loading chapter...</p> : null)
                                         : book.volumes.length === 0 ? "Create a volume to start" : "Select or create a chapter from the sidebar"}
                                 </div>
                             )}

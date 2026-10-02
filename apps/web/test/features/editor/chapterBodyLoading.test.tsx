@@ -18,9 +18,52 @@ function metadata(id: string, version = 1): Chapter {
     return { id, title: id, content: '', contentLoaded: false, databaseVersion: version,
         wordCount: 1, status: 'draft', isEditable: true, foreshadowings: [] };
 }
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 
 describe('bounded saved chapter bodies', () => {
+    it('renders a cached chapter synchronously without a loading frame or another body request', () => {
+        const read = vi.spyOn(localRepository, 'readChapter');
+        const client = new QueryClient();
+        chapterBodyCache(client).put(stored('recent'));
+        const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+        const { result, unmount } = renderHook(() => useLoadedChapter('book', metadata('recent')), { wrapper });
+        expect(result.current.chapter?.content).toBe('recent');
+        expect(result.current.isLoading).toBe(false);
+        expect(result.current.showLoading).toBe(false);
+        expect(read).not.toHaveBeenCalled();
+        unmount(); client.clear();
+    });
+
+    it('delays the indicator, cancels it for quick reads, and restarts the delay for a different chapter', async () => {
+        vi.useFakeTimers();
+        const pending = new Map<string, (value: LocalChapter) => void>();
+        vi.spyOn(localRepository, 'readChapter').mockImplementation((_book, id) => new Promise(resolve => pending.set(id, resolve)));
+        const client = new QueryClient();
+        const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+        const { result, rerender, unmount } = renderHook(({ id }) => useLoadedChapter('book', metadata(id)), { wrapper, initialProps: { id: 'quick' } });
+        expect(result.current.isLoading).toBe(true);
+        expect(result.current.showLoading).toBe(false);
+        await act(async () => { pending.get('quick')!(stored('quick')); await vi.advanceTimersByTimeAsync(100); });
+        expect(result.current.chapter?.id).toBe('quick');
+        expect(result.current.showLoading).toBe(false);
+        rerender({ id: 'slow' });
+        await act(async () => { await vi.advanceTimersByTimeAsync(199); });
+        expect(result.current.showLoading).toBe(false);
+        await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+        expect(result.current.showLoading).toBe(true);
+        rerender({ id: 'next' });
+        expect(result.current.showLoading).toBe(false);
+        await act(async () => { pending.get('slow')!(stored('slow')); await vi.advanceTimersByTimeAsync(100); });
+        expect(result.current.chapter).toBeUndefined();
+        expect(result.current.showLoading).toBe(false);
+        await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+        expect(result.current.showLoading).toBe(true);
+        await act(async () => { pending.get('next')!(stored('next')); await vi.advanceTimersByTimeAsync(1); });
+        expect(result.current.chapter?.id).toBe('next');
+        expect(result.current.showLoading).toBe(false);
+        unmount(); client.clear();
+    });
+
     it('evicts the least recently visited chapter and rejects stale versions', () => {
         const cache = new ChapterBodyCache(2);
         cache.put(stored('a')); cache.put(stored('b'));
