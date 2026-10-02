@@ -1,8 +1,7 @@
 # StoryArk work exchange format
 
-This document defines the version 1 whole-work JSON envelope. It is the
-contract for the P0-A exchange stage, the P0-B local export flow and the P0-C
-plus P0-D import flow. Import preflight, conflict handling and transactional
+This document defines the version 1 whole-work JSON envelope used by local
+export and import. Import preflight, conflict handling and transactional
 ID remapping consume this contract instead of serializing SQLite rows directly.
 
 ## Import preflight boundary
@@ -16,14 +15,15 @@ object count, string and asset limits, allowed runtime state, Tiptap safety,
 deterministic ordering, duplicate IDs and same-work references.
 
 The report distinguishes validation errors from preservation warnings for
-legacy or read-only chapter bodies and shows field paths such as
-`chapters[2].body.content`. A successful preflight holds the validated value in
-memory only and makes no SQLite change. The Rust preparation command then
+legacy or read-only chapter bodies. The dialog groups errors into readable
+messages; technical field paths and validation rules remain in local diagnostics.
+A successful preflight holds the validated value in memory only and makes no
+SQLite change. The Rust preparation command then
 reports target and imported versions, timestamps, content statistics, same-ID
 conflicts and same-title conflicts. A failed preflight, file read failure or
 user cancellation cannot create an empty book or partial related records.
 
-## Conflict and recovery policy (P0-D)
+## Conflict and recovery policy
 
 When the imported `book.id` already exists, the dialog offers **Replace**,
 **Create copy** and **Cancel**. Replace never merges records. It rechecks the
@@ -49,7 +49,7 @@ database: the verified backup is retained for a controlled restore after all
 StoryArk instances have stopped, or for an explicitly controlled external
 SQLite restore procedure.
 
-## User flow and derived-index state (P0-E)
+## User flow and derived-index state
 
 The existing bookshelf keeps the import entry beside **New Book**. The editor
 export menu separates document exports (Word/PDF) from the whole-work JSON
@@ -71,7 +71,9 @@ planning and brainstorm queries are invalidated for the imported book. Chapter
 content and foreshadowing notes are part of the book detail query. The result
 also marks `derivedIndexStatus` as `pending` and records that state in the
 local Query cache. Version 1 does not import or pretend to build a retrieval
-index; a later P1 indexing task rebuilds it from the committed local work.
+index. The local indexer rebuilds derived data from committed work through
+manual refresh or enabled automatic indexing; see
+[retrieval-r0.md](retrieval-r0.md).
 
 ## Version boundaries
 
@@ -256,8 +258,35 @@ chapterSummaries, plotSettings
 
 `bookId` must equal `book.id`. The two story text fields are each limited to
 1,048,576 characters. A chapter summary requires `chapterId`, `summary`, and
-`updatedAt`; `sourceChapterVersion` is optional but, when present, cannot be
-newer than the exported chapter record. A plot setting requires `id`, `title`,
+`updatedAt`; `sourceChapterVersion`, `provenance` (`author` or `ai-adopted`),
+`sourceSnapshot`, and `generationMetadata` are optional for legacy
+compatibility. `freshnessAcknowledgement` is also optional; it records the
+author-confirmed source snapshot and allowed-source version vector used as the
+new freshness baseline. Acknowledging a possible change does not rewrite the
+original source snapshot or adopted-AI generation provenance, and subsequent
+source changes can make the summary stale again. A source snapshot records the
+chapter/version and deterministic body/block fingerprints, content format,
+Mention identities, and foreshadowing note fingerprints; it does not carry a
+duplicate chapter body. When present,
+its chapter ID must equal the summary's chapter ID. Its chapter database
+version is a historical source snapshot and may differ from the receiving
+device's chapter version. The optional `sourceChapterVersion` is rebased for
+the imported local record; it is not the sole freshness or concurrency test.
+When creating a copy, acknowledgement snapshot references are rewritten using
+the same old-ID to new-ID mapping as the rest of the work. Optional
+`copyReferences` arrays preserve the IDs used to compute historical fingerprints
+without retaining another body. Optional `copySourceVersions` records preserve
+whether each allowed source matched the baseline before the local versions were
+reset. These comparison fields survive later exports and compose when copying a
+copy. They do not acknowledge existing changes or alter AI generation provenance;
+a new author acknowledgement captures a normal snapshot without copy metadata.
+An adopted AI summary
+requires generation metadata containing provider/config/model IDs, generation
+time, prompt version, allowed source IDs and versions, and an optional retrieval
+trace. Secrets, prompts, and full network payloads are not included.
+Generation metadata must explicitly set `includesFuturePlan: false`; future-plan
+source kinds are rejected. Recorded source versions are provenance snapshots,
+not concurrency tokens on another device. A plot setting requires `id`, `title`,
 `details`, `chapterIds`, `createdAt`, and `updatedAt`; `missingChapterIds` is
 optional. All planning chapter references must resolve to this book.
 
@@ -300,7 +329,7 @@ validator checks the known Tiptap tree shape, but it does not discard unknown
 JSON fields. Mention nodes retain their complete `attrs`, including the
 character association ID. A canonical UUID association is checked against the
 exported characters; a historical opaque association is retained for the
-future import ID map.
+import ID mapping rules.
 
 Known marks such as `bold`, `italic`, `underline`, `textStyle` and
 `foreshadowing` remain in the document. A foreshadowing mark must have a note
@@ -332,9 +361,13 @@ If the user later needs application preferences, that must use a different
 versioned format and an explicit settings entry point. It must not be added to
 this envelope under an ambiguous field.
 
-## Restricted assets
+## Reserved asset representation
 
-Version 1 supports only self-contained assets. An asset requires:
+The envelope validator defines the following representation for self-contained
+assets. This is a format reservation, not a claim of runtime attachment support:
+current export produces an empty `assets` array, and native import rejects
+non-empty assets before mutation. If attachment support is added, it must include
+explicit persistence, validation, packaging and migration rules. An asset requires:
 
 ```text
 id, mimeType, size, sha256, bytes, encoding: "base64"
@@ -357,7 +390,17 @@ Use `validateStoryArkWorkExport` for already parsed data,
 such as `$.chapters[0].body.content` and cross-reference errors without
 returning secrets or network payloads.
 
-## P0-B runtime export
+## Implementation entry points
+
+The frontend exchange types/validators live in `data/export/exchange/`; file
+preflight and import orchestration live beside them in `data/export/`.
+Native import separates `storage/import/validation.rs` (contract/reference
+checks), `mapping.rs` (copy IDs and content references), and `persistence.rs`
+(conflict statistics and ordered insertion). `local_prepare_work_import` is
+read-only; `local_import_work` is the command that mutates a work. Export uses
+`local_read_work_export_snapshot` to read a consistent saved snapshot.
+
+## Runtime export
 
 Local mode exposes `StoryArk work (.storyark.json)` in the existing editor
 Export menu. The export operation has two boundaries:
@@ -377,10 +420,11 @@ Export menu. The export operation has two boundaries:
    assemble the file from TanStack Query caches.
 
 The frontend maps that result to this envelope, serializes and validates it,
-then shows a preview with the book name, object counts, schema version,
-generation time, supported asset count, exclusions and the rebuildable derived
-index policy. Preferences, model configurations, credentials, keys, session
-candidates, active requests, absolute paths and retrieval indexes are not
+then shows a preview with the book name, object counts, generation time,
+attachment count and exclusions. Exchange/schema versions and derived-index
+policy remain implementation details rather than preview labels. Preferences,
+model configurations, credentials, keys, session candidates, active requests,
+absolute paths and retrieval indexes are not
 read by the snapshot command and cannot enter the output. Version 1 currently
 has no embedded file assets; unsupported attachments or local-path assets are
 reported as excluded and require a later explicit preflight policy.

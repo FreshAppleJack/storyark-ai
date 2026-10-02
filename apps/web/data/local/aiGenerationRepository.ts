@@ -1,8 +1,15 @@
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { call } from './repository';
+import type {
+    RetrievalContext,
+    RetrievalScope,
+    RetrievalSourceVersionRecord,
+    RetrievalTaskStrategy,
+} from '../../domain/retrieval/contracts';
 
 export type GenerationTarget =
     | { kind: 'continue'; chapterId: string; databaseVersion: number }
+    | { kind: 'chapterSummary'; chapterId: string; databaseVersion: number; planningDatabaseVersion: number }
     | {
         kind: 'brainstorm';
         workspaceDatabaseVersion: number;
@@ -12,10 +19,10 @@ export type GenerationTarget =
     };
 
 export interface SourceVersion { chapterId: string; databaseVersion: number }
-export type ContextKind = 'currentDraft' | 'writtenFact' | 'authorSetting' | 'manualSummary' | 'futurePlan';
+export type ContextKind = 'currentDraft' | 'writtenFact' | 'authorSetting' | 'manualSummary' | 'futurePlan' | 'retrievalEvidence';
 export interface ContextSection { kind: ContextKind; label: string; text: string }
 export interface ContextInput {
-    bookId: string; sessionId: string; draftRevision: number; maxChars: number; target: GenerationTarget; sections: ContextSection[];
+    bookId: string; sessionId: string; draftRevision: number; maxChars: number; target: GenerationTarget; sections: ContextSection[]; retrievalContext?: RetrievalContext | null;
 }
 export interface ContextSnapshot extends ContextInput {
     contextSnapshotId: string; charCount: number;
@@ -24,6 +31,20 @@ export interface GenerationRequest {
     requestId: string; bookId: string; sessionId: string; draftRevision: number;
     config: { id: string; expectedConfigVersion: number };
     target: GenerationTarget; contextSnapshotId: string; outputChars: number;
+    retrievalTrace?: GenerationRetrievalTrace | null;
+}
+export interface GenerationRetrievalTrace {
+    retrievalVersion: string;
+    sourceVersions: SourceVersion[];
+    retrievalSourceVersions?: RetrievalSourceVersionRecord[];
+    searchId?: string;
+    task?: RetrievalTaskStrategy;
+    requestedAt?: number;
+    scope?: RetrievalScope;
+    excludedHitIds?: string[];
+    includedHitIds?: string[];
+    indexVersion?: number | null;
+    embeddingFingerprint?: string | null;
 }
 export type GenerationPayload =
     | { kind: 'started' }
@@ -43,6 +64,8 @@ export interface GenerationEvent { requestId: string; sessionId: string; sequenc
 export const aiGenerationRepository = {
     prepareContext: (input: ContextInput) => call<ContextSnapshot>('ai_prepare_context', { input }),
     start: (input: GenerationRequest) => call<{ requestId: string }>('ai_start_generation', { input }),
+    validateAdoption: (input: { bookId: string; chapterId: string; databaseVersion: number; planningDatabaseVersion?: number; retrievalSourceVersions: RetrievalSourceVersionRecord[] }) =>
+        call<{ validated: true }>('ai_validate_adoption', { input }),
     cancel: (requestId: string, sessionId: string) => call<{ requestId: string; outcome: 'cancelled' | 'notFound' }>('ai_cancel_generation', {
         input: { requestId, sessionId },
     }),

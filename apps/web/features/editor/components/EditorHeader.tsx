@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useId, useRef } from 'react';
 import {
     ChevronRight, Globe, ListTree, Loader2, PanelRightClose, PanelRightOpen, Settings, Wand2,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { SaveStatusIndicator } from '../../../components/ui/SaveStatusIndicator';
+import { OverlayHorizontalScrollbar } from '../../../components/ui/OverlayHorizontalScrollbar';
 import { ExportMenu } from './ExportMenu';
+import { chapterTitleOrDefault } from '../../../domain/chapterTitle';
 
 export type EditorSaveStatus = 'saved' | 'saving' | 'unsaved' | 'error';
 
@@ -60,22 +62,28 @@ export function EditorHeader({
     onExportPdf,
     onExportWorkJson,
 }: EditorHeaderProps): React.ReactElement {
+    const actionsScrollId = useId();
+    const actionsScrollRef = useRef<HTMLDivElement>(null);
+    const displayChapterTitle = chapterTitleOrDefault(chapterTitle);
+
     return (
-        <header className="h-14 bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-6 flex-shrink-0">
-            <div className="flex items-center gap-4">
+        <header className="flex h-14 min-w-0 flex-shrink-0 items-center justify-between gap-4 overflow-visible border-b border-slate-200 bg-white px-6 dark:border-slate-800 dark:bg-slate-950">
+            <div className="min-w-16 flex-1">
                 {hasActiveChapter ? (
                     <div className="flex flex-col">
                         <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                        {volumeTitle} <ChevronRight size={10}/>
+                        <span className="truncate" title={volumeTitle}>{volumeTitle}</span> <ChevronRight size={10} className="shrink-0"/>
                         </span>
-                        <span className="text-sm font-semibold text-slate-900 dark:text-white">{chapterTitle}</span>
+                        <span className="truncate text-sm font-semibold text-slate-900 dark:text-white" title={displayChapterTitle}>{displayChapterTitle}</span>
                     </div>
                 ) : (
-                    <span className="text-slate-400 dark:text-slate-500 text-sm">Select a chapter to start writing</span>
+                    <span className="block truncate text-slate-400 dark:text-slate-500 text-sm" title="Select a chapter to start writing">Select a chapter to start writing</span>
                 )}
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="relative min-w-0 w-max shrink">
+                <div id={actionsScrollId} ref={actionsScrollRef} className="h-full w-full overflow-x-auto whitespace-nowrap scrollbar-hidden-x">
+                    <div className="flex w-max min-w-full items-center justify-end gap-4 py-1">
                 <SaveStatusIndicator state={saveStatus} savedText={localMode ? 'Saved locally' : 'Saved'} onRetry={onRetrySave} />
 
                 <div className="h-4 mx-1 border-l border-slate-300 dark:border-slate-700" />
@@ -151,6 +159,14 @@ export function EditorHeader({
                 </Button>
 
                 <ExportMenu isExporting={isExporting} onExportWord={onExportWord} onExportPdf={onExportPdf} onExportWorkJson={onExportWorkJson} canExportWorkJson={localMode} />
+                    </div>
+                </div>
+                <OverlayHorizontalScrollbar
+                    scrollElementRef={actionsScrollRef}
+                    scrollElementId={actionsScrollId}
+                    ariaLabel="Editor header actions"
+                    bottomClassName="-bottom-2"
+                />
             </div>
         </header>
     );

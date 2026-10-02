@@ -61,6 +61,7 @@ export function useChapterAutosave({
     });
 
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const persistedRevisionRef = useRef(revision);
 
     // Chapter switch resets to a clean status; an edit while saved or failed
     // re-queues the draft. The switch branch must come first, and only a
@@ -85,6 +86,7 @@ export function useChapterAutosave({
     const epochRef = useRef(0);
     useLayoutEffect(() => {
         epochRef.current += 1;
+        persistedRevisionRef.current = revisionRef.current;
         inFlightRoundRef.current = null;
         return () => {
             epochRef.current += 1;
@@ -114,6 +116,7 @@ export function useChapterAutosave({
                 return { ok: false, draftAdvanced: false };
             }
             fnsRef.current.markSaved(snapshot.revision);
+            persistedRevisionRef.current = snapshot.revision;
             // The draft advanced while saving if the revision moved on:
             // a serial follow-up round is required.
             const draftAdvanced = revisionRef.current !== snapshot.revision;
@@ -149,6 +152,7 @@ export function useChapterAutosave({
             clearTimeout(timerRef.current);
             timerRef.current = null;
         }
+        if (revisionRef.current === persistedRevisionRef.current) return true;
         // Drain the serial queue: a user editing during the flush requires
         // further rounds, so keep saving until the draft stops advancing.
         for (let rounds = 0; rounds < 10; rounds++) {

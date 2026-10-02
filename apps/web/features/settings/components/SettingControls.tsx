@@ -1,7 +1,8 @@
 import React from 'react';
 import { Check } from 'lucide-react';
+import { Card } from '../../../components/ui/Card';
 export const SettingShell: React.FC<{ title: string; description: string; icon: React.ReactNode; children: React.ReactNode; badge?: string }> = ({ title, description, icon, children, badge }) => (
-    <section className="rounded-2xl border border-slate-200 bg-white/90 p-6 shadow-sm shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/80 dark:shadow-black/20">
+    <Card>
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div className="flex gap-4">
                 <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300">
@@ -17,18 +18,22 @@ export const SettingShell: React.FC<{ title: string; description: string; icon: 
             </div>
             <div className="w-full lg:w-[360px]">{children}</div>
         </div>
-    </section>
+    </Card>
 );
 
-export const ToggleControl: React.FC<{ enabled: boolean; onChange?: () => void; disabled?: boolean }> = ({ enabled, onChange, disabled }) => (
+export const ToggleControl: React.FC<{ enabled: boolean; onChange?: () => void; disabled?: boolean; ariaLabel?: string }> = ({ enabled, onChange, disabled, ariaLabel }) => (
     <button
         type="button"
         disabled={disabled}
         onClick={onChange}
-        className={`relative inline-flex h-8 w-14 items-center rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-slate-950 ${enabled ? 'bg-brand-600' : 'bg-slate-300 dark:bg-slate-700'} ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
+        aria-label={ariaLabel}
+        className={`relative inline-flex h-8 w-14 shrink-0 items-center overflow-hidden rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:focus:ring-offset-slate-950 ${enabled ? 'bg-brand-600' : 'bg-slate-300 dark:bg-slate-700'} ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
         aria-pressed={enabled}
     >
-        <span className={`inline-flex h-6 w-6 transform items-center justify-center rounded-full bg-white text-slate-500 shadow-md transition-transform duration-300 ${enabled ? 'translate-x-7' : 'translate-x-1'}`}>
+        <span
+            className="absolute top-1 inline-flex h-6 w-6 items-center justify-center rounded-full bg-white text-slate-500 shadow-md transition-[left] duration-300"
+            style={{ left: enabled ? '1.75rem' : '0.25rem' }}
+        >
             {enabled ? <Check size={14} className="text-brand-600" /> : null}
         </span>
     </button>

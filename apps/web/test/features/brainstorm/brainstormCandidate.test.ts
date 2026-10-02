@@ -32,19 +32,25 @@ describe('brainstorm candidate validation', () => {
 
     it('rejects incomplete JSON and wrong field types with a safe message', () => {
         expect(parseBrainstormCandidate(JSON.stringify({ options: [{ ...option, conflict: 42 }, ...options.slice(1)] }))).toEqual({
-            errorMessage: 'The conflict field must be text.',
+            errorMessage: 'Some AI directions are incomplete or too long. Try generating again.',
         });
         expect(parseBrainstormCandidate('The previous chapter is excellent.')).toEqual({
-            errorMessage: 'The model response is not valid JSON.',
+            errorMessage: 'The AI response could not be used. Try generating again.',
+        });
+        expect(parseBrainstormCandidate(`Here are the options: ${JSON.stringify({ options })}`)).toEqual({
+            errorMessage: 'The AI response could not be used. Try generating again.',
+        });
+        expect(parseBrainstormCandidate(JSON.stringify(options))).toEqual({
+            errorMessage: 'The AI did not return any usable directions. Try generating again.',
         });
     });
 
     it('rejects oversized fields and empty option lists', () => {
         expect(parseBrainstormCandidate(JSON.stringify({ options: [] }))).toEqual({
-            errorMessage: 'The response must contain exactly 3 options.',
+            errorMessage: 'The AI did not return all three directions. Try generating again.',
         });
         expect(parseBrainstormCandidate(JSON.stringify({ options: [{ ...option, development: 'x'.repeat(4001) }, ...options.slice(1)] }))).toEqual({
-            errorMessage: 'The development field must contain 1-4000 characters.',
+            errorMessage: 'Some AI directions are incomplete or too long. Try generating again.',
         });
     });
 });

@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 import { BooksContext, type BooksContextType } from './BooksContext';
-import { localBookOptions, localKeys, localRepository, projectBook, projectCharacter, LocalStorageError, type LocalBookDetail } from '../data/local/repository';
+import { directoryChapter, localBookOptions, localKeys, localRepository, projectBook, projectCharacter, LocalStorageError, type LocalBookDetail } from '../data/local/repository';
+import { chapterBodyCache, rememberChapter } from '../data/local/chapterBodyCache';
 import type { LocalBook, LocalChapter, LocalCharacter, LocalVolume } from '../data/local/contracts';
 import { createChapterWriteQueue } from '../services/chapterWrites';
 import { planningKey } from '../data/local/planningRepository';
@@ -42,7 +43,7 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 const book = await localRepository.createBook(title, author, coverColor);
                 await client.cancelQueries({ queryKey: localKeys.books });
                 rememberBook(book);
-                client.setQueryData<LocalBookDetail>(localKeys.book(book.id), { book, volumes: [], chapters: [] });
+                client.setQueryData<LocalBookDetail>(localKeys.book(book.id), { book, volumes: [], chapters: [], bodyMode: 'directory' });
                 return book.id;
             } catch (error) { fail(error); return null; }
         },
@@ -63,9 +64,10 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 const volume = current.volumes.find(item => item.id === volumeId);
                 if (!volume) throw new Error('Volume not found. Reopen the book.');
                 const result = await localRepository.createChapter(bookId, volumeId, title, volume.databaseVersion);
+                rememberChapter(client, result.chapter);
                 client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({
                     ...old, volumes: old.volumes.map(item => item.id === volumeId ? result.volume : item),
-                    chapters: [...old.chapters, result.chapter],
+                    chapters: [...old.chapters, old.bodyMode === 'directory' ? directoryChapter(result.chapter) : result.chapter],
                 }));
                 return result.chapter.id;
             } catch (error) { fail(error); return null; }
@@ -81,8 +83,9 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                     expectedDatabaseVersion: chapter.databaseVersion,
                 });
                 if (result.sessionKey !== sessionKey || result.revision !== snapshot.revision) throw new Error('Unexpected save acknowledgement. Keep your draft.');
+                rememberChapter(client, result.chapter);
                 client.setQueryData<LocalBookDetail>(localKeys.book(snapshot.bookId), old => old && ({
-                    ...old, chapters: old.chapters.map(item => item.id === snapshot.chapterId ? result.chapter : item),
+                    ...old, chapters: old.chapters.map(item => item.id === snapshot.chapterId ? (old.bodyMode === 'directory' ? directoryChapter(result.chapter) : result.chapter) : item),
                 }));
                 return true;
             } catch (error) { fail(error); return false; }
@@ -94,14 +97,19 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 const current = client.getQueryData<LocalBookDetail>(localKeys.book(bookId));
                 const chapter = current?.chapters.find(item => item.id === chapterId && item.volumeId === volumeId);
                 if (!chapter) throw new Error('Chapter not found. Reopen the book.');
-                const unchanged = chapter.body.content === content
-                    && (wordCount === undefined || chapter.wordCount === wordCount)
-                    && JSON.stringify(chapter.foreshadowings) === JSON.stringify(foreshadowings ?? chapter.foreshadowings);
+                const body = current?.bodyMode === 'directory'
+                    ? chapterBodyCache(client).get(bookId, chapterId, chapter.databaseVersion) : chapter;
+                const directoryTitleOnly = current?.bodyMode === 'directory' && content === ''
+                    && (foreshadowings === undefined || foreshadowings.length === 0);
+                const unchanged = (directoryTitleOnly || ((body?.body.content ?? '') === content
+                    && JSON.stringify(body?.foreshadowings ?? []) === JSON.stringify(foreshadowings ?? body?.foreshadowings ?? [])))
+                    && (wordCount === undefined || chapter.wordCount === wordCount);
                 if (!unchanged) throw new LocalStorageError('UNSUPPORTED', 'Only the title can change for a chapter without an open draft.');
                 if (chapter.title === title) return true;
                 const record = await localRepository.rename<LocalChapter>({ kind: 'chapter', bookId, volumeId, chapterId, expectedDatabaseVersion: chapter.databaseVersion, title });
+                rememberChapter(client, record);
                 client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({
-                    ...old, chapters: old.chapters.map(item => item.id === chapterId ? record : item),
+                    ...old, chapters: old.chapters.map(item => item.id === chapterId ? (old.bodyMode === 'directory' ? directoryChapter(record) : record) : item),
                 }));
                 return true;
             } catch (error) { fail(error); return false; }
@@ -112,8 +120,9 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 const chapter = current?.chapters.find(item => item.id === chapterId && item.volumeId === volumeId);
                 if (!chapter) throw new Error('Chapter not found. Reopen the book.');
                 const record = await localRepository.setReadOnly<LocalChapter>({ kind: 'chapter', bookId, volumeId, chapterId, expectedDatabaseVersion: chapter.databaseVersion, isReadOnly: !chapter.isReadOnly });
+                rememberChapter(client, record);
                 client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({
-                    ...old, chapters: old.chapters.map(item => item.id === chapterId ? record : item),
+                    ...old, chapters: old.chapters.map(item => item.id === chapterId ? (old.bodyMode === 'directory' ? directoryChapter(record) : record) : item),
                 }));
                 return true;
             } catch (error) { fail(error); return false; }
@@ -143,6 +152,7 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                     volumes: old.volumes.map(item => item.id === volumeId ? (result.parent ?? item) : item),
                     chapters: old.chapters.filter(item => item.id !== chapterId),
                 }));
+                chapterBodyCache(client).clearBook(bookId);
                 void client.invalidateQueries({ queryKey: planningKey(bookId) });
                 return true;
             } catch (error) { fail(error); return false; }
@@ -166,6 +176,7 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                     chapters: old.chapters.filter(item => item.volumeId !== volumeId),
                 }));
                 if (result.parent) rememberBook(result.parent);
+                chapterBodyCache(client).clearBook(bookId);
                 void client.invalidateQueries({ queryKey: planningKey(bookId) });
                 return true;
             } catch (error) { fail(error); return false; }
@@ -177,7 +188,7 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 const items = newVolumes.map(volume => {
                     const stored = current.volumes.find(item => item.id === volume.id);
                     if (!stored) throw new Error('Volume not found. Reopen the book.');
-                    return { kind: 'volume' as const, bookId, volumeId: volume.id, expectedDatabaseVersion: stored.databaseVersion };
+                    return { kind: 'volume' as const, bookId, volumeId: volume.id, expectedDatabaseVersion: stored.databaseVersion, expectedPosition: stored.position };
                 });
                 const records = await localRepository.reorder<LocalVolume>({ parent: { kind: 'book', bookId, expectedDatabaseVersion: current.book.databaseVersion }, items });
                 client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({ ...old, volumes: records }));
@@ -192,12 +203,12 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 const items = newChapters.map(chapter => {
                     const stored = current.chapters.find(item => item.id === chapter.id && item.volumeId === volumeId);
                     if (!stored) throw new Error('Chapter not found. Reopen the book.');
-                    return { kind: 'chapter' as const, bookId, volumeId, chapterId: chapter.id, expectedDatabaseVersion: stored.databaseVersion };
+                    return { kind: 'chapter' as const, bookId, volumeId, chapterId: chapter.id, expectedDatabaseVersion: stored.databaseVersion, expectedPosition: stored.position };
                 });
-                const records = await localRepository.reorder<LocalChapter>({ parent: { kind: 'volume', bookId, volumeId, expectedDatabaseVersion: volume.databaseVersion }, items });
+                const records = await localRepository.reorder<LocalChapter>({ parent: { kind: 'volume', bookId, volumeId, expectedDatabaseVersion: volume.databaseVersion }, items }, current.bodyMode === 'directory');
                 client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({
                     ...old,
-                    chapters: [...old.chapters.filter(item => item.volumeId !== volumeId), ...records],
+                    chapters: [...old.chapters.filter(item => item.volumeId !== volumeId), ...records.map(chapter => old.bodyMode === 'directory' ? directoryChapter(chapter) : chapter)],
                 }));
                 return true;
             } catch (error) { fail(error); return false; }
@@ -282,8 +293,9 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 // One transaction cascades volumes, chapters, characters, the
                 // graph, planning and the brainstorm workspace; locks refuse.
                 await localRepository.delete({ kind: 'book', bookId, expectedDatabaseVersion: current.databaseVersion });
+                chapterBodyCache(client).clearBook(bookId);
                 client.setQueryData<LocalBook[]>(localKeys.books, previous => previous?.filter(book => book.id !== bookId));
-                for (const key of [localKeys.book(bookId), localKeys.characters(bookId), planningKey(bookId), localGraphKey(bookId), brainstormKey(bookId)]) {
+                for (const key of [localKeys.book(bookId), localKeys.fullBook(bookId), localKeys.characters(bookId), planningKey(bookId), localGraphKey(bookId), brainstormKey(bookId)]) {
                     client.removeQueries({ queryKey: key });
                 }
                 return true;
@@ -298,7 +310,7 @@ export function LocalBooksProvider({ children }: { children: React.ReactNode }) 
                 const items = ordered.map(character => {
                     const record = stored.find(item => item.id === character.id);
                     if (!record) throw new Error('Character not found. Reopen the book.');
-                    return { characterId: record.id, expectedDatabaseVersion: record.databaseVersion };
+                    return { characterId: record.id, expectedDatabaseVersion: record.databaseVersion, expectedPosition: record.position };
                 });
                 const records = await localRepository.reorderCharacters({ bookId, expectedBookVersion: detail.book.databaseVersion, items });
                 client.setQueryData(localKeys.characters(bookId), records);

@@ -14,9 +14,8 @@
 .DS_Store
 Thumbs.db
 
-# Java / Maven
+# Build output
 **/target/
-.mvn/timing.properties
 
 # Node / Vite
 **/node_modules/
@@ -26,6 +25,8 @@ Thumbs.db
 # Runtime data
 logs/
 *.log
+*.log.1
+*.log.2
 uploads/
 data/
 !/apps/web/data/
@@ -34,9 +35,10 @@ backups/
 *.bak
 *.dump
 
-# Security scan reports
+# Local reports and development records
 .reports/
 gitleaks-report.*
-/.codebuddy/rules
-/.codebuddy/memory
-/.codebuddy
+/.codebuddy/
+/.mimocode-project-id
+/docs/evidence/
+/docs/plans/

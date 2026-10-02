@@ -1,4 +1,11 @@
-import type { Book, StoryPlanning, PlotSetting } from '../../types';
+import type { Book, Chapter, StoryPlanning, PlotSetting } from '../../types';
+import {
+    assessChapterSummaryFreshness,
+    createCurrentAllowedSourceVersions,
+    type ChapterSummaryFreshness,
+    type ChapterSummaryProvenance,
+} from '../../domain/chapterSummarySource';
+import { getEditorPlainText } from '../../domain/chapterContent';
 import { getFuzzyScore } from '../../utils/search';
 
 export interface ChapterOption {
@@ -7,23 +14,50 @@ export interface ChapterOption {
     volumeId: string;
     volumeTitle: string;
     summary: string;
+    hasWrittenText: boolean;
+    isReadOnly: boolean;
     sourceChanged?: boolean;
+    summaryProvenance?: ChapterSummaryProvenance;
+    summaryFreshness?: ChapterSummaryFreshness;
+}
+
+const chapterTextCache = new WeakMap<Chapter, { content: string; hasText: boolean }>();
+
+function hasChapterText(chapter: Chapter): boolean {
+    const cached = chapterTextCache.get(chapter);
+    if (cached?.content === chapter.content) return cached.hasText;
+    const hasText = Boolean(getEditorPlainText(chapter.content).trim());
+    chapterTextCache.set(chapter, { content: chapter.content, hasText });
+    return hasText;
 }
 
 export function getPlanningChapters(book: Book, planning: StoryPlanning): ChapterOption[] {
     if (!book) return [];
-    const summaryMap = new Map(planning.chapterSummaries.map(item => [item.chapterId, item.summary]));
+    const summaryMap = new Map(planning.chapterSummaries.map(item => [item.chapterId, item]));
+    const currentAllowedSourceVersions = createCurrentAllowedSourceVersions({
+        bookId: book.id,
+        planningDatabaseVersion: planning.databaseVersion,
+        characters: book.characters,
+        chapters: book.volumes.flatMap(volume => volume.chapters),
+    });
 
     return book.volumes.flatMap(volume => (
-        volume.chapters.map(chapter => ({
-            id: chapter.id,
-            title: chapter.title,
-            volumeId: volume.id,
-            volumeTitle: volume.title,
-            summary: summaryMap.get(chapter.id) || '',
-            sourceChanged: !!summaryMap.get(chapter.id) && chapter.databaseVersion !== undefined
-                && planning.chapterSummaries.find(item => item.chapterId === chapter.id)?.sourceChapterVersion !== chapter.databaseVersion,
-        }))
+        volume.chapters.map(chapter => {
+            const summary = summaryMap.get(chapter.id);
+            const summaryFreshness = assessChapterSummaryFreshness(summary, chapter, currentAllowedSourceVersions);
+            return {
+                id: chapter.id,
+                title: chapter.title,
+                volumeId: volume.id,
+                volumeTitle: volume.title,
+                summary: summary?.summary ?? '',
+                hasWrittenText: hasChapterText(chapter),
+                isReadOnly: Boolean(chapter.isReadOnly),
+                summaryProvenance: summary?.provenance,
+                summaryFreshness,
+                sourceChanged: summaryFreshness.status === 'possibly-stale' || summaryFreshness.status === 'needs-review',
+            };
+        })
     ));
 }
 

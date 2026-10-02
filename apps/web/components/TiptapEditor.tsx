@@ -3,6 +3,7 @@ import { dlog, type MentionDebugEntry } from '../features/editor/debug/editorDeb
 import { createMentionSuggestion } from '../features/editor/integrations/mentionSuggestion';
 import { createCharacterTooltipHandler } from '../features/editor/integrations/characterTooltip';
 import { getCharacterDisplayTerms } from '../domain/characters';
+import { createTypingInputObserver } from '../features/editor/typingSpeed';
 import React, {useEffect, useEffectEvent, useState, useImperativeHandle, forwardRef, useMemo, useRef} from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import type { Editor, JSONContent } from '@tiptap/core';
@@ -22,13 +23,88 @@ import { EditorContextMenu } from '../features/editor/components/EditorContextMe
 import { Character, EDITOR_SPACING_LIMITS, ForeshadowingNote } from '../types';
 import { calculateMixedWordCount } from '../utils/textUtils'; // Import common utility function
 import type { AiContinueAnchor } from '../features/editor/types/aiContinue';
+import { captureAiContinueAnchor, textBeforeAiContinueAnchor } from '../features/editor/utils/aiContinueAnchor';
 import { buildAiContinueContent } from '../features/editor/utils/aiContinueText';
+import type { RetrievalChunkLocator, RetrievalTextFocus } from '../domain/retrieval/contracts';
 
 const EMPTY_CHARACTERS: Character[] = [];
+const RETRIEVAL_BLOCK_TYPES = new Set(['paragraph', 'heading', 'blockquote', 'codeBlock']);
+
+function scrollEditorTargetIntoView(editorDom: HTMLElement, target: { top: number; height: number }): void {
+    let scrollParent = editorDom.parentElement;
+    while (scrollParent && scrollParent !== document.body && scrollParent !== document.documentElement) {
+        const overflowY = window.getComputedStyle(scrollParent).overflowY;
+        if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay')
+            && scrollParent.scrollHeight > scrollParent.clientHeight) break;
+        scrollParent = scrollParent.parentElement;
+    }
+    const targetCenterY = target.top + target.height / 2;
+    if (scrollParent && scrollParent !== document.body && scrollParent !== document.documentElement) {
+        const parentRect = scrollParent.getBoundingClientRect();
+        const delta = targetCenterY - (parentRect.top + scrollParent.clientHeight / 2);
+        const maxTop = scrollParent.scrollHeight - scrollParent.clientHeight;
+        scrollParent.scrollTo({
+            top: Math.max(0, Math.min(maxTop, scrollParent.scrollTop + delta)),
+            behavior: 'smooth',
+        });
+    } else {
+        window.scrollTo({ top: window.scrollY + targetCenterY - window.innerHeight / 2, behavior: 'smooth' });
+    }
+}
+
+function positionAtRetrievalTextOffset(
+    block: PMNode,
+    blockPosition: number,
+    textOffset: number,
+    bias: 'start' | 'end',
+): number {
+    let consumed = 0;
+    let resolvedPosition: number | null = null;
+
+    const visit = (parent: PMNode, contentStart: number) => {
+        parent.forEach((child, offset) => {
+            if (resolvedPosition !== null) return;
+            const childPosition = contentStart + offset;
+            if (child.isText) {
+                const text = child.text ?? '';
+                const length = Array.from(text).length;
+                if (textOffset <= consumed + length) {
+                    const localOffset = Math.max(0, Math.min(length, textOffset - consumed));
+                    resolvedPosition = childPosition + Array.from(text).slice(0, localOffset).join('').length;
+                    return;
+                }
+                consumed += length;
+            } else if (child.type.name === 'mention') {
+                const label = child.attrs.label || child.attrs.id;
+                const length = typeof label === 'string' ? Array.from(label).length : 0;
+                if (textOffset <= consumed + length) {
+                    const localOffset = Math.max(0, textOffset - consumed);
+                    resolvedPosition = localOffset === 0 || (localOffset < length && bias === 'start')
+                        ? childPosition
+                        : childPosition + child.nodeSize;
+                    return;
+                }
+                consumed += length;
+            } else if (child.type.name === 'hardBreak') {
+                if (textOffset <= consumed + 1) {
+                    resolvedPosition = childPosition + (textOffset > consumed && bias === 'end' ? child.nodeSize : 0);
+                    return;
+                }
+                consumed += 1;
+            } else if (child.content.size > 0) {
+                visit(child, childPosition + 1);
+            }
+        });
+    };
+
+    visit(block, blockPosition + 1);
+    return resolvedPosition ?? Math.max(blockPosition + 1, blockPosition + block.nodeSize - 1);
+}
 
 export interface TiptapEditorRef {
     insertContent: (content: string) => void;
     captureSelection: () => AiContinueAnchor | null;
+    getTextBeforeAnchor: (anchor: AiContinueAnchor) => string;
     insertAiCandidateAtAnchor: (candidate: string, anchor: AiContinueAnchor) => boolean;
     editor: Editor | null;
     getHTML: () => string; // Allow parent component to directly get latest updated HTML content
@@ -36,12 +112,14 @@ export interface TiptapEditorRef {
     forceRefreshHighlights: () => void;
     removeForeshadowing: (id: string) => void;
     focusForeshadowing: (id: string) => boolean;
+    focusRetrievalLocator: (locator: RetrievalChunkLocator, focus?: RetrievalTextFocus | null) => boolean;
 }
 
 interface TiptapEditorProps {
     contentId: string; // Unique identifier (ChapterID)
     content: string;
     onUpdate: (html: string, wordCount: number) => void;
+    onTypedText?: (text: string) => void;
     /**
      * Fired once after a chapter switch when the schema normalized the loaded
      * document (e.g. injected default attrs), so the parent can adopt the
@@ -68,6 +146,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                                                                          contentId, // Key parameter
                                                                          content,
                                                                          onUpdate,
+                                                                         onTypedText,
                                                                          isEditable = true,
                                                                          placeholder = "Start writing...",
                                                                          className,
@@ -108,6 +187,7 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
     const onForeshadowingClickRef = useRef(onForeshadowingClick);
     const onForeshadowingCreateRef = useRef(onForeshadowingCreate);
     const onUpdateRef = useRef(onUpdate);
+    const onTypedTextRef = useRef(onTypedText);
     const onContentNormalizedRef = useRef(onContentNormalized);
     const lastContentIdRef = useRef<string>(contentId);
 
@@ -130,11 +210,17 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
     useEffect(() => { onForeshadowingClickRef.current = onForeshadowingClick; }, [onForeshadowingClick]);
     useEffect(() => { onForeshadowingCreateRef.current = onForeshadowingCreate; }, [onForeshadowingCreate]);
     useEffect(() => { onUpdateRef.current = onUpdate; }, [onUpdate]);
+    useEffect(() => { onTypedTextRef.current = onTypedText; }, [onTypedText]);
     useEffect(() => { onContentNormalizedRef.current = onContentNormalized; }, [onContentNormalized]);
 
     // Character updates have their own highlight reconciliation. Do not reload
     // the document merely because a callback's character snapshot changed.
     const reconcileContentMentions = useEffectEvent((target: Editor) => forceDowngradeMentions(target, characters));
+    const typingInputObserver = useMemo(() => createTypingInputObserver(
+        text => onTypedTextRef.current?.(text),
+        () => contentId === lastContentIdRef.current && isEditableRef.current && !isSilentUpdateRef.current,
+    ), [contentId]);
+    const { handleTextInput, ...typingDOMEvents } = typingInputObserver;
 
     // Extensions stay referentially stable: character data flows through the
     // CharacterData storage instead of extension options, so updates never
@@ -215,7 +301,9 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 return false;
             },
             // Handle context menu events for character mentions
+            handleTextInput,
             handleDOMEvents: {
+                ...typingDOMEvents,
                 contextmenu: (view, event) => {
                     const target = event.target as HTMLElement;
                     // Detect if clicked on mention element
@@ -465,14 +553,11 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
         },
         captureSelection: () => {
             if (!editor || editor.isDestroyed) return null;
-            const { from, to } = editor.state.selection;
-            return {
-                from,
-                to,
-                docSize: editor.state.doc.content.size,
-                selectedText: editor.state.doc.textBetween(from, to, '\n', '\n'),
-            };
+            return captureAiContinueAnchor(editor);
         },
+        getTextBeforeAnchor: (anchor: AiContinueAnchor) => (
+            editor && !editor.isDestroyed ? textBeforeAiContinueAnchor(editor, anchor) : ''
+        ),
         insertAiCandidateAtAnchor: (candidate: string, anchor: AiContinueAnchor) => {
             if (!editor || editor.isDestroyed || !editor.isEditable || !candidate.trim()) return false;
 
@@ -605,38 +690,59 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 return false;
             }
 
-            // Find the nearest scrollable ancestor of the editor. The actual
-            // scroll container is the outer `overflow-y-auto` page region,
-            // not the contenteditable itself.
-            const findScrollParent = (el: HTMLElement | null): HTMLElement | null => {
-                let cur: HTMLElement | null = el;
-                while (cur && cur !== document.body && cur !== document.documentElement) {
-                    const style = window.getComputedStyle(cur);
-                    const overflowY = style.overflowY;
-                    if ((overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay')
-                        && cur.scrollHeight > cur.clientHeight) {
-                        return cur;
-                    }
-                    cur = cur.parentElement;
-                }
-                return null;
-            };
+            scrollEditorTargetIntoView(editorDom, target.getBoundingClientRect());
+            return true;
+        },
+        focusRetrievalLocator: (locator: RetrievalChunkLocator, focus?: RetrievalTextFocus | null) => {
+            if (!editor || editor.isDestroyed) return false;
+            const firstSpan = locator.paragraphSpans[0];
+            const targetParagraph = focus?.paragraphOrdinal
+                ?? firstSpan?.paragraphOrdinal
+                ?? locator.paragraphOrdinals[0];
+            if (targetParagraph === undefined) {
+                return false;
+            }
 
-            const scrollParent = findScrollParent(target.parentElement);
-            const targetRect = target.getBoundingClientRect();
-            const targetCenterY = targetRect.top + targetRect.height / 2;
+            let paragraphOrdinal = 0;
+            let targetBlock: { node: PMNode; position: number } | null = null;
+            editor.state.doc.descendants((node, position) => {
+                if (!RETRIEVAL_BLOCK_TYPES.has(node.type.name)) return true;
+                if (paragraphOrdinal === targetParagraph && targetBlock === null) targetBlock = { node, position };
+                paragraphOrdinal += 1;
+                // Match the indexer's block traversal: a blockquote is one retrieval block.
+                return false;
+            });
+            if (!targetBlock) return false;
 
-            if (scrollParent) {
-                const parentRect = scrollParent.getBoundingClientRect();
-                // How far the target center is from the container's center (in viewport space).
-                const delta = targetCenterY - (parentRect.top + scrollParent.clientHeight / 2);
-                const maxTop = scrollParent.scrollHeight - scrollParent.clientHeight;
-                const nextTop = Math.max(0, Math.min(maxTop, scrollParent.scrollTop + delta));
-                scrollParent.scrollTo({ top: nextTop, behavior: 'smooth' });
-            } else {
-                // Fallback: scroll the window.
-                const delta = targetCenterY - window.innerHeight / 2;
-                window.scrollTo({ top: window.scrollY + delta, behavior: 'smooth' });
+            const block = targetBlock as { node: PMNode; position: number };
+            const editorDom = editor.view.dom as HTMLElement;
+            if (!focus || focus.textLength <= 0) {
+                const targetElement = editor.view.nodeDOM(block.position);
+                if (!(targetElement instanceof Element)) return false;
+                const caret = TextSelection.near(editor.state.doc.resolve(block.position + 1));
+                editor.view.dispatch(editor.state.tr.setSelection(caret));
+                scrollEditorTargetIntoView(editorDom, targetElement.getBoundingClientRect());
+                return true;
+            }
+            const fallbackOffset = firstSpan?.paragraphOrdinal === targetParagraph ? firstSpan.startOffset : 0;
+            const startOffset = Math.max(0, focus?.textOffset ?? fallbackOffset);
+            const selectedLength = Math.max(0, focus.textLength);
+            const from = positionAtRetrievalTextOffset(block.node, block.position, startOffset, 'start');
+            const to = positionAtRetrievalTextOffset(block.node, block.position, startOffset + selectedLength, 'end');
+            try {
+                const doc = editor.state.doc;
+                const selection = TextSelection.between(
+                    doc.resolve(Math.max(0, Math.min(doc.content.size, from))),
+                    doc.resolve(Math.max(0, Math.min(doc.content.size, to))),
+                    1,
+                );
+                editor.view.dispatch(editor.state.tr.setSelection(selection));
+                editorDom.focus({ preventScroll: true });
+                const position = editor.view.coordsAtPos(selection.from);
+                scrollEditorTargetIntoView(editorDom, { top: position.top, height: position.bottom - position.top });
+            } catch (error) {
+                dlog('focusRetrievalLocator: indexed offset could not be mapped', error);
+                return false;
             }
             return true;
         }
@@ -955,6 +1061,9 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                 }
                 .tippy-arrow {
                     color: white !important;
+                }
+                .dark .tippy-arrow {
+                    color: #0f172a !important;
                 }
                 .mention {
                     cursor: pointer;

@@ -1,12 +1,13 @@
+import { DelayedLoading, PageLoading } from '../components/ui/DelayedLoading';
 import React, { useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft, Loader2, Save, Wand2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Save } from 'lucide-react';
 import { Button } from '../components/ui/Button';
 import { SaveStatusIndicator } from '../components/ui/SaveStatusIndicator';
 import { useBooks } from '../InteractionContent/BooksContext';
 import type { Book } from '../types';
-import { localBookOptions, localCharactersOptions, projectBook, projectCharacter } from '../data/local/repository';
+import { localFullBookOptions, localCharactersOptions, projectBook, projectCharacter } from '../data/local/repository';
 import { localPlanningOptions, type LocalPlanning } from '../data/local/planningRepository';
 import { localBrainstormOptions, type LocalBrainstorm } from '../data/local/brainstormRepository';
 import { localGraphOptions } from '../data/local/graphRepository';
@@ -23,7 +24,7 @@ function AiBrainstormContent({ bookId, localBook, sources }: { bookId: string; l
     const { getBook } = useBooks();
     const book = localBook ?? getBook(bookId);
     const editor = useBrainstormWorkspace(bookId, book, searchParams.get('chapterId'), sources);
-    const { isLoading, loadError, isSaving, isGenerating, saveState, handleSave, regenerate } = editor;
+    const { isLoading, loadError, isSaving, isGenerating, saveState, handleSave } = editor;
     if (!book) return <div className="min-h-screen flex items-center justify-center text-slate-400">Book not found</div>;
     return (
         <div className="h-screen flex flex-col bg-slate-50 dark:bg-slate-950 transition-colors duration-300">
@@ -52,9 +53,8 @@ function AiBrainstormContent({ bookId, localBook, sources }: { bookId: string; l
                         <Button onClick={handleSave} disabled={isSaving || isGenerating || isLoading || loadError} icon={isSaving ? <Loader2 size={16} className="animate-spin" /> : <Save size={16} />}>
                             {isSaving ? 'Saving...' : 'Save Result'}
                         </Button>
-                        <Button variant="secondary" onClick={() => { void regenerate(); }} disabled={!editor.generationAvailable || isGenerating || isSaving || isLoading || loadError}
-                            title={editor.generationAvailable ? undefined : 'Model integration is not available yet'} icon={isGenerating ? <Loader2 size={16} className="animate-spin" /> : <Wand2 size={16} />}>
-                            {isGenerating ? 'Brainstorming...' : 'Regenerate'}
+                        <Button variant="secondary" onClick={() => navigate(`/editor/${bookId}`)} icon={<ArrowLeft size={16} />}>
+                            Back to Editor
                         </Button>
                     </div>
                 </div>
@@ -66,7 +66,7 @@ function AiBrainstormContent({ bookId, localBook, sources }: { bookId: string; l
                 </div>
             ) : isLoading ? (
                 <div className="flex-1 flex items-center justify-center text-slate-400">
-                    <Loader2 size={22} className="animate-spin mr-2" />Loading brainstorm workspace...
+                    <DelayedLoading identity={bookId}><span role="status" className="flex items-center"><Loader2 size={22} className="animate-spin mr-2" />Loading brainstorm workspace...</span></DelayedLoading>
                 </div>
             ) : (
                 <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[340px_minmax(520px,1fr)_340px] overflow-hidden">
@@ -76,7 +76,8 @@ function AiBrainstormContent({ bookId, localBook, sources }: { bookId: string; l
                         generationAvailable={editor.generationAvailable} isSnapshotStale={editor.isSnapshotStale}
                         selectedChapterIds={editor.selectedChapterIds} missingSummaryChapters={editor.missingSummaryChapters}
                         errorMessage={editor.errorMessage} visibleOptions={editor.visibleOptions} hasSelectedOption={editor.hasSelectedOption} workspace={editor.workspace}
-                        chooseOption={editor.chooseOption} showAllOptions={editor.showAllOptions} updateFinalContent={editor.updateFinalContent} />
+                        chooseOption={editor.chooseOption} showAllOptions={editor.showAllOptions} updateFinalContent={editor.updateFinalContent}
+                        toggleRetrievalHit={editor.toggleRetrievalHit} />
                     <BrainstormContextPanel mentionedCharacters={editor.mentionedCharacters} />
                 </div>
             )}
@@ -102,7 +103,7 @@ function LoadedLocalBrainstorm({ book, planning, initial }: { book: Book; planni
         }),
         persistence,
     }), [book.id, book.characters, graph.data, initial.bookId, initial.databaseVersion, planning, persistence]);
-    if (graph.isPending || graph.isFetching) return <main className="p-8"><p role="status">Loading brainstorm workspace...</p></main>;
+    if (!graph.error && (graph.isPending || graph.isFetching)) return <PageLoading identity={book.id}>Loading brainstorm workspace...</PageLoading>;
     if (graph.error) return <main className="p-8 space-y-4">
         <p role="alert">{graph.error.message}</p>
         <Button onClick={() => { void graph.refetch(); }}>Retry</Button>
@@ -110,7 +111,7 @@ function LoadedLocalBrainstorm({ book, planning, initial }: { book: Book; planni
     return <AiBrainstormContent bookId={book.id} localBook={book} sources={sources} />;
 }
 function LocalBrainstormRoute({ bookId }: { bookId: string }) {
-    const detail = useQuery({ ...localBookOptions(bookId), refetchOnMount: 'always' });
+    const detail = useQuery({ ...localFullBookOptions(bookId), refetchOnMount: 'always' });
     const characters = useQuery(localCharactersOptions(bookId));
     const planning = useQuery(localPlanningOptions(bookId));
     const workspace = useQuery(localBrainstormOptions(bookId));
@@ -118,6 +119,7 @@ function LocalBrainstormRoute({ bookId }: { bookId: string }) {
         ? projectBook(detail.data.book, detail.data, characters.data?.map(projectCharacter))
         : undefined, [detail.data, characters.data]);
     const error = detail.error ?? characters.error ?? planning.error ?? workspace.error;
+    if (!error && (!book || !planning.data || !workspace.data || detail.isFetching || planning.isFetching || workspace.isFetching)) return <PageLoading identity={bookId}>Loading brainstorm workspace...</PageLoading>;
     if (error || !book || !planning.data || !workspace.data || detail.isFetching || planning.isFetching || workspace.isFetching) return <main className="p-8 space-y-4">
         <p role={error ? 'alert' : 'status'}>{error?.message ?? 'Loading brainstorm workspace...'}</p>
         {error && <Button onClick={() => { void detail.refetch(); void characters.refetch(); void planning.refetch(); void workspace.refetch(); }}>Retry</Button>}

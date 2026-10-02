@@ -1,0 +1,89 @@
+{
+  "version": 1,
+  "documents": [
+    {
+      "id": "chapter-1",
+      "kind": "manuscript",
+      "state": "active",
+      "text": "林岚在雨夜走到档案室门前。她也叫小岚，旧钥匙在掌心发冷，门后传来微弱的钟声。"
+    },
+    {
+      "id": "chapter-2",
+      "kind": "manuscript",
+      "state": "active",
+      "text": "第二天，林岚用旧钥匙打开档案室，发现父亲留下的记录，跨章事件在这里得到回响。"
+    },
+    {
+      "id": "character-lan",
+      "kind": "character",
+      "state": "active",
+      "text": "人物：林岚；别名：小岚、共同别名。"
+    },
+    {
+      "id": "character-yan",
+      "kind": "character",
+      "state": "active",
+      "text": "人物：沈砚；别名：共同别名。"
+    },
+    {
+      "id": "confirmed-setting",
+      "kind": "planning",
+      "state": "active",
+      "text": "设定：档案门只能在雨夜开启。"
+    },
+    {
+      "id": "future-plot",
+      "kind": "future_plan",
+      "state": "future",
+      "text": "计划：尚未发生的地下室停电。"
+    },
+    {
+      "id": "chapter-1-summary",
+      "kind": "chapter_summary",
+      "state": "stale",
+      "text": "旧概括中的失踪钟声；对应的正文版本已经变化。"
+    }
+  ],
+  "cases": [
+    {
+      "id": "synonym",
+      "query": "雨夜门扉",
+      "expectedSources": ["chapter-1"]
+    },
+    {
+      "id": "alias",
+      "query": "小岚",
+      "expectedSources": ["character-lan"]
+    },
+    {
+      "id": "cross-chapter-event",
+      "query": "旧钥匙打开档案室",
+      "expectedSources": ["chapter-2"]
+    },
+    {
+      "id": "no-answer",
+      "query": "海边灯塔的蓝色汽笛",
+      "expectedSources": []
+    },
+    {
+      "id": "duplicate-people",
+      "query": "共同别名",
+      "expectedSources": ["character-lan", "character-yan"]
+    },
+    {
+      "id": "future-plan",
+      "query": "尚未发生的地下室停电",
+      "expectedSources": ["future-plot"]
+    },
+    {
+      "id": "confirmed-setting",
+      "query": "档案门只能在雨夜开启",
+      "expectedSources": ["confirmed-setting"]
+    },
+    {
+      "id": "expired-summary",
+      "query": "旧概括中的失踪钟声",
+      "expectedSources": ["chapter-1-summary"]
+    }
+  ]
+}

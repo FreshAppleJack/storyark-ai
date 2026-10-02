@@ -49,21 +49,19 @@ export function WorkExportPreview({ preview, isExporting, onConfirm, onClose }: 
                         ['Chapters', counts.chapters],
                         ['Characters', counts.characters],
                         ['Foreshadowings', counts.foreshadowings],
-                        ['Graph nodes', counts.graphNodes],
-                        ['Graph edges', counts.graphEdges],
-                        ['Brainstorm workspaces', counts.brainstormWorkspaces],
+                        ['Map entries', counts.graphNodes],
+                        ['Relationships', counts.graphEdges],
+                        ['Brainstorms', counts.brainstormWorkspaces],
                         ['Brainstorm options', counts.brainstormOptions],
                     ])}
                 </div>
 
                 <div className="mt-6 grid gap-4 sm:grid-cols-2">
                     <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
-                        <h3 className="font-semibold text-slate-900 dark:text-white">Format</h3>
+                        <h3 className="font-semibold text-slate-900 dark:text-white">File details</h3>
                         <dl className="mt-3 space-y-2 text-sm">
-                            <div className="flex justify-between gap-4"><dt className="text-slate-500 dark:text-slate-400">Schema version</dt><dd className="font-mono text-slate-900 dark:text-white">{summary.schemaVersion}</dd></div>
                             <div className="flex justify-between gap-4"><dt className="text-slate-500 dark:text-slate-400">Generated at</dt><dd className="text-right text-slate-900 dark:text-white">{new Date(preview.value.exportedAt).toLocaleString()}</dd></div>
-                            <div className="flex justify-between gap-4"><dt className="text-slate-500 dark:text-slate-400">Supported assets</dt><dd className="text-slate-900 dark:text-white">{summary.supportedAssetCount || 'None'}</dd></div>
-                            <div className="flex justify-between gap-4"><dt className="text-slate-500 dark:text-slate-400">Retrieval index</dt><dd className="text-slate-900 dark:text-white">Not included; rebuildable</dd></div>
+                            <div className="flex justify-between gap-4"><dt className="text-slate-500 dark:text-slate-400">Attachments</dt><dd className="text-slate-900 dark:text-white">{summary.supportedAssetCount || 'None'}</dd></div>
                         </dl>
                     </div>
                     <div className="rounded-xl border border-slate-200 p-4 dark:border-slate-800">
@@ -75,7 +73,7 @@ export function WorkExportPreview({ preview, isExporting, onConfirm, onClose }: 
                 </div>
 
                 <p className="mt-5 text-sm text-slate-500 dark:text-slate-400">
-                    Export reads the saved, same-book snapshot. The Save As destination is selected only after this preview; cancelling it does not report success.
+                    Exports your saved work. Choose where to save the file next.
                 </p>
                 <div className="mt-6 flex justify-end gap-3">
                     <Button variant="ghost" onClick={onClose} disabled={isExporting}>Cancel</Button>

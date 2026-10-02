@@ -1,14 +1,28 @@
 import React from 'react';
-import { act, render, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import TiptapEditor, { TiptapEditorRef } from '../../components/TiptapEditor';
 import type { Character } from '../../types';
+import type { RetrievalChunkLocator } from '../../domain/retrieval/contracts';
 
 // Keep character props stable so rerender exercises chapter/lock synchronization on the same editor.
 const characters: Character[] = [];
 const chapter = (text: string) => JSON.stringify({
-  type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+    type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+});
+const retrievalLocator = (paragraphOrdinal: number, endOffset: number): RetrievalChunkLocator => ({
+  chapterId: 'chapter-1',
+  volumeId: 'volume-1',
+  chapterTitleSnapshot: 'Chapter One',
+  volumeTitleSnapshot: 'Volume One',
+  chapterSourceVersion: 1,
+  chunkOrdinal: 0,
+  paragraphOrdinals: [paragraphOrdinal],
+  tiptapNodePaths: [[paragraphOrdinal]],
+  paragraphSpans: [{ paragraphOrdinal, nodePath: [paragraphOrdinal], startOffset: 0, endOffset }],
+  textHash: 'fnv1a64-test',
+  shortQuote: '',
 });
 
 // jsdom has no layout engine; ProseMirror still measures selections while processing input.
@@ -46,6 +60,22 @@ function renderEditor() {
 }
 
 describe('TiptapEditor', () => {
+  it('reports native typing but does not count programmatic insertion or loading a chapter', async () => {
+    const onTypedText = vi.fn();
+    const ref = React.createRef<TiptapEditorRef>();
+    const props = { contentId: 'chapter-1', content: chapter('已有正文'), characters, onUpdate: vi.fn(), onTypedText };
+    const { container, rerender } = render(<TiptapEditor {...props} ref={ref} />);
+    const surface = container.querySelector<HTMLElement>('.tiptap')!;
+    focusAtEnd(surface);
+    await userEvent.setup().keyboard('hi');
+    expect(onTypedText.mock.calls).toEqual([['h'], ['i']]);
+    onTypedText.mockClear();
+    act(() => ref.current!.insertContent('AI generated text'));
+    fireEvent.input(surface, { inputType: 'insertFromPaste', data: 'pasted text' });
+    rerender(<TiptapEditor {...props} ref={ref} contentId="chapter-2" content={chapter('另一章')} />);
+    expect(onTypedText).not.toHaveBeenCalled();
+  });
+
   it('displays an existing saved chapter without reporting a user edit', () => {
     const { surface, onUpdate } = renderEditor();
     expect(surface).toHaveTextContent('已有正文');
@@ -65,6 +95,89 @@ describe('TiptapEditor', () => {
       type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: '已有正文 hello' }] }],
     });
     expect(wordCount).toBe(5);
+  });
+
+  it('locates and selects the indexed phrase after astral Unicode characters', () => {
+    const body = '😀前文内容，精确命中短语在这里，后续正文。';
+    const content = JSON.stringify({
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: body }] }],
+    });
+    const ref = React.createRef<TiptapEditorRef>();
+    const onUpdate = vi.fn();
+    render(<TiptapEditor ref={ref} contentId="chapter-1" content={content} characters={characters} onUpdate={onUpdate} />);
+    const offset = Array.from(body.slice(0, body.indexOf('精确命中短语'))).length;
+
+    act(() => {
+      expect(ref.current!.focusRetrievalLocator(retrievalLocator(0, Array.from(body).length), {
+        paragraphOrdinal: 0,
+        textOffset: offset,
+        textLength: Array.from('精确命中短语').length,
+      })).toBe(true);
+    });
+
+    const editor = ref.current!.editor!;
+    expect(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to)).toBe('精确命中短语');
+    expect(onUpdate).not.toHaveBeenCalled();
+  });
+
+  it('scrolls smoothly to a lexical match and clears the selection for semantic navigation', () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    const ref = React.createRef<TiptapEditorRef>();
+    render(<TiptapEditor ref={ref} contentId="chapter-1" content={chapter('精确命中短语和其他正文')} characters={characters} onUpdate={vi.fn()} />);
+    const editor = ref.current!.editor!;
+    const locator = retrievalLocator(0, Array.from(editor.state.doc.textContent).length);
+
+    act(() => {
+      expect(ref.current!.focusRetrievalLocator(locator, { paragraphOrdinal: 0, textOffset: 0, textLength: 6 })).toBe(true);
+    });
+    expect(editor.state.selection.empty).toBe(false);
+    expect(scrollTo).toHaveBeenCalledWith(expect.objectContaining({ behavior: 'smooth' }));
+
+    act(() => {
+      expect(ref.current!.focusRetrievalLocator(locator, null)).toBe(true);
+    });
+    expect(editor.state.selection.empty).toBe(true);
+    expect(scrollTo).toHaveBeenCalledTimes(2);
+    scrollTo.mockRestore();
+  });
+
+  it('keeps blockquote paragraph ordinals aligned with the retrieval indexer', () => {
+    const content = JSON.stringify({
+      type: 'doc',
+      content: [
+        { type: 'blockquote', content: [
+          { type: 'paragraph', content: [{ type: 'text', text: '引用段落一' }] },
+          { type: 'paragraph', content: [{ type: 'text', text: '引用段落二' }] },
+        ] },
+        { type: 'paragraph', content: [{ type: 'text', text: '普通段落目标句子' }] },
+      ],
+    });
+    const ref = React.createRef<TiptapEditorRef>();
+    render(<TiptapEditor ref={ref} contentId="chapter-1" content={content} characters={characters} onUpdate={vi.fn()} />);
+
+    act(() => {
+      expect(ref.current!.focusRetrievalLocator(retrievalLocator(1, 8), {
+        paragraphOrdinal: 1,
+        textOffset: 6,
+        textLength: 2,
+      })).toBe(true);
+    });
+
+    const editor = ref.current!.editor!;
+    expect(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to)).toBe('句子');
+  });
+
+  it('does not claim a precise location or jump to the editor top when the locator has no paragraph spans', () => {
+    const ref = React.createRef<TiptapEditorRef>();
+    render(<TiptapEditor ref={ref} contentId="chapter-1" content={chapter('章节正文')} characters={characters} onUpdate={vi.fn()} />);
+    const locator = retrievalLocator(0, 4);
+    locator.paragraphSpans = [];
+    locator.paragraphOrdinals = [];
+
+    act(() => {
+      expect(ref.current!.focusRetrievalLocator(locator)).toBe(false);
+    });
   });
 
   it('serializes bold and italic marks from the mounted toolbar', async () => {

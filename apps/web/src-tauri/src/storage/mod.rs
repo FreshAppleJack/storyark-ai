@@ -1,8 +1,10 @@
 //! Local storage facade. Business modules share one connection owner and keep
 //! their transaction boundaries inside each Database operation.
+mod ai_adoption;
 mod ai_cleanup;
 mod ai_generation;
 mod ai_settings;
+mod audit;
 mod backup;
 mod brainstorm;
 mod character_order;
@@ -24,6 +26,10 @@ mod planning_validation;
 mod preferences;
 mod records;
 mod requests;
+mod retrieval_index;
+mod retrieval_scheduler;
+mod retrieval_search;
+mod retrieval_sources;
 mod targets;
 #[cfg(test)]
 mod tests;
@@ -40,6 +46,10 @@ pub use import::{ImportWork, PrepareWorkImport};
 pub use planning::SavePlanning;
 pub use preferences::SavePreferences;
 pub use requests::*;
+pub(crate) use retrieval_index::IndexWork;
+pub use retrieval_index::{ListRetrievalIndexJobs, QueueRetrievalIndex, RetrievalIndexJobAction};
+pub use retrieval_scheduler::{IndexScheduleScope, SaveIndexPreferences};
+pub use retrieval_sources::{ListRetrievalChunks, ListRetrievalSources, SyncRetrievalSources};
 
 use rusqlite::Connection;
 use serde_json::Value;

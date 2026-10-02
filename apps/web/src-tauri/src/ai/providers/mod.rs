@@ -17,6 +17,11 @@ pub mod openai_responses;
 #[derive(Debug, Clone)]
 pub enum ProviderEvent {
     Delta(String),
+    FinalDelta {
+        text: String,
+        usage: TokenUsage,
+        finish_reason: FinishReason,
+    },
     Usage(TokenUsage),
     Completed {
         usage: TokenUsage,
@@ -36,6 +41,51 @@ pub fn make(config: ConfigInput) -> Box<dyn Adapter> {
         Protocol::OpenaiResponses => Box::new(openai_responses::AdapterImpl::new(config)),
         Protocol::OpenaiChatCompletions => Box::new(openai_chat::AdapterImpl::new(config)),
         Protocol::AnthropicMessages => Box::new(anthropic::AdapterImpl::new(config)),
+    }
+}
+
+#[cfg(test)]
+mod output_cap_tests {
+    use super::*;
+
+    #[test]
+    fn optional_caps_are_omitted_and_explicit_caps_are_sent_without_clamping() {
+        let client = reqwest::Client::new();
+        for protocol in [
+            Protocol::OpenaiResponses,
+            Protocol::OpenaiChatCompletions,
+            Protocol::AnthropicMessages,
+        ] {
+            for cap in [None, Some(4096)] {
+                let field = if protocol == Protocol::OpenaiResponses {
+                    "max_output_tokens"
+                } else {
+                    "max_tokens"
+                };
+                let requires_cap = protocol == Protocol::AnthropicMessages;
+                let config = ConfigInput {
+                    name: "Test".into(),
+                    protocol: protocol.clone(),
+                    base_url: "https://example.com/v1".into(),
+                    model_id: "fixture".into(),
+                    timeout_ms: 300_000,
+                    max_output_tokens: cap,
+                };
+                let request = make(config).request(&client, "synthetic-value", "Synthetic context");
+                if requires_cap && cap.is_none() {
+                    assert!(request.is_err());
+                    continue;
+                }
+                let request = request.unwrap().build().unwrap();
+                let body: Value =
+                    serde_json::from_slice(request.body().unwrap().as_bytes().unwrap()).unwrap();
+                match cap {
+                    Some(cap) => assert_eq!(body[field], cap),
+                    None => assert!(body.get(field).is_none()),
+                }
+                assert_eq!(body["stream"], true);
+            }
+        }
     }
 }
 

@@ -13,6 +13,7 @@ export function RelationshipCanvas({ reactFlowWrapper, nodes, edges, onNodesChan
     return (
         <div className="flex-1 relative h-full" ref={reactFlowWrapper}>
             <ReactFlow
+                colorMode={isDarkMode ? 'dark' : 'light'}
                 nodes={nodes}
                 edges={edges}
                 onNodesChange={onNodesChange}

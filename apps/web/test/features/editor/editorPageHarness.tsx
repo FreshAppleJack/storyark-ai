@@ -1,6 +1,7 @@
 import React, { forwardRef, useImperativeHandle } from 'react';
 import { act, cleanup, fireEvent, render, RenderResult, screen } from '@testing-library/react';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RouteObject } from 'react-router-dom';
 import { RouteShell, RouteError } from '../../../src/RouteShell';
 import { afterEach, beforeEach, vi } from 'vitest';
@@ -85,8 +86,12 @@ export function createEditorRouter(
     initialIndex = initialEntries.length - 1,
     dashboard: RouteObject = { element: <div>Dashboard destination</div> },
 ) {
+    // Match the app's query boundary with an isolated cache for each router.
+    const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false, gcTime: Infinity } },
+    });
     return createMemoryRouter([
-        { element: <RouteShell />, errorElement: <RouteError />, children: [
+        { element: <QueryClientProvider client={queryClient}><RouteShell /></QueryClientProvider>, errorElement: <RouteError />, children: [
             { path: '/editor/:bookId', element: <EditorPage /> },
             { ...dashboard, path: '/dashboard' },
         ] },

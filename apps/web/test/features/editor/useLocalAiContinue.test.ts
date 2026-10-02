@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
     start: vi.fn(),
     cancel: vi.fn(),
     subscribe: vi.fn(),
+    search: vi.fn(),
+    validateAdoption: vi.fn(),
 }));
 
 vi.mock('../../../data/local/aiGenerationRepository', () => ({
@@ -18,6 +20,7 @@ vi.mock('../../../data/local/aiGenerationRepository', () => ({
         start: mocks.start,
         cancel: mocks.cancel,
         subscribe: mocks.subscribe,
+        validateAdoption: mocks.validateAdoption,
     },
 }));
 
@@ -25,8 +28,17 @@ vi.mock('../../../data/local/aiSettingsRepository', () => ({
     aiSettingsRepository: { list: mocks.list },
     aiErrorMessage: (error: unknown) => `mapped:${error && typeof error === 'object' && 'code' in error ? String(error.code) : 'unknown'}`,
 }));
+vi.mock('../../../data/local/retrievalRepository', () => ({
+    retrievalRepository: { search: mocks.search },
+}));
 
-const anchor: AiContinueAnchor = { from: 4, to: 4, docSize: 18, selectedText: '' };
+const anchor: AiContinueAnchor = {
+    from: 4,
+    to: 4,
+    docSize: 18,
+    selectedText: '',
+    retrievalAnchor: { paragraphOrdinal: 0, textOffset: 3 },
+};
 
 function setup(overrides: Record<string, unknown> = {}) {
     const insertCandidateAtAnchor = vi.fn().mockReturnValue(true);
@@ -86,6 +98,8 @@ beforeEach(() => {
     mocks.start.mockResolvedValue({ requestId: 'accepted-request' });
     mocks.cancel.mockResolvedValue({ requestId: 'request', outcome: 'cancelled' });
     mocks.subscribe.mockResolvedValue(vi.fn());
+    mocks.search.mockRejectedValue(new Error('retrieval unavailable'));
+    mocks.validateAdoption.mockResolvedValue({ validated: true });
 });
 
 describe('useLocalAiContinue', () => {
@@ -101,6 +115,18 @@ describe('useLocalAiContinue', () => {
             target: { kind: 'continue', chapterId: 'chapter-1', databaseVersion: 7 },
             sections: [{ kind: 'currentDraft', label: 'Current in-memory draft', text: 'in-memory draft text' }],
         });
+        expect(mocks.search).toHaveBeenCalledWith(expect.objectContaining({
+            query: 'in-memory draft text',
+            scope: expect.objectContaining({
+                beforeAnchor: {
+                    chapterId: 'chapter-1',
+                    paragraphOrdinal: 0,
+                    textOffset: 3,
+                },
+                includeFuturePlan: false,
+                includeGenerated: false,
+            }),
+        }));
         expect(mocks.start).toHaveBeenCalledWith(expect.objectContaining({
             bookId: 'book-1',
             sessionId: 'chapter-session:1',
@@ -126,13 +152,57 @@ describe('useLocalAiContinue', () => {
         expect(view.result.current.candidate.source?.contextSource).toBe('current-in-memory-draft');
         expect(view.result.current.candidate.source?.outputChars).toBe(300);
 
-        act(() => { view.result.current.adoptCandidate(); });
+        await act(async () => { await view.result.current.adoptCandidate(); });
+        expect(mocks.validateAdoption).toHaveBeenCalledWith(expect.objectContaining({
+            bookId: 'book-1', chapterId: 'chapter-1', databaseVersion: 7,
+        }));
         expect(insertCandidateAtAnchor).toHaveBeenCalledWith('first line\nsecond line', anchor);
         expect(view.result.current.candidate.status).toBe('adopted');
 
         act(() => { view.result.current.closeCandidate(); });
         expect(view.result.current.candidate.status).toBe('idle');
         expect(insertCandidateAtAnchor).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows used retrieval evidence and carries excluded hits into regeneration', async () => {
+        const retrievalResponse = {
+            status: 'ready',
+            degraded: false,
+            context: {
+                searchId: 'search-1', retrievalVersion: 'p1-r1-v1', task: 'continuation', requestedAt: 1,
+                bookId: 'book-1', chapterId: 'chapter-1', scope: { bookId: 'book-1' }, excludedHitIds: [],
+                sourceVersions: [{ sourceId: 'book-1:manuscript:chapter-1', chapterId: 'chapter-1', sourceVersion: 7, indexVersion: 1 }], indexVersion: 1, embeddingFingerprint: 'fingerprint',
+                budget: { charBudget: 8000, tokenBudget: 2000 }, materials: [{
+                    hitId: 'hit-1', label: 'manuscript evidence', sourceKind: 'manuscript', entityId: 'chapter-1',
+                    chapterId: 'chapter-1', sourceVersion: 7, chunkId: 'chunk-1', quote: 'A door opened.', freshness: 'fresh', recallMethods: ['semantic'],
+                }], evidence: [{
+                    hitId: 'hit-1', label: 'manuscript evidence', sourceKind: 'manuscript', entityId: 'chapter-1',
+                    chapterId: 'chapter-1', sourceVersion: 7, chunkId: 'chunk-1', quote: 'A door opened.', freshness: 'fresh', recallMethods: ['semantic'], text: 'A door opened.',
+                }], text: '[manuscript evidence]\nA door opened.', charCount: 34, tokenEstimate: 8,
+                charBudget: 8000, tokenBudget: 2000, includedHitIds: ['hit-1'], omittedHitIds: [],
+            },
+            trace: {
+                searchId: 'search-1', retrievalVersion: 'p1-r1-v1', task: 'continuation', createdAt: 1,
+                bookId: 'book-1', chapterId: 'chapter-1', scope: { bookId: 'book-1' }, excludedHitIds: [],
+                indexVersion: 1, embeddingFingerprint: 'fingerprint',
+                sourceVersions: [{ sourceId: 'book-1:manuscript:chapter-1', chapterId: 'chapter-1', sourceVersion: 7, indexVersion: 1 }],
+            },
+        };
+        mocks.search.mockResolvedValue(retrievalResponse);
+        const { view } = setup();
+
+        await act(async () => { await view.result.current.continueWriting(); });
+        expect(view.result.current.candidate.source?.retrievalContext?.includedHitIds).toEqual(['hit-1']);
+        expect(mocks.prepareContext).toHaveBeenCalledWith(expect.objectContaining({
+            retrievalContext: expect.objectContaining({ searchId: 'search-1' }),
+            sections: expect.arrayContaining([expect.objectContaining({ kind: 'retrievalEvidence' })]),
+        }));
+
+        act(() => { view.result.current.toggleRetrievalHit('hit-1'); });
+        expect(view.result.current.candidate.source?.retrievalContext?.excludedHitIds).toEqual(['hit-1']);
+        emit(view, { kind: 'completed', text: 'candidate', usage: { inputTokens: null, outputTokens: null, totalTokens: null }, finishReason: 'stop' }, 0);
+        await act(async () => { await view.result.current.regenerate(); });
+        expect(mocks.search).toHaveBeenLastCalledWith(expect.objectContaining({ excludedHitIds: ['hit-1'] }));
     });
 
     it('preserves a candidate when the draft revision changes before adoption', async () => {
@@ -156,7 +226,7 @@ describe('useLocalAiContinue', () => {
         });
         expect(view.result.current.canAdopt).toBe(false);
 
-        act(() => { view.result.current.adoptCandidate(); });
+        await act(async () => { await view.result.current.adoptCandidate(); });
         expect(insertCandidateAtAnchor).not.toHaveBeenCalled();
         expect(view.result.current.candidate.status).toBe('stale');
         expect(view.result.current.candidate.text).toBe('candidate');
@@ -182,7 +252,7 @@ describe('useLocalAiContinue', () => {
             insertCandidateAtAnchor,
         });
 
-        act(() => { view.result.current.adoptCandidate(); });
+        await act(async () => { await view.result.current.adoptCandidate(); });
         expect(insertCandidateAtAnchor).not.toHaveBeenCalled();
         expect(view.result.current.candidate.status).toBe('stale');
         expect(view.result.current.candidate.text).toBe('candidate');
@@ -214,9 +284,12 @@ describe('useLocalAiContinue', () => {
             captureAnchor: () => anchor,
             insertCandidateAtAnchor: readonly.insertCandidateAtAnchor,
         });
-        act(() => { readonly.view.result.current.adoptCandidate(); });
+        await act(async () => { await readonly.view.result.current.adoptCandidate(); });
         expect(readonly.insertCandidateAtAnchor).not.toHaveBeenCalled();
         expect(readonly.view.result.current.candidate.status).toBe('stale');
+        await act(async () => { await readonly.view.result.current.regenerate(); });
+        expect(readonly.view.result.current.candidate.status).toBe('stale');
+        expect(readonly.view.result.current.candidate.text).toBe('candidate');
     });
 
     it('keeps the original draft protected for empty and truncated completions', async () => {
@@ -234,5 +307,122 @@ describe('useLocalAiContinue', () => {
         expect(truncated.view.result.current.candidate.status).toBe('failed');
         expect(truncated.view.result.current.candidate.text).toBe('partial');
         expect(truncated.insertCandidateAtAnchor).not.toHaveBeenCalled();
+    });
+
+    it('preserves a completed candidate when retrieved source versions have changed', async () => {
+        mocks.search.mockResolvedValue({
+            status: 'ready',
+            degraded: false,
+            context: {
+                searchId: 'search-stale', retrievalVersion: 'p1-r1-v1', task: 'continuation', requestedAt: 1,
+                bookId: 'book-1', chapterId: 'chapter-1', scope: { bookId: 'book-1' }, excludedHitIds: [],
+                sourceVersions: [{ sourceId: 'book-1:manuscript:chapter-1', chapterId: 'chapter-1', sourceVersion: 2, indexVersion: 1 }],
+                indexVersion: 1, embeddingFingerprint: 'fingerprint', budget: { charBudget: 8000, tokenBudget: 2000 },
+                materials: [], evidence: [{
+                    hitId: 'hit-1', label: 'manuscript evidence', sourceKind: 'manuscript', entityId: 'chapter-1',
+                    chapterId: 'chapter-1', sourceVersion: 2, chunkId: 'chunk-1', quote: 'A clue.', freshness: 'fresh',
+                    recallMethods: ['semantic'], text: 'A clue.',
+                }],
+                text: '[source v2]\nA clue.', charCount: 20, tokenEstimate: 5, charBudget: 8000,
+                tokenBudget: 2000, includedHitIds: ['hit-1'], omittedHitIds: [],
+            },
+            trace: {
+                searchId: 'search-stale', retrievalVersion: 'p1-r1-v1', task: 'continuation', createdAt: 1,
+                bookId: 'book-1', chapterId: 'chapter-1', scope: { bookId: 'book-1' }, excludedHitIds: [],
+                indexVersion: 1, embeddingFingerprint: 'fingerprint',
+                sourceVersions: [{ sourceId: 'book-1:manuscript:chapter-1', chapterId: 'chapter-1', sourceVersion: 2, indexVersion: 1 }],
+            },
+        });
+        const staleSourceError = Object.assign(new Error('source changed'), { code: 'CONTEXT_CHANGED' });
+        mocks.validateAdoption.mockRejectedValueOnce(staleSourceError);
+        const { view, insertCandidateAtAnchor } = setup();
+        await act(async () => { await view.result.current.continueWriting(); });
+        emit(view, { kind: 'completed', text: 'candidate prose', usage: { inputTokens: null, outputTokens: null, totalTokens: null }, finishReason: 'stop' }, 0);
+
+        await act(async () => { await view.result.current.adoptCandidate(); });
+
+        expect(insertCandidateAtAnchor).not.toHaveBeenCalled();
+        expect(view.result.current.candidate.status).toBe('stale');
+        expect(view.result.current.candidate.text).toBe('candidate prose');
+        expect(view.result.current.candidate.errorMessage).toContain('retrieved source changed');
+        expect(mocks.validateAdoption).toHaveBeenCalledWith(expect.objectContaining({
+            retrievalSourceVersions: [{ sourceId: 'book-1:manuscript:chapter-1', chapterId: 'chapter-1', sourceVersion: 2, indexVersion: 1 }],
+        }));
+    });
+
+    it('ignores a pending adoption check after switching chapters', async () => {
+        let resolveValidation: ((value: { validated: boolean }) => void) | undefined;
+        mocks.validateAdoption.mockReturnValueOnce(new Promise(resolve => { resolveValidation = resolve; }));
+        const { view, insertCandidateAtAnchor } = setup();
+        await act(async () => { await view.result.current.continueWriting(); });
+        emit(view, { kind: 'completed', text: 'candidate prose', usage: { inputTokens: null, outputTokens: null, totalTokens: null }, finishReason: 'stop' }, 0);
+
+        let adoption: Promise<void> | undefined;
+        act(() => { adoption = view.result.current.adoptCandidate(); });
+        expect(view.result.current.candidate.status).toBe('validating');
+
+        view.rerender({
+            enabled: true,
+            bookId: 'book-1',
+            chapterId: 'chapter-2',
+            sessionId: 'chapter-session:2',
+            draftRevision: 0,
+            databaseVersion: 1,
+            isReadOnly: false,
+            contextChars: 20,
+            outputChars: 300,
+            getContextText: () => 'new chapter',
+            captureAnchor: () => anchor,
+            insertCandidateAtAnchor,
+        });
+        expect(view.result.current.candidate.status).toBe('idle');
+
+        await act(async () => {
+            resolveValidation?.({ validated: true });
+            await adoption;
+        });
+        expect(view.result.current.candidate.status).toBe('idle');
+        expect(insertCandidateAtAnchor).not.toHaveBeenCalled();
+    });
+
+    it('ignores late generation events after switching chapter sessions', async () => {
+        const { view, insertCandidateAtAnchor } = setup();
+        await act(async () => { await view.result.current.continueWriting(); });
+        const handler = mocks.subscribe.mock.calls.at(-1)?.[0] as ((event: GenerationEvent) => void) | undefined;
+        const request = mocks.start.mock.calls.at(-1)?.[0] as { requestId: string; sessionId: string };
+        expect(handler).toBeDefined();
+
+        view.rerender({
+            enabled: true,
+            bookId: 'book-1',
+            chapterId: 'chapter-2',
+            sessionId: 'chapter-session:2',
+            draftRevision: 0,
+            databaseVersion: 1,
+            isReadOnly: false,
+            contextChars: 20,
+            outputChars: 300,
+            getContextText: () => 'new chapter',
+            captureAnchor: () => anchor,
+            insertCandidateAtAnchor,
+        });
+
+        act(() => {
+            handler?.({
+                requestId: request.requestId,
+                sessionId: request.sessionId,
+                sequence: 0,
+                payload: {
+                    kind: 'completed',
+                    text: 'old chapter candidate',
+                    usage: { inputTokens: null, outputTokens: null, totalTokens: null },
+                    finishReason: 'stop',
+                },
+            });
+        });
+
+        expect(view.result.current.candidate.status).toBe('idle');
+        expect(view.result.current.candidate.text).toBe('');
+        expect(insertCandidateAtAnchor).not.toHaveBeenCalled();
     });
 });

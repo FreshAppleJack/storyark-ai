@@ -4,13 +4,17 @@ import {
     type GenerationEvent,
     type GenerationRequest,
 } from '../../../data/local/aiGenerationRepository';
+import { retrievalRepository } from '../../../data/local/retrievalRepository';
 import { aiErrorMessage, aiSettingsRepository, type AiConfigRecord } from '../../../data/local/aiSettingsRepository';
+import { continueRetrievalScope, type RetrievalContext, type RetrievalSearchStatus } from '../../../domain/retrieval/contracts';
+import { generationRetrievalTrace, retrievalContextSection, retrievalStatusNotice } from '../../retrieval/retrievalContext';
 import type { AiContinueAnchor } from '../types/aiContinue';
 
 export type AiContinueCandidateStatus =
     | 'idle'
     | 'starting'
     | 'streaming'
+    | 'validating'
     | 'completed'
     | 'cancelled'
     | 'failed'
@@ -27,7 +31,12 @@ export interface AiContinueSource {
     contextText: string;
     outputChars: number;
     anchor: AiContinueAnchor;
+    generatedAnchor: AiContinueAnchor;
     lockWasValid: boolean;
+    staleReason?: 'draft' | 'anchor' | 'lock' | 'retrieval' | 'verification';
+    retrievalContext: RetrievalContext | null;
+    retrievalStatus: RetrievalSearchStatus | null;
+    retrievalNotice: string | null;
 }
 
 export interface AiContinueCandidate {
@@ -47,7 +56,8 @@ interface UseLocalAiContinueOptions {
     isReadOnly: boolean;
     contextChars: number;
     outputChars: number;
-    getContextText: () => string;
+    chapterOrder?: number;
+    getContextText: (anchor: AiContinueAnchor) => string;
     captureAnchor: () => AiContinueAnchor | null;
     insertCandidateAtAnchor: (candidate: string, anchor: AiContinueAnchor) => boolean;
 }
@@ -59,10 +69,12 @@ interface UseLocalAiContinueResult {
     adoptDisabledReason: string | null;
     continueWriting: () => Promise<void>;
     stop: () => void;
-    adoptCandidate: () => void;
+    adoptCandidate: () => Promise<void>;
     closeCandidate: () => void;
     discardCandidate: () => void;
     regenerate: () => Promise<void>;
+    reselectInsertionPoint: () => void;
+    toggleRetrievalHit: (hitId: string) => void;
 }
 
 interface ActiveGeneration {
@@ -122,6 +134,15 @@ function activeStatus(status: AiContinueCandidateStatus): boolean {
     return status === 'starting' || status === 'streaming';
 }
 
+function anchorsMatch(left: AiContinueAnchor, right: AiContinueAnchor): boolean {
+    return left.from === right.from
+        && left.to === right.to
+        && left.docSize === right.docSize
+        && left.selectedText === right.selectedText
+        && left.retrievalAnchor.paragraphOrdinal === right.retrievalAnchor.paragraphOrdinal
+        && left.retrievalAnchor.textOffset === right.retrievalAnchor.textOffset;
+}
+
 function takeRecentCharacters(text: string, maxChars: number): string {
     return Array.from(text).slice(-maxChars).join('');
 }
@@ -130,7 +151,8 @@ function sourceMatchesCurrent(source: AiContinueSource, options: UseLocalAiConti
     return source.bookId === options.bookId
         && source.chapterId === options.chapterId
         && source.sessionId === options.sessionId
-        && source.draftRevision === options.draftRevision;
+        && source.draftRevision === options.draftRevision
+        && source.databaseVersion === options.databaseVersion;
 }
 
 function findDefaultConfig(configs: Awaited<ReturnType<typeof aiSettingsRepository.list>>): AiConfigRecord {
@@ -146,6 +168,8 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
     const activeRef = useRef<ActiveGeneration | null>(null);
     const candidateRef = useRef(candidate);
     const optionsRef = useRef(options);
+    const excludedHitIdsRef = useRef<string[]>([]);
+    const adoptionAttemptRef = useRef(0);
 
     useLayoutEffect(() => {
         optionsRef.current = options;
@@ -259,7 +283,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
         const existingCandidate = candidateRef.current;
         if (existingCandidate.status !== 'idle' && existingCandidate.status !== 'adopted' && existingCandidate.text.trim()) return;
         if (!current.chapterId || !current.bookId || !current.databaseVersion) {
-            updateCandidate({ ...INITIAL_CANDIDATE, status: 'failed', errorMessage: 'The chapter identity is not ready. Reload the local book and try again.' });
+            updateCandidate({ ...INITIAL_CANDIDATE, status: 'failed', errorMessage: 'This chapter is not ready yet. Reopen the book and try again.' });
             return;
         }
 
@@ -269,7 +293,15 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
             return;
         }
 
-        const contextText = takeRecentCharacters(current.getContextText(), current.contextChars);
+        if (!Number.isInteger(anchor.retrievalAnchor.paragraphOrdinal)
+            || anchor.retrievalAnchor.paragraphOrdinal < 0
+            || !Number.isInteger(anchor.retrievalAnchor.textOffset)
+            || anchor.retrievalAnchor.textOffset < 0) {
+            updateCandidate({ ...INITIAL_CANDIDATE, status: 'failed', errorMessage: 'Choose a position in the chapter text and try again.' });
+            return;
+        }
+
+        const contextText = takeRecentCharacters(current.getContextText(anchor), current.contextChars);
         if (!contextText.trim()) {
             updateCandidate({ ...INITIAL_CANDIDATE, status: 'failed', errorMessage: 'Write some chapter text before requesting a continuation.' });
             return;
@@ -297,7 +329,11 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
                 contextText,
                 outputChars: current.outputChars,
                 anchor,
+                generatedAnchor: anchor,
                 lockWasValid: !current.isReadOnly,
+                retrievalContext: null,
+                retrievalStatus: null,
+                retrievalNotice: null,
             },
         });
 
@@ -305,21 +341,61 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
             const configs = await aiSettingsRepository.list();
             if (!isActive(active)) return;
             const config = findDefaultConfig(configs);
+            let retrievalResponse: Awaited<ReturnType<typeof retrievalRepository.search>> | null = null;
+            let retrievalNotice: string | null = null;
+            try {
+                const retrievalScope = continueRetrievalScope(current.bookId, {
+                    chapterId: current.chapterId,
+                    paragraphOrdinal: anchor.retrievalAnchor.paragraphOrdinal,
+                    textOffset: anchor.retrievalAnchor.textOffset,
+                });
+                retrievalScope.beforeChapterOrder = current.chapterOrder;
+                retrievalResponse = await retrievalRepository.search({
+                    scope: retrievalScope,
+                    query: contextText,
+                    mode: 'hybrid',
+                    limit: 8,
+                    excludedHitIds: excludedHitIdsRef.current,
+                    charBudget: 8_000,
+                    tokenBudget: 2_000,
+                    adjacentChunkCount: 1,
+                    task: 'continuation',
+                    indexStatus: undefined,
+                    freshnessPolicy: { freshOnly: true, allowLexicalFallback: true, maxWaitMs: 500 },
+                });
+                retrievalNotice = retrievalStatusNotice(retrievalResponse);
+            } catch {
+                retrievalNotice = 'No extra reference material was available. The AI will use your current draft.';
+            }
+            if (!isActive(active)) return;
+            const retrievalContext = retrievalResponse?.context ?? null;
+            const retrievalSection = retrievalResponse ? retrievalContextSection(retrievalResponse.context) : null;
+            const sections = retrievalSection
+                ? [{ kind: 'currentDraft' as const, label: 'Current in-memory draft', text: contextText }, retrievalSection]
+                : [{ kind: 'currentDraft' as const, label: 'Current in-memory draft', text: contextText }];
+            updateCandidate({
+                ...candidateRef.current,
+                source: candidateRef.current.source
+                    ? {
+                        ...candidateRef.current.source,
+                        retrievalContext,
+                        retrievalStatus: retrievalResponse?.status ?? null,
+                        retrievalNotice,
+                    }
+                    : null,
+            });
             const contextSnapshot = await aiGenerationRepository.prepareContext({
                 bookId: current.bookId,
                 sessionId: current.sessionId,
                 draftRevision: current.draftRevision,
-                maxChars: current.contextChars,
+                maxChars: sections.reduce((total, section) => total + Array.from(section.text).length, 0),
                 target: {
                     kind: 'continue',
                     chapterId: current.chapterId,
                     databaseVersion: current.databaseVersion,
                 },
-                sections: [{
-                    kind: 'currentDraft',
-                    label: 'Current in-memory draft',
-                    text: contextText,
-                }],
+                sections,
+                ...(retrievalContext ? { retrievalContext } : {}),
             });
             if (!isActive(active)) return;
 
@@ -346,6 +422,12 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
                 },
                 contextSnapshotId: contextSnapshot.contextSnapshotId,
                 outputChars: current.outputChars,
+                retrievalTrace: retrievalResponse
+                    ? generationRetrievalTrace(retrievalResponse, [{
+                        chapterId: current.chapterId,
+                        databaseVersion: current.databaseVersion,
+                    }])
+                    : null,
             };
             await aiGenerationRepository.start(input);
         } catch (error) {
@@ -359,65 +441,166 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
         }
     }, [cleanupActive, handleEvent, isActive, updateCandidate]);
 
-    const closeCandidate = useCallback(() => {
+    const clearCandidate = useCallback((resetExcludedHits: boolean) => {
+        adoptionAttemptRef.current += 1;
         if (activeRef.current) stop();
+        if (resetExcludedHits) excludedHitIdsRef.current = [];
         updateCandidate(INITIAL_CANDIDATE);
     }, [stop, updateCandidate]);
+
+    const closeCandidate = useCallback(() => {
+        clearCandidate(true);
+    }, [clearCandidate]);
 
     const discardCandidate = useCallback(() => {
         closeCandidate();
     }, [closeCandidate]);
 
     const regenerate = useCallback(async () => {
-        discardCandidate();
+        const current = optionsRef.current;
+        if (!current.enabled || current.isReadOnly || !current.bookId || !current.chapterId) {
+            const snapshot = candidateRef.current;
+            if (snapshot.status !== 'idle') {
+                updateCandidate({
+                    ...snapshot,
+                    errorMessage: current.isReadOnly
+                        ? 'Unlock the chapter before regenerating. The current candidate is preserved.'
+                        : 'The current story context is not ready. The candidate is preserved.',
+                });
+            }
+            return;
+        }
+        clearCandidate(false);
         await continueWriting();
-    }, [continueWriting, discardCandidate]);
+    }, [clearCandidate, continueWriting, updateCandidate]);
 
-    const adoptCandidate = useCallback(() => {
+    const toggleRetrievalHit = useCallback((hitId: string) => {
+        const excluded = new Set(excludedHitIdsRef.current);
+        if (excluded.has(hitId)) excluded.delete(hitId);
+        else excluded.add(hitId);
+        excludedHitIdsRef.current = [...excluded];
+        const current = candidateRef.current;
+        if (current.source?.retrievalContext) {
+            updateCandidate({
+                ...current,
+                source: {
+                    ...current.source,
+                    retrievalContext: { ...current.source.retrievalContext, excludedHitIds: excludedHitIdsRef.current },
+                },
+            });
+        }
+    }, [updateCandidate]);
+
+    const reselectInsertionPoint = useCallback(() => {
+        const current = optionsRef.current;
+        const snapshot = candidateRef.current;
+        const source = snapshot.source;
+        if (snapshot.status !== 'stale' || source?.staleReason !== 'anchor' || !sourceMatchesCurrent(source, current)) return;
+        if (current.isReadOnly) {
+            updateCandidate({ ...snapshot, errorMessage: 'Unlock the chapter before choosing a new insertion point.' });
+            return;
+        }
+        const anchor = current.captureAnchor();
+        if (!anchor) {
+            updateCandidate({ ...snapshot, errorMessage: 'Place the cursor or selection in the chapter before choosing a new insertion point.' });
+            return;
+        }
+        updateCandidate({
+            ...snapshot,
+            status: 'completed',
+            errorMessage: 'Insertion point updated. Review the candidate before adopting it.',
+            source: { ...source, anchor, staleReason: undefined },
+        });
+    }, [updateCandidate]);
+
+    const adoptCandidate = useCallback(async () => {
         const current = optionsRef.current;
         const snapshot = candidateRef.current;
         const source = snapshot.source;
         if (snapshot.status !== 'completed' || !source || !snapshot.text.trim()) return;
 
         if (current.isReadOnly) {
-            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'Unlock the chapter before adopting this candidate. The candidate is still available.' });
+            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'Unlock the chapter before adopting this candidate. The candidate is still available.', source: { ...source, staleReason: 'lock' } });
             return;
         }
         if (!sourceMatchesCurrent(source, current)) {
-            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'The draft changed. Regenerate or return to the original insertion position before adopting.' });
+            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'Your draft changed. The AI text is still available for review; generate again before adding it.', source: { ...source, staleReason: 'draft' } });
             return;
         }
 
         const currentAnchor = current.captureAnchor();
-        if (
-            !currentAnchor
-            || currentAnchor.from !== source.anchor.from
-            || currentAnchor.to !== source.anchor.to
-            || currentAnchor.docSize !== source.anchor.docSize
-        ) {
-            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'The insertion position changed. Place the cursor or selection back at the original position, or regenerate.' });
+        if (!currentAnchor || !anchorsMatch(currentAnchor, source.anchor)) {
+            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'The insertion position or selection changed. Choose the current insertion point explicitly, or regenerate.', source: { ...source, staleReason: 'anchor' } });
             return;
         }
 
-        if (!current.insertCandidateAtAnchor(snapshot.text, source.anchor)) {
-            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'The editor changed before adoption. The candidate is preserved; regenerate or choose the insertion position again.' });
+        const attempt = ++adoptionAttemptRef.current;
+        updateCandidate({ ...snapshot, status: 'validating', errorMessage: null });
+        try {
+            await aiGenerationRepository.validateAdoption({
+                bookId: source.bookId,
+                chapterId: source.chapterId,
+                databaseVersion: source.databaseVersion,
+                retrievalSourceVersions: source.retrievalContext?.sourceVersions ?? [],
+            });
+        } catch (error) {
+            if (attempt !== adoptionAttemptRef.current) return;
+            const code = errorCode(error);
+            const staleReason = code === 'READ_ONLY' ? 'lock'
+                : code === 'CONTEXT_CHANGED' || code === 'VERSION_CONFLICT' ? 'retrieval'
+                    : 'verification';
+            const message = code === 'READ_ONLY'
+                ? 'This chapter or its volume is locked. The AI text is still available for review.'
+                : code === 'CONTEXT_CHANGED' || code === 'VERSION_CONFLICT'
+                    ? 'The manuscript or a retrieved source changed. The candidate is preserved; regenerate from current sources.'
+                    : 'This text could not be added right now. It is still available for review. Try again.';
+            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: message, source: { ...source, staleReason } });
+            return;
+        }
+
+        if (attempt !== adoptionAttemptRef.current || candidateRef.current.status !== 'validating') return;
+        const latest = optionsRef.current;
+        if (latest.isReadOnly) {
+            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: 'Unlock the chapter before adopting this candidate.', source: { ...source, staleReason: 'lock' } });
+            return;
+        }
+        if (!sourceMatchesCurrent(source, latest)) {
+            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: 'Your draft changed. Generate again before adding this text.', source: { ...source, staleReason: 'draft' } });
+            return;
+        }
+        const latestAnchor = latest.captureAnchor();
+        if (!latestAnchor || !anchorsMatch(latestAnchor, source.anchor)) {
+            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: 'The insertion position changed. Choose it again, or generate a new continuation.', source: { ...source, staleReason: 'anchor' } });
+            return;
+        }
+
+        if (!latest.insertCandidateAtAnchor(snapshot.text, source.anchor)) {
+            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: 'The editor changed before adoption. The candidate is preserved; choose the insertion position again or regenerate.', source: { ...source, staleReason: 'anchor' } });
             return;
         }
 
         updateCandidate({
-            ...snapshot,
+            ...candidateRef.current,
             status: 'adopted',
-            errorMessage: 'Candidate inserted into the draft. The existing save queue will persist it.',
+            errorMessage: null,
+            source: { ...source, staleReason: undefined },
         });
     }, [updateCandidate]);
 
     useEffect(() => {
         const active = activeRef.current;
-        if (active && (active.chapterId !== options.chapterId || active.sessionId !== options.sessionId)) {
-            stop();
-            updateCandidate(INITIAL_CANDIDATE);
-        }
-    }, [options.chapterId, options.sessionId, stop, updateCandidate]);
+        const source = candidateRef.current.source;
+        const chapterOrSessionChanged = (active && (active.chapterId !== options.chapterId || active.sessionId !== options.sessionId))
+            || (source && (
+                source.bookId !== options.bookId
+                || source.chapterId !== options.chapterId
+                || source.sessionId !== options.sessionId
+            ));
+        if (!chapterOrSessionChanged) return;
+        adoptionAttemptRef.current += 1;
+        if (active) stop();
+        updateCandidate(INITIAL_CANDIDATE);
+    }, [options.bookId, options.chapterId, options.sessionId, stop, updateCandidate]);
 
     useEffect(() => () => {
         const active = activeRef.current;
@@ -449,5 +632,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
         closeCandidate,
         discardCandidate,
         regenerate,
+        reselectInsertionPoint,
+        toggleRetrievalHit,
     };
 }

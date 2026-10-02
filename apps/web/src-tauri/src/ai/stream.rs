@@ -64,9 +64,10 @@ where
         let chunk = tokio::select! {
             _ = input.control.cancelled() => return Err(provider_error(AiErrorCode::Cancelled)),
             result = next => result.map_err(|_| provider_error(AiErrorCode::Timeout))?
-                .ok_or_else(|| provider_error(AiErrorCode::ProtocolError))?
+                .transpose()
                 .map_err(|_| provider_error(AiErrorCode::ProtocolError))?,
         };
+        let Some(chunk) = chunk else { break };
         total_bytes = total_bytes.saturating_add(chunk.len());
         if total_bytes > MAX_TOTAL_BYTES {
             return Err(provider_error(AiErrorCode::ProtocolError));
@@ -127,6 +128,29 @@ where
     F: FnMut(GenerationPayload) + Send,
 {
     match event {
+        ProviderEvent::FinalDelta {
+            text: delta,
+            usage: next_usage,
+            finish_reason: reason,
+        } => {
+            apply_event(
+                ProviderEvent::Delta(delta),
+                text,
+                usage,
+                finish_reason,
+                emit,
+            )?;
+            apply_event(
+                ProviderEvent::Completed {
+                    usage: next_usage,
+                    finish_reason: reason,
+                },
+                text,
+                usage,
+                finish_reason,
+                emit,
+            )?;
+        }
         ProviderEvent::Delta(delta) => {
             if text.chars().count().saturating_add(delta.chars().count()) > 2_000_000 {
                 return Err(provider_error(AiErrorCode::ProtocolError));
@@ -172,6 +196,7 @@ fn merge_usage(target: &mut TokenUsage, next: TokenUsage) {
 
 fn http_error(status: StatusCode) -> StorageError {
     provider_error(match status {
+        StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY => AiErrorCode::ValidationError,
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => AiErrorCode::AuthenticationFailed,
         StatusCode::NOT_FOUND => AiErrorCode::ModelNotFound,
         StatusCode::TOO_MANY_REQUESTS => AiErrorCode::RateLimited,
@@ -234,6 +259,37 @@ mod tests {
     }
 
     #[test]
+    fn final_chat_delta_preserves_text_and_stop_or_length() {
+        let adapter = providers::make(crate::ai::config::ConfigInput {
+            name: "Synthetic".into(),
+            protocol: Protocol::OpenaiChatCompletions,
+            base_url: "http://127.0.0.1:1234".into(),
+            model_id: "synthetic".into(),
+            timeout_ms: 1000,
+            max_output_tokens: Some(128),
+        });
+        for (reason, expected) in [
+            ("stop", FinishReason::Stop),
+            ("length", FinishReason::Length),
+        ] {
+            let data = serde_json::json!({"choices":[{"delta":{"content":"final text"},"finish_reason":reason}],"usage":{"completion_tokens":3}});
+            let event = adapter.event(None, &data.to_string()).unwrap().unwrap();
+            let mut text = String::new();
+            let mut usage = TokenUsage::default();
+            let mut finish = None;
+            let mut deltas = Vec::new();
+            apply_event(event, &mut text, &mut usage, &mut finish, &mut |event| {
+                deltas.push(event)
+            })
+            .unwrap();
+            assert_eq!(text, "final text");
+            assert_eq!(finish, Some(expected));
+            assert_eq!(usage.output_tokens, Some(3));
+            assert_eq!(deltas.len(), 1);
+        }
+    }
+
+    #[test]
     fn cancellation_interrupts_a_stream_after_a_delta() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
@@ -266,7 +322,7 @@ mod tests {
                 base_url: format!("http://127.0.0.1:{port}"),
                 model_id: "test-model".into(),
                 timeout_ms: 10_000,
-                max_output_tokens: 128,
+                max_output_tokens: Some(128),
             },
             key: Secret::new("synthetic-key".into()),
             context: "[Current draft]\nTest".into(),
@@ -282,5 +338,69 @@ mod tests {
         server.join().unwrap();
         assert_eq!(result.unwrap_err().code, "CANCELLED");
         assert_eq!(deltas, vec!["你"]);
+    }
+
+    #[test]
+    fn dispatches_terminal_events_from_clean_eof_for_all_supported_protocols() {
+        let fixtures = [
+            (
+                Protocol::OpenaiChatCompletions,
+                concat!(
+                    "data: {\"choices\":[{\"delta\":{\"content\":\"已生成\"},\"finish_reason\":null}]}\n\n",
+                    "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}"
+                ),
+            ),
+            (
+                Protocol::OpenaiResponses,
+                concat!(
+                    "event: response.output_text.delta\ndata: {\"type\":\"response.output_text.delta\",\"delta\":\"已生成\"}\n\n",
+                    "event: response.completed\ndata: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":3}}}"
+                ),
+            ),
+            (
+                Protocol::AnthropicMessages,
+                concat!(
+                    "event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"已生成\"}}\n\n",
+                    "event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":3}}"
+                ),
+            ),
+        ];
+
+        for (protocol, body) in fixtures {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let body = body.to_owned();
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0_u8; 2048];
+                let _ = stream.read(&mut request);
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                )
+                .unwrap();
+                stream.write_all(body.as_bytes()).unwrap();
+            });
+            let input = StreamInput {
+                config: ConfigInput {
+                    name: "Synthetic stream test".into(),
+                    protocol,
+                    base_url: format!("http://127.0.0.1:{port}"),
+                    model_id: "synthetic-model".into(),
+                    timeout_ms: 10_000,
+                    max_output_tokens: Some(128),
+                },
+                key: Secret::new("synthetic-key".into()),
+                context: "synthetic chapter text".into(),
+                control: Arc::new(Cancellation::new()),
+            };
+            let result = tauri::async_runtime::block_on(run(input, |_| {}));
+            server.join().unwrap();
+
+            let result = result.expect("valid terminal event at EOF should complete");
+            assert_eq!(result.text, "已生成");
+            assert_eq!(result.finish_reason, FinishReason::Stop);
+        }
     }
 }

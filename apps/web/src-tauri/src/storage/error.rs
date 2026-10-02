@@ -11,7 +11,19 @@ pub struct StorageError {
     pub current_database_version: Option<i64>,
 }
 impl StorageError {
+    #[track_caller]
     pub fn new(code: &str, message: &str) -> Self {
+        let location = std::panic::Location::caller();
+        crate::diagnostics::record(
+            "desktop",
+            code,
+            &format!(
+                "{message}\n{}:{}:{}",
+                location.file(),
+                location.line(),
+                location.column()
+            ),
+        );
         Self {
             code: code.into(),
             message: message.into(),
@@ -26,7 +38,8 @@ impl std::fmt::Display for StorageError {
 }
 impl std::error::Error for StorageError {}
 impl From<rusqlite::Error> for StorageError {
-    fn from(_: rusqlite::Error) -> Self {
+    fn from(error: rusqlite::Error) -> Self {
+        crate::diagnostics::record("sqlite", "STORAGE_FAILURE", &error.to_string());
         Self::new(
             "STORAGE_FAILURE",
             "SQLite operation failed; stored data was not reset",
@@ -34,7 +47,8 @@ impl From<rusqlite::Error> for StorageError {
     }
 }
 impl From<std::io::Error> for StorageError {
-    fn from(_: std::io::Error) -> Self {
+    fn from(error: std::io::Error) -> Self {
+        crate::diagnostics::record("filesystem", "STORAGE_FAILURE", &error.to_string());
         Self::new("STORAGE_FAILURE", "Cannot access local storage")
     }
 }

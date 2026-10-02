@@ -1,15 +1,9 @@
-# Local work content contract (weeks 11–12)
+# Local work content contract
 
-> Status: contract defined and schema migrated (unit 1); characters (unit 2),
-> the relationship graph (unit 3), foreshadowing/planning (unit 4) and
-> preferences/brainstorm (unit 5) are fully local. This document is the
-> field-level source of truth; `local-storage.md` covers the weeks 9–10
-> foundation.
-
-Scope: characters, the relationship graph, cross-chapter foreshadowing,
-story planning, application preferences and the brainstorm workspace become
-local-first inside the same SQLite database. No model generation, no JSON
-interchange, no vector/AI tables.
+Characters, relationships, foreshadowing, planning, application preferences and
+brainstorm workspaces persist in the same local SQLite database. This document
+covers their fields, references and write boundaries; [local-storage.md](local-storage.md)
+covers library storage and [ai-contracts.md](ai-contracts.md) covers generation.
 
 ## Field inventory (persisted vs derived vs deferred)
 
@@ -51,10 +45,32 @@ chapter.
 ### Story planning — `planning` table
 
 storySummary, storyBackground, chapterSummaries (each `{chapterId, summary,
-updatedAt, sourceChapterVersion}`), plotSettings (each `{id, title, details,
-chapterIds, createdAt, updatedAt}`) persist as Rust-validated JSON inside one
-per-book row with its own `databaseVersion`. Chapter references are validated
-in the write transaction. AI never auto-fills; summaries are human-authored.
+updatedAt, provenance?, sourceChapterVersion?, sourceSnapshot?,
+generationMetadata?, freshnessAcknowledgement?}`), and plotSettings persist as
+Rust-validated JSON inside one per-book row with its own `databaseVersion`.
+Legacy summaries without a
+provenance field are treated as author-written. A source snapshot stores the
+chapter ID/title, content format/version, chapter database-version snapshot,
+FNV-1a change fingerprints, block fingerprints, Mention character IDs, and
+foreshadowing note fingerprints; it does not duplicate the chapter body.
+`freshnessAcknowledgement` stores a new source baseline accepted by the author
+after reviewing a possible change. It does not replace the original
+`sourceSnapshot` or AI generation provenance; later source changes are compared
+with the acknowledged baseline and can make the summary stale again. When a
+work is copied, its acknowledgement snapshot references are remapped with the
+rest of the book's IDs.
+Generation metadata is retained only for an adopted AI summary. Unaccepted
+suggestions remain candidate state and are not written to the planning row.
+Chapter references and metadata shapes are validated in the write transaction.
+Story Outline provides card actions for generating a suggestion, reviewing old
+versus new text, accepting, or keeping the manual summary. The suggestion is transient
+until acceptance; acceptance uses the ordinary optimistic planning save. The
+selected chapter body is the only source for events. Retrieved confirmed
+settings and character profiles may clarify terminology but cannot supply
+events. Relationships and foreshadowing notes are excluded from summary
+retrieval because they may carry implications beyond the selected chapter.
+Without a configured model or retrieval source, manual read/edit/save remains
+available and the missing source is stated explicitly.
 
 ### Application preferences — `application_preferences` (single row, id = 1)
 
@@ -78,7 +94,7 @@ legacy-ID mapping tables. The versioned whole-work JSON schema and local export
 flow are implemented separately. Import ID mappings are transient transaction
 state; they are not a database table and are never reused across imports.
 
-## IPC contract (names fixed at implementation time)
+## IPC contract
 
 Business commands only — no arbitrary SQL or path access. All mutations take
 expected versions and return the committed record(s) inside the existing
@@ -89,18 +105,18 @@ CONTENT_INCOMPATIBLE, STORAGE_FAILURE).
 | Command | Shape | Semantics |
 | --- | --- | --- |
 | local_list_characters | `{ bookId }` → `LocalCharacter[]` | Active + archived, ordered. |
-| local_create_character | `{ input: { bookId, name, role, aliases, description, color, tags, avatar?, handleConfig? } }` → character | Rust assigns UUID/position; book must be unlocked. |
+| local_create_character | `{ input: { bookId, expectedBookVersion, name, role, aliases, description, color, tags, avatar?, handleConfig? } }` → `{ character, book }` | Rust assigns UUID/position; book must be unlocked. |
 | local_update_character | `{ input: { bookId, characterId, expectedDatabaseVersion, ...fields } }` → character | Version-guarded partial update; never touches chapter content. |
 | local_archive_character | `{ input: { bookId, characterId, expectedDatabaseVersion, isArchived } }` → character | Archive/unarchive; references preserved. |
 | local_reorder_characters | `{ input: { bookId, expectedBookVersion, items: [{ characterId, expectedDatabaseVersion }] } }` → ordered characters | Complete set including archived characters; validate ownership, book lock and all versions, then commit positions atomically. Only character versions advance. |
 | local_read_graph | `{ bookId }` → `{ graph, nodes, edges } \| null` | `null` means "not initialized yet" — never an empty-graph lie. Load failure is an error, not null. |
 | local_initialize_graph | `{ input: { bookId } }` → `{ graph, nodes: [], edges: [] }` | Explicit first-time creation, persisted; seeding from characters is a separate explicit call, not an automatic side effect of opening the page. |
 | local_save_graph | `{ input: { bookId, expectedGraphVersion, nodes, edges } }` → `{ graph, nodes, edges }` | Whole-snapshot write in one transaction: endpoint ownership, dangling edges, coordinate/handle validation; stale version rejected. |
-| local_read_planning / local_save_planning | `{ bookId }` / `{ input: { bookId, expectedDatabaseVersion, ...aggregate } }` | Per-book aggregate; chapterIds validated in-transaction. |
+| local_read_planning / local_save_planning | `{ bookId }` → planning / `{ input: { bookId, expectedDatabaseVersion, sessionKey, revision, ...aggregate } }` → `{ planning, sessionKey, revision }` | Per-book aggregate; chapterIds validated in-transaction. |
 | local_read_book | `{ bookId }` → full chapter snapshots | Board aggregates notes from this consistent SQLite read; ordered by volume/chapter position. |
 | local_update_note | `{ input: { bookId, chapterId, noteId, expectedDatabaseVersion, note?, isRecovered? } }` → committed chapter | Patch only the target note in a transaction; preserve body and unknown fields. |
 | local_read_preferences / local_save_preferences | none / `{ input: { expectedDatabaseVersion, ...fields } }` | Single-row application preferences, optimistic version. |
-| local_read_brainstorm / local_save_brainstorm | `{ bookId }` / `{ input: { bookId, expectedDatabaseVersion, ...workspace } }` | Workspace aggregate; selected chapter IDs validated in-transaction. |
+| local_read_brainstorm / local_save_brainstorm | `{ bookId }` → workspace / `{ input: { bookId, expectedDatabaseVersion, sessionKey, revision, ...workspace } }` → `{ workspace, sessionKey, revision }` | Workspace aggregate; selected chapter IDs validated in-transaction. |
 
 ## Locking, versions and deletion impact
 
@@ -123,22 +139,19 @@ CONTENT_INCOMPATIBLE, STORAGE_FAILURE).
 
 ## Schema upgrade strategy
 
-`user_version` is now 2. Upgrades are additive numbered migrations applied
+Schema versions follow the registered numbered migrations. Upgrades are additive
+and applied
 in one immediate transaction per version step (`0001` is frozen). Before any
 upgrade from an existing versioned database, a consistent online backup is
 written into `<app-data>/backups`; a failed backup stops the upgrade and the
 old database keeps its version and rows. A failed migration rolls the
 transaction back — the database is never dropped or rebuilt to recover.
-Regression evidence: a seeded v1 library upgrades with content, original
-recovery copies, IDs, unknown foreshadowing fields and lock states intact;
-a poisoned upgrade path leaves the v1 database fully readable; fresh
-databases initialize at version 2 with no pre-upgrade backup.
 
 Version spaces stay separate: SQLite `user_version` (schema), record
 `databaseVersion` (optimistic concurrency), chapter `contentVersion`
-(format), and the future interchange `schemaVersion` (exchange).
+(format), and interchange `schemaVersion` (exchange).
 
-## Unit 2 implementation: characters local with mention compatibility
+## Characters and mention compatibility
 
 Commands `local_list_characters`, `local_create_character` (returns the
 character plus the bumped book, like volume creation), `local_update_character`
@@ -155,38 +168,20 @@ not disabled for new matches). Extension options are only the initial
 fallback. The editor's `useEditor` no longer takes characters in its
 dependency list, so creating, renaming or archiving a character never
 rebuilds the Tiptap instance — caret, undo history, selection and drafts are
-untouched, verified in the desktop smoke (typing and undo continue right
-after a character save, and the fresh mention appears in place). Mentions
+untouched. Mentions
 reference the stable character ID; renaming never rewrites chapter text, and
 the reconcile pass updates only label/color drift. Archived characters keep
 their mentions and graph references, disappear from `@` suggestions and new
 auto-matches, and show an "Archived" badge in the list.
 
-The character settings page is back on its own route and loads the book
+The character settings page has its own route and loads the book
 detail plus characters through the local queries; the editor's world-
 building button and mention clicks navigate there through the existing
 flush-protected navigation. Avatars stay audit-compliant with the contract:
 no upload UI exists, the built-in color swatches are the only visual
-identity, and stored avatar paths/URLs are never auto-fetched. Character
-reordering remains an explicit stub until its command lands (book-level
-management is tracked in unit 6).
+identity, and stored avatar paths/URLs are never auto-fetched. Character ordering uses the version-checked local reorder boundary.
 
-### Verification record (2026-09-12, unit 2)
-
-Real Windows desktop run via WebView2 CDP: character created through the
-settings page commits with a Rust UUID and bumped book version; returning to
-the editor auto-highlights the name in place without a rebuild; typing and
-undo continue across the refresh; archiving shows the badge, keeps the
-existing mention, and produces no new matches; a second book never matches
-the first book's character. Frontend: 259 tests (provider CRUD/archive,
-projection mapping, storage-driven highlight, archived mention preservation,
-cross-book isolation fixtures), zero-warning lint, production build. Rust:
-20 tests (character CRUD/archive concurrency, validation, locks), Clippy and
-`cargo fmt --check` clean. Secret scan clean. Not yet covered: character
-reorder persistence (stubbed by design) and unarchive UI (the command
-already accepts `isArchived: false`).
-
-## Unit 3 implementation: relationship graph local
+## Relationship graph persistence
 
 Commands `local_read_graph`, `local_initialize_graph` and `local_save_graph`
 implement the contract exactly: a missing graph row is `null` (distinct from
@@ -202,7 +197,7 @@ handle configuration — character defaults are copied when a node is added or
 loaded and are never written back from the graph, which keeps one owner per
 config. The viewport stays session UI state.
 
-The canvas page is back on its route, loads book detail, characters and the
+The canvas page has its own route, loads book detail, characters and the
 graph through local queries, and opens an uninitialized book straight into an
 empty canvas (matching the legacy page): the page issues the idempotent
 initialize command itself — reads still never seed graphs, failures still
@@ -217,25 +212,7 @@ changes that would drop edges ask for confirmation first. Changing a
 character's default handles is validated against inheriting nodes so
 connections cannot silently break (and bumps the graph version).
 
-### Verification record (2026-09-12, unit 3)
-
-Real Windows desktop run via WebView2 CDP, no backend: character created
-through the settings UI; a mention inserted through the editor's real
-command pipeline and saved; the map initialized explicitly; the same
-character dropped twice as two instances with distinct positions; a
-right-source to top-target edge labeled "另一个自己" connected through real
-handle mouse events and saved. A normal window close reopened with both node
-positions, the edge and its label intact; a second reopen after another save
-confirmed the same. The chapter with its mention stayed intact throughout.
-Frontend: 264 tests (projection round-trips, pending-commit drains,
-conflict layout retention, port-change confirmation, missing-character edit
-block), zero-warning lint, production build. Rust: 25 tests (round-trip
-with archival and saved-empty graphs, validation rejections, transactional
-rollback with an injected trigger, stale-version and lock rejections,
-inherited-port protection, IPC registration), Clippy and `cargo fmt --check`
-clean. Secret scan clean.
-
-## Unit 4 implementation: foreshadowing and planning
+## Foreshadowing and planning
 
 The board uses `local_read_book`, not a second notes store. Its identity is
 `(bookId, chapterId, noteId)`; a missing body mark is shown as unlocated but
@@ -256,10 +233,18 @@ fields survive. Live chapter references must belong to this book. No new SQL
 migration is needed: these fields use the existing schema version 2 tables.
 
 Story background holds author-defined setting; plot settings hold future
-intent; chapter summaries describe existing chapters. Editing a summary records
-its sourceChapterVersion. A later chapter version mismatch (including a note
-edit) produces a conservative stale-source hint, never an automatic rewrite.
-Missing source versions are also treated as unverified. No model is called.
+intent; chapter summaries describe existing chapters. Explicitly editing a
+summary captures its source snapshot and provenance. Freshness compares
+structured block fingerprints, Mention identities, foreshadowing-note content,
+and recorded allowed-source versions; it never uses net character count or a
+fixed percentage threshold. A database-version advance alone does not rebase a
+summary. Legacy summaries without a verifiable snapshot require author review;
+editing one establishes a new baseline. A possible-staleness hint never
+rewrites or deletes the summary. FNV fingerprints are change detectors, not
+cryptographic integrity checks. On import/copy, `sourceChapterVersion` is
+rebased to the receiving database while `sourceSnapshot.chapterDatabaseVersion`
+and generation-time versions remain historical provenance; remapped entity IDs
+may therefore require review. No model is called in this step.
 Planning drafts drain newer edits after pending saves; route departure and
 normal native close wait for successful commits. Load failures, storage errors
 and version conflicts cannot replace drafts with empty defaults.
@@ -270,26 +255,11 @@ and live plot links, retaining plot text and adding `missingChapterIds` for
 inline missing-link feedback. Existing brainstorm live selections are cleaned;
 opaque historical snapshots survive with `deletedChapterIds` annotations.
 Changed planning/workspace versions advance atomically with deletion. A failed
-step rolls back all of these changes. Whole-work JSON export is implemented at
-the P0-B boundary. P0-C preflight and P0-D conflict-aware import now consume
-the same envelope; restore remains a controlled backup operation after all
-running instances have stopped.
+step rolls back all of these changes. Whole-work import/export uses the
+[exchange contract](storyark-work-exchange.md). Database restoration is a
+controlled backup operation after all running instances have stopped.
 
-### Verification record (2026-09-12, unit 4)
-
-Frontend: 269 tests pass, typecheck/build and lint pass. Rust: 29 tests pass,
-Clippy with warnings denied passes. Tests cover opaque note preservation,
-composite identities, stale versions, foreign chapter references, persistence
-across reopening, injected transaction failures and atomic deletion cleanup.
-A temporary `.mjs` CDP script exercised an isolated real Tauri/SQLite instance:
-board note edit/recovery preserved rich body and other chapter notes; orphan
-notes stayed visible; the editor reread committed notes. Planning form values,
-chapter summary source version and plot links persisted. An injected SQLite
-failure retained the visible draft and blocked route departure; retry worked.
-Closing the native window with an unsaved planning field flushed it, and a new
-process recovered all fields. No production user database was used.
-
-## Unit 5 implementation: application preferences and the brainstorm workspace
+## Application preferences and the brainstorm workspace
 
 `local_read_preferences` returns null only when the single row was never
 initialized; that alone authorizes the one-time import. The import reads this
@@ -310,16 +280,16 @@ their first run), and a change made during loading wins over the arriving row
 and is persisted. Every UI change applies instantly as a visual preview and
 is serialized through a save queue with the optimistic version; failures are
 announced, never shown as saved, and leave the visible choice for retry.
-Preferences are unaffected by book locks. The settings page is back at
+Preferences are unaffected by book locks. The settings page is available at
 `/settings` without login/register/account sections.
 
-The brainstorm workspace splits the local repository from any future
-generation provider. `local_read_brainstorm` returns the empty aggregate with
+The brainstorm workspace keeps persistence separate from AI generation.
+`local_read_brainstorm` returns the empty aggregate with
 version 0 only when the row genuinely does not exist; `local_save_brainstorm`
 takes the whole workspace with sessionKey/revision acknowledgement and
 validates live selected chapter IDs against the book in-transaction.
-Generation is explicitly unavailable: both generate buttons are disabled with
-an honest note, and no legacy AI endpoint is touched. Chapter selection,
+Generation uses the configured native AI provider and temporary candidates;
+adoption and workspace saving remain separate actions. Chapter selection,
 context review, handwritten final content and previously saved options all
 work. The editable result area is always present so final content can be
 written by hand. The context snapshot is rebuilt at every save with chapter
@@ -329,96 +299,27 @@ pending; route departure and native close wait for the flush; a failed read
 can never be overwritten by an empty workspace. Saving the workspace never
 writes into chapter content.
 
-### Verification record (2026-09-12, unit 5)
+## Bookshelf management
 
-Frontend: 281 tests (+12), typecheck, zero-warning lint and production build
-pass. Rust: 37 tests (+8) covering NULL-field round-trips, stale-importer and
-version conflicts, invalid ranges, lock immunity for preferences and lock
-enforcement plus book-delete cascade for the workspace, and IPC registration;
-Clippy and `cargo fmt --check` clean. Secret scan clean. Real Windows desktop
-CDP smoke: first launch imported localStorage preferences into version 1;
-theme toggle persisted (version 2) with the launch cache updated; a real
-restart restored settings without re-importing. The brainstorm workspace
-opened from the outline with generation disabled, accepted a chapter
-selection and handwritten final content, saved and recovered after restart;
-the snapshot carried the chapter source version and a later chapter edit
-surfaced the stale hint.
-
-## Unit 6 implementation: bookshelf management and acceptance coverage
-
-Bookshelf management is fully wired: the context menu works in local mode,
+Bookshelf actions use the local context menu;
 `local_update_book` renames and toggles lifecycle status in one
 version-checked write (locks and stale versions refuse), and deleting a book
 cascades volumes, chapters, characters, the graph, planning and the
 brainstorm workspace in the existing transaction — the confirmation dialog
-now names those attachments. New books receive one accent from the fixed
+names those attachments. New books receive one accent from the fixed
 legacy palette (blue/emerald/rose/amber/purple 600), persisted in the
 `cover_color` column added by migration 0003 (additive, backup-first like
-0002). The editor's settings button is enabled again now that `/settings`
-exists. `local_list_characters` reports NOT_FOUND for deleted books, matching
-every other read. A real-desktop probe on an isolated data directory
-verified: same-named characters stay distinct across books; book B reads
-contain nothing of book A; wrong-book IDs are rejected for notes, brainstorm
-selections, graph nodes and planning references; deleting book A removes
-every attachment while book B stays intact. Legacy migration tooling is
-deliberately skipped (the legacy project holds no real data).
+0002). `local_list_characters` reports NOT_FOUND for deleted books, matching
+every other read.
 
-### Verification record (2026-09-13, unit 6)
+## Whole-book JSON interchange
 
-Frontend: 284 tests (+3), typecheck, zero-warning lint and production build
-pass. Rust: 38 tests (+1), Clippy and `cargo fmt --check` clean. Secret scan
-clean. Full user-acceptance walkthroughs (long manual flows) are performed
-by the maintainer by decision; probe-level checks above ran on a throwaway
-`STORYARK_DATA_DIR`, never the real database.
+The authoritative envelope, entity/reference rules, exclusions, copy ID
+remapping, replacement backups and export write sequence are documented in
+[storyark-work-exchange.md](storyark-work-exchange.md).
 
-## Whole-book JSON interchange (P0-A contract and P0-B export)
-
-The v1 contract and local export path are implemented and verified separately
-from the SQL migration. P0-C preflight and P0-D conflict-aware import now use
-the same contract; restore remains a controlled backup operation and is never
-performed over a running database.
-
-The editor's local Export menu flushes mounted work-surface drafts, obtains a
-single Rust/SQLite snapshot, validates the complete reference graph, presents a
-preview, and writes only after the author chooses a destination. A unique
-temporary sibling is read back and checked for UTF-8, size, hash and envelope
-validity before it replaces the selected destination. See
-[`storyark-work-exchange.md`](./storyark-work-exchange.md) for the detailed
-P0-B sequence and excluded state.
-
-Snapshot entity set (one document per book, `schemaVersion` stamped):
-book record (title/author/status/cover color/position/lock), volumes with
-positions, chapters with typed bodies (`format`/`version`/`content`,
-`originalContent`/`originalFormat`, word count, foreshadowing notes with all
-unknown fields preserved verbatim), characters (including archived ones and
-their handle defaults), the relationship graph (graph version, node
-instances keyed by `nodeKey` with per-node handle overrides, edges with
-handles/labels), the planning aggregate (story summary/background, chapter
-summaries with source versions, plot settings with chapter references and
-missing-link annotations), and the brainstorm workspace (live selection,
-historical context snapshot, generated options, selection, final content).
-Application preferences are explicitly excluded; API keys never appear.
-
-Reference checks on import: chapter→volume, everything→book, graph node
-→character (same book), graph edge→node instances, chapter summary→chapter,
-plot setting chapterIds, workspace selectedChapterIds, and foreshadowing
-mark IDs↔chapter note IDs. Violations are reported, never silently dropped.
-
-Asset boundary: avatar presets/colors are inline values and travel with the
-document; machine-local file paths are never required and never written into
-the snapshot. The style library stays outside (localStorage today).
-
-ID rewriting when adding a copy: every entity ID (book/volume/chapter/
-character/nodeKey/edge/note/plot entry and saved brainstorm option) is
-re-allocated on import so the copy can never collide with the original; every
-reference above is rewritten through the same mapping in one transaction, and
-content strings that embed IDs (mentions, foreshadowing marks) are rewritten
-with documented coverage — unknown content formats keep their original text
-untouched. Replace first creates and verifies an online backup, then replaces
-the whole cascade in one transaction after a second target-version check.
-
-The implementation is split into `storage/import/validation.rs` (defensive
-contract and reference checks), `mapping.rs` (copy ID allocation and content
-reference rewriting), and `persistence.rs` (conflict statistics and ordered
-SQLite insertion). `local_prepare_work_import` is read-only; `local_import_work`
-is the only command that mutates a work.
+Import/export includes saved book content and the brainstorm workspace, but not
+application preferences, API credentials, temporary candidates or retrieval
+indexes. Export flushes mounted drafts before reading a consistent SQLite
+snapshot. The JSON sample stays in this repository because automated exchange
+tests import it. Restoration of a database backup requires all instances to stop.

@@ -1,3 +1,5 @@
+import { DelayedLoading, PageLoading } from '../components/ui/DelayedLoading';
+import { userErrorMessage } from '../data/diagnostics';
 import React, { useState, useEffect, useEffectEvent, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useBlocker, NavigateOptions, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -14,9 +16,15 @@ import { ChapterNavigator, NavigatorDeleteTarget } from '../features/editor/comp
 import { EditorHeader } from '../features/editor/components/EditorHeader';
 import { AiContinueCandidate } from '../features/editor/components/AiContinueCandidate';
 import { WritingContextPanel } from '../features/editor/components/WritingContextPanel';
+import { SidebarResizeHandle } from '../features/editor/components/SidebarResizeHandle';
+import { useEditorSidebarLayout } from '../features/editor/hooks/useEditorSidebarLayout';
+import { SIDEBAR_LIMITS } from '../features/editor/sidebarLayout';
 import { Button } from '../components/ui/Button';
 import { getEditorPlainText, getForeshadowingExcerptMap } from '../domain/chapterContent';
+import { calculateCharacterCount } from '../utils/textUtils';
+import { useTypingSpeed } from '../features/editor/hooks/useTypingSpeed';
 import { useChapterDraft } from '../features/editor/hooks/useChapterDraft';
+import { useLoadedChapter } from '../features/editor/hooks/useLoadedChapter';
 import { useChapterLock } from '../features/editor/hooks/useChapterLock';
 import { useChapterAutosave } from '../features/editor/hooks/useChapterAutosave';
 import { useWindowCloseGuard } from '../features/editor/hooks/useWindowCloseGuard';
@@ -25,6 +33,7 @@ import { useChapterExport } from '../features/editor/export/useChapterExport';
 import { useWorkExport } from '../features/editor/export/useWorkExport';
 import { WorkExportPreview } from '../features/editor/components/WorkExportPreview';
 import { registerWorkDraftFlush } from '../services/workDraftFlushRegistry';
+import type { RetrievalChunkLocator, RetrievalTextFocus } from '../domain/retrieval/contracts';
 
 function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?: LocalPlanning }): React.ReactElement {
     const { bookId } = useParams<{ bookId: string }>();
@@ -49,17 +58,40 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
     const [activeChapterId, setActiveChapterId] = useState<string>('');
 
     // 2. Find current active volume and chapter
-    const activeVolume = book?.volumes.find(v => v.chapters.some(c => c.id === activeChapterId));
-    const activeChapter = activeVolume?.chapters.find(c => c.id === activeChapterId);
+    const chapterDirectory = useMemo(() => {
+        const entries = new Map<string, { volume: Volume; chapter: Chapter; order: number }>();
+        let order = 0;
+        for (const volume of book?.volumes ?? []) for (const chapter of volume.chapters) {
+            entries.set(chapter.id, { volume, chapter, order: order++ });
+        }
+        return entries;
+    }, [book?.volumes]);
+    const activeEntry = chapterDirectory.get(activeChapterId);
+    const activeVolume = activeEntry?.volume;
+    const chapterMetadata = activeEntry?.chapter;
+    const chapterLoad = useLoadedChapter(bookId ?? '', chapterMetadata);
+    const activeChapter = chapterLoad.chapter;
+    const activeChapterOrder = activeEntry?.order ?? -1;
 
     // 3. State Management
     // The chapter draft (values + revision + dirty tracking) lives in a hook;
     // this page only keeps UI state and the save lifecycle.
     const chapterDraft = useChapterDraft({ bookId, volumeId: activeVolume?.id, chapterId: activeChapterId, chapter: activeChapter });
+    const characterCount = useMemo(() => calculateCharacterCount(getEditorPlainText(chapterDraft.content)), [chapterDraft.content]);
     const [legacyPlotSettings, setPlotSettings] = useState<PlotSetting[]>([]);
     const plotSettings = localPlanning?.plotSettings ?? legacyPlotSettings;
     const [activeForeshadowingId, setActiveForeshadowingId] = useState<string | null>(null);
     const [isForeshadowingPanelOpen, setIsForeshadowingPanelOpen] = useState(false);
+    const [isSidebarResizing, setIsSidebarResizing] = useState(false);
+    const {
+        containerRef, leftExpanded, setLeftExpanded, leftWidth, rightWidth,
+        leftOverlay, rightOverlay, leftMax, rightMax, resize, reset,
+    } = useEditorSidebarLayout(isForeshadowingPanelOpen);
+    const [pendingRetrievalFocus, setPendingRetrievalFocus] = useState<{
+        chapterId: string;
+        locator: RetrievalChunkLocator;
+        focus: RetrievalTextFocus | null;
+    } | null>(null);
 
     const editorRef = useRef<TiptapEditorRef>(null);
 
@@ -98,7 +130,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         currentDraftReadOnly: chapterDraft.isReadOnly,
         onError: (error) => {
             console.error('Work export failed:', error);
-            toast.error(error instanceof Error ? error.message : 'Work export failed. Your draft remains available.');
+            toast.error(userErrorMessage(error, 'Export could not be saved. Keep your draft and try again, or choose another folder.', 'work.export'));
         },
         onSaved: () => toast.success('StoryArk work export saved and verified.'),
     });
@@ -278,17 +310,33 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         return () => timers.forEach(timer => window.clearTimeout(timer));
     }, [bookId, activeChapterId, chapterDraft.content, chapterDraft.foreshadowings]);
 
+    useEffect(() => {
+        if (!pendingRetrievalFocus || pendingRetrievalFocus.chapterId !== activeChapterId) return;
+
+        const pending = pendingRetrievalFocus;
+        const delays = [160, 420, 800];
+        const timers = delays.map(delay => window.setTimeout(() => {
+            const didFocus = editorRef.current?.focusRetrievalLocator(pending.locator, pending.focus);
+            if (didFocus) {
+                setPendingRetrievalFocus(null);
+            }
+        }, delay));
+
+        return () => timers.forEach(timer => window.clearTimeout(timer));
+    }, [activeChapterId, chapterDraft.content, pendingRetrievalFocus]);
+
     // Switching chapters waits until the current draft is fully saved; on
     // failure the user stays on the current chapter (the header shows the
     // error and a retry). Deleting the current chapter bypasses this on
     // purpose — there is nothing left to save.
-    const requestChapterSwitch = async (targetChapterId: string) => {
-        if (targetChapterId === activeChapterId) return;
+    const requestChapterSwitch = async (targetChapterId: string): Promise<boolean> => {
+        if (targetChapterId === activeChapterId) return true;
         if (chapterDraft.isDirty) {
             const ok = await autosave.flush();
-            if (!ok) return;
+            if (!ok) return false;
         }
         setActiveChapterId(targetChapterId);
+        return true;
     };
 
     // Leaving the editor in-app gets the same protection: flush first,
@@ -319,15 +367,17 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         sessionId: chapterDraft.sessionKey,
         draftRevision: chapterDraft.revision,
         databaseVersion: activeChapter?.databaseVersion ?? 0,
+        chapterOrder: activeChapterOrder >= 0 ? activeChapterOrder : undefined,
         isReadOnly: chapterDraft.isReadOnly || chapterLock.isChangingLock,
         contextChars: aiContinueSettings.contextChars,
         outputChars: aiContinueSettings.outputChars,
-        getContextText: () => editorRef.current?.editor?.getText() ?? getEditorPlainText(chapterDraft.content),
+        getContextText: (anchor) => editorRef.current?.getTextBeforeAnchor(anchor) ?? '',
         captureAnchor: () => editorRef.current?.captureSelection() ?? null,
         insertCandidateAtAnchor: (candidate, anchor) => editorRef.current?.insertAiCandidateAtAnchor(candidate, anchor) ?? false,
     });
 
     const handleToggleReadOnly = chapterLock.toggle;
+    const typing = useTypingSpeed(chapterDraft.sessionKey, !!activeChapter && !chapterDraft.isReadOnly && !chapterLock.isChangingLock);
     // --- Editor Interaction Handlers ---
     const handleEditorUpdate = (newContent: string, newWordCount: number) => {
         chapterDraft.applyEditorUpdate(newContent, newWordCount);
@@ -445,16 +495,29 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         void workExport.prepare();
     };
 
-    if (!book) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-400">Loading Book Data...</div>;
+    if (!book) return <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 text-slate-400"><DelayedLoading identity={bookId ?? "legacy-book"}>Loading Book Data...</DelayedLoading></div>;
 
     return (
-        <div className="flex h-screen bg-slate-50 dark:bg-slate-950 overflow-hidden font-sans relative transition-colors duration-300">
+        <div ref={containerRef} className="relative flex h-screen min-h-0 min-w-0 overflow-hidden bg-slate-50 font-sans transition-colors duration-300 dark:bg-slate-950">
             <ChapterNavigator
+                expanded={leftExpanded}
+                onExpandedChange={setLeftExpanded}
+                sidebarWidth={leftWidth}
+                isResizing={isSidebarResizing}
+                isOverlay={leftOverlay}
+                resizeHandle={<SidebarResizeHandle
+                    side="left" width={leftWidth}
+                    min={Math.min(SIDEBAR_LIMITS.left.min, leftMax)} max={leftMax}
+                    onResize={width => resize('left', width)}
+                    onReset={() => reset('left')}
+                    onDraggingChange={setIsSidebarResizing}
+                />}
                 localMode={isLocal}
                 key={book.id}
                 book={book}
                 activeChapterId={activeChapterId}
                 onNavigateDashboard={() => void navigateAfterSave('/dashboard')}
+                onOpenBrainstorm={() => void navigateAfterSave(`/books/${book.id}/ai-brainstorm`)}
                 onSelectChapter={requestChapterSwitch}
                 onAddVolume={handleAddVolume}
                 onAddChapter={handleAddChapter}
@@ -464,10 +527,12 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                 onReorderVolumes={handleReorderVolumes}
                 onReorderChapters={handleReorderChapters}
                 onOpenPlotSetting={(chapterId) => void navigateAfterSave(`/books/${bookId}/story-outline?chapterId=${chapterId}`)}
+                onOpenChapterSummary={(chapterId) => void navigateAfterSave(`/books/${bookId}/story-outline?chapterId=${encodeURIComponent(chapterId)}`)}
+                onOpenRetrievalLocator={(chapterId, locator, focus) => setPendingRetrievalFocus({ chapterId, locator, focus })}
             />
 
             {/* Main Area */}
-            <main className="flex-1 flex flex-col min-w-0 bg-white dark:bg-slate-950 shadow-xl z-10">
+            <main className="z-10 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white shadow-xl dark:bg-slate-950">
                 <EditorHeader
                     localMode={isLocal}
                     volumeTitle={activeVolume?.title}
@@ -497,16 +562,20 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     isAiLoading={aiContinue.isAiLoading}
                     canAdopt={aiContinue.canAdopt}
                     adoptDisabledReason={aiContinue.adoptDisabledReason}
+                    saveStatus={autosave.saveStatus}
+                    draftRevision={chapterDraft.revision}
                     onStop={aiContinue.stop}
                     onAdopt={aiContinue.adoptCandidate}
                     onClose={aiContinue.closeCandidate}
                     onDiscard={aiContinue.discardCandidate}
                     onRegenerate={aiContinue.regenerate}
+                    onReselectInsertionPoint={aiContinue.reselectInsertionPoint}
+                    onToggleRetrievalHit={aiContinue.toggleRetrievalHit}
                 />
 
-                <div className="flex-1 min-h-0 bg-slate-100 dark:bg-slate-900 flex overflow-hidden">
-                    <div className="flex-1 overflow-y-auto flex justify-center items-start pb-12 px-4">
-                        <div className="w-full max-w-3xl mt-8 bg-white dark:bg-slate-950 shadow-md border border-slate-200 dark:border-slate-800 min-h-[1300px] flex flex-col relative">
+                <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden bg-slate-100 dark:bg-slate-900">
+                    <div className="flex min-h-0 min-w-0 flex-1 items-start justify-center overflow-y-auto px-4 pb-12">
+                        <div className="relative mt-8 flex min-w-0 min-h-[1300px] w-full max-w-3xl flex-col border border-slate-200 bg-white shadow-md dark:border-slate-800 dark:bg-slate-950">
                             {activeChapter ? (
                                 <>
                                     <div
@@ -534,6 +603,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                                         characters={book?.characters}
                                         autoHighlightCharacters={autoHighlightCharacters}
                                         onUpdate={handleEditorUpdate}
+                                        onTypedText={typing.recordTypedText}
                                         onContentNormalized={chapterDraft.adoptLoaded}
                                         onCharacterClick={handleCharacterClick}
                                         onForeshadowingCreate={handleForeshadowingCreate}
@@ -548,13 +618,27 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                                 </>
                             ) : (
                                 <div className="flex items-center justify-center h-full text-slate-400 dark:text-slate-500 p-20">
-                                    {book.volumes.length === 0 ? "Create a volume to start" : "Select or create a chapter from the sidebar"}
+                                    {chapterLoad.error ? <div role="alert">
+                                        <p>This chapter could not be loaded. Try again.</p>
+                                        <Button onClick={() => void chapterLoad.retry()}>Retry</Button>
+                                    </div> : chapterLoad.isLoading ? (chapterLoad.showLoading ? <p role="status">Loading chapter...</p> : null)
+                                        : book.volumes.length === 0 ? "Create a volume to start" : "Select or create a chapter from the sidebar"}
                                 </div>
                             )}
                         </div>
                     </div>
 
                     <WritingContextPanel
+                        sidebarWidth={rightWidth}
+                        isResizing={isSidebarResizing}
+                        isOverlay={rightOverlay}
+                        resizeHandle={<SidebarResizeHandle
+                            side="right" width={rightWidth}
+                            min={Math.min(SIDEBAR_LIMITS.right.min, rightMax)} max={rightMax}
+                            onResize={width => resize('right', width)}
+                            onReset={() => reset('right')}
+                            onDraggingChange={setIsSidebarResizing}
+                        />}
                         isOpen={isForeshadowingPanelOpen}
                         foreshadowings={chapterDraft.foreshadowings}
                         excerptMap={foreshadowingExcerptMap}
@@ -570,11 +654,12 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                     />
                 </div>
 
-                <footer className="h-8 bg-white dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 text-xs text-slate-500 dark:text-slate-400 select-none flex-shrink-0 z-20">
-                    <div className="flex gap-4">
+                <footer className="h-8 bg-white dark:bg-slate-950 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4 overflow-x-auto whitespace-nowrap px-4 text-xs text-slate-500 dark:text-slate-400 select-none flex-shrink-0 z-20">
+                    <div className="flex shrink-0 gap-4">
                         <span>Words: <span className="font-mono text-slate-700 dark:text-slate-200">{chapterDraft.wordCount}</span></span>
+                        <span>Characters: <span className="font-mono text-slate-700 dark:text-slate-200">{characterCount}</span></span>
                     </div>
-                    <div><span>{isLocal ? 'Local storage · AI uses the configured desktop model' : 'StoryArk Sprint 5'}</span></div>
+                    <div className="shrink-0">Typing: <span className="font-mono text-slate-700 dark:text-slate-200">{typing.speed}</span> chars/min</div>
                 </footer>
             </main>
 
@@ -637,8 +722,9 @@ function LocalEditorRoute({ bookId }: { bookId: string }) {
     </>;
     const pending = query.isPending || query.isFetching || charactersQuery.isPending;
     const error = query.error ?? charactersQuery.error;
+    if (pending && !error) return <PageLoading identity={bookId}>Loading local book...</PageLoading>;
     return <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
-        {pending ? <p role="status">Loading local book...</p> : <>
+        {pending && !error ? <p role="status">Loading local book...</p> : <>
             <p role="alert">{error?.message ?? 'Book not found.'}</p>
             <button onClick={() => { void query.refetch(); void charactersQuery.refetch(); }}>Retry</button>
         </>}

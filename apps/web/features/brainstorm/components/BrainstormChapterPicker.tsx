@@ -35,7 +35,11 @@ export function BrainstormChapterPicker({ chapterOptions, selectedChapterIds, to
                                 <span className="min-w-0">
                                     <span className="block truncate text-sm font-bold text-slate-900 dark:text-white">{chapter.title}</span>
                                     <span className="block truncate text-xs text-slate-400">{chapter.volumeTitle}</span>
-                                    {missingSummary && <span className="mt-1 block text-[11px] text-amber-600 dark:text-amber-300">Missing summary</span>}
+                                    {missingSummary && (
+                                        <span className="mt-1 block text-[11px] text-amber-600 dark:text-amber-300">
+                                            {chapter.summaryStatus === 'stale' ? 'Summary out of date' : 'Missing summary'}
+                                        </span>
+                                    )}
                                 </span>
                             </div>
                         </button>

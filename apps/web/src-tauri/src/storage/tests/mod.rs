@@ -16,6 +16,11 @@ mod migrations;
 mod mutations;
 mod planning;
 mod preferences;
+mod retrieval;
+mod retrieval_p1e;
+mod retrieval_p1s3;
+mod retrieval_r0;
+mod retrieval_r4;
 mod worker;
 
 struct TempDirectory(PathBuf);
@@ -77,3 +82,5 @@ fn fixture(db: &mut Database) -> SaveChapter {
 }
 
 mod ai_settings;
+mod audit;
+mod retrieval_r2;

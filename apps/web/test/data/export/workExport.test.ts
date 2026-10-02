@@ -158,7 +158,16 @@ function exportSnapshot(): LocalWorkExportSnapshot {
                 configId: '00000000-0000-4000-8000-000000000060',
                 modelId: 'model-1',
                 generatedAt: 1_700_000_000_100,
-                promptVersion: 'brainstorm-v1',
+                promptVersion: 'brainstorm-v2',
+                includesPlanning: true,
+                retrieval: {
+                    retrievalVersion: 'retrieval-v2',
+                    requestedAt: 1_700_000_000_050,
+                    sourceVersions: [{ sourceId: `${bookId}:character:${characterId}`, chapterId: null, sourceVersion: 2, indexVersion: 3 }],
+                    includedHitIds: ['hit-1'],
+                    indexVersion: 3,
+                    embeddingFingerprint: 'local-e5-fingerprint',
+                },
                 source: {
                     bookId,
                     workspaceDatabaseVersion: 1,
@@ -183,6 +192,16 @@ describe('whole-work export construction', () => {
         expect(value.foreshadowings[0]).toMatchObject({ id: 'legacy-note', chapterId, unknownField: { preserved: true } });
         expect(value.chapters[0].body).toMatchObject({ format: 'tiptap-json', content: { type: 'doc' } });
         expect(value.brainstormWorkspaces[0].generationMetadata?.source.selectedChapters[0]).toEqual({ chapterId, databaseVersion: 3 });
+        expect(value.brainstormWorkspaces[0].generationMetadata).toMatchObject({
+            includesPlanning: true,
+            retrieval: {
+                retrievalVersion: 'retrieval-v2',
+                sourceVersions: [{ sourceVersion: 2, indexVersion: 3 }],
+                includedHitIds: ['hit-1'],
+                indexVersion: 3,
+                embeddingFingerprint: 'local-e5-fingerprint',
+            },
+        });
         expect(summarizeStoryArkWorkExport(value).counts).toMatchObject({
             volumes: 1,
             chapters: 1,
@@ -217,6 +236,145 @@ describe('whole-work export construction', () => {
             originalContent: '<p>Legacy</p>',
             originalFormat: 'legacy-html',
         });
+    });
+
+    it('preserves summary provenance, source snapshot, and retrieval trace through JSON round-trip', () => {
+        const snapshot = exportSnapshot();
+        const fingerprint = '0123456789abcdef';
+        snapshot.planning.chapterSummaries[0] = {
+            chapterId,
+            summary: 'Adopted summary',
+            sourceChapterVersion: 3,
+            updatedAt: 1_700_000_000_100,
+            provenance: 'ai-adopted',
+            sourceSnapshot: {
+                chapterId,
+                chapterDatabaseVersion: 3,
+                chapterTitle: 'Chapter',
+                contentFormat: 'tiptap-json',
+                contentVersion: 1,
+                fingerprintAlgorithm: 'fnv1a64-utf16-v1',
+                bodyFingerprint: fingerprint,
+                structuredFingerprint: 'fedcba9876543210',
+                blockFingerprints: ['fedcba9876543210', 'fedcba9876543210'],
+                mentionedCharacterIds: [characterId],
+                foreshadowingIds: ['legacy-note'],
+                foreshadowingNoteFingerprints: [{ noteId: 'legacy-note', fingerprint: 'fedcba9876543210' }],
+                capturedAt: 1_700_000_000_000,
+            },
+            freshnessAcknowledgement: {
+                acknowledgedSourceSnapshot: {
+                    chapterId,
+                    chapterDatabaseVersion: 3,
+                    chapterTitle: 'Chapter',
+                    contentFormat: 'tiptap-json',
+                    contentVersion: 1,
+                    fingerprintAlgorithm: 'fnv1a64-utf16-v1',
+                    bodyFingerprint: fingerprint,
+                    structuredFingerprint: 'fedcba9876543210',
+                    blockFingerprints: ['fedcba9876543210', 'fedcba9876543210'],
+                    mentionedCharacterIds: [characterId],
+                    foreshadowingIds: ['legacy-note'],
+                    foreshadowingNoteFingerprints: [{ noteId: 'legacy-note', fingerprint: 'fedcba9876543210' }],
+                    capturedAt: 1_700_000_000_050,
+                },
+                allowedSourceVersions: [1],
+                acknowledgedAt: 1_700_000_000_050,
+            },
+            generationMetadata: {
+                providerId: 'provider-a',
+                configId: '00000000-0000-4000-8000-000000000060',
+                protocol: 'openai-compatible',
+                modelId: 'model-a',
+                generatedAt: 1_700_000_000_100,
+                promptVersion: 'chapter-summary-v1',
+                source: {
+                    bookId,
+                    chapterId,
+                    chapterDatabaseVersion: 3,
+                    sourceBodyFingerprint: fingerprint,
+                    planningDatabaseVersion: 1,
+                    allowedSources: [{
+                        sourceId: `${bookId}:character:${characterId}`,
+                        entityId: characterId,
+                        sourceKind: 'character',
+                        sourceVersion: 1,
+                        indexVersion: null,
+                    }],
+                    retrievalTrace: {
+                        searchId: 'search-1',
+                        retrievalVersion: 'p1-r1-v1',
+                        task: 'chapter_summary',
+                        requestedAt: 1_700_000_000_050,
+                        scope: {
+                            bookId,
+                            allowedSourceKinds: ['character'],
+                            allowedChapterIds: [chapterId],
+                            beforeChapterOrder: null,
+                            beforeAnchor: null,
+                            includeFuturePlan: false,
+                            includeGenerated: false,
+                            includeStale: false,
+                            timeRange: null,
+                        },
+                        excludedHitIds: [],
+                        sourceVersions: [{ sourceId: `${bookId}:character:${characterId}`, chapterId: null, sourceVersion: 1, indexVersion: 1 }],
+                        includedHitIds: ['hit-1'],
+                        omittedHitIds: [],
+                        budget: { charBudget: 6000, tokenBudget: 1500 },
+                        indexVersion: 1,
+                        embeddingFingerprint: 'local-e5-fingerprint',
+                    },
+                    includesFuturePlan: false,
+                },
+            },
+        };
+
+        const exported = buildStoryArkWorkExport(snapshot, {
+            exportId: '00000000-0000-4000-8000-000000000001',
+            exportedAt: '2026-09-17T00:00:00.000Z',
+            producer: { appVersion: 'test', platform: 'windows' },
+        });
+        const copiedSnapshot = exported.planning.chapterSummaries[0].sourceSnapshot!;
+        copiedSnapshot.copyReferences = {
+            characters: [{ id: characterId, fingerprintId: '00000000-0000-4000-8000-000000000099' }],
+            foreshadowings: [{ id: 'legacy-note', fingerprintId: 'original-note' }],
+        };
+        copiedSnapshot.copySourceVersions = [{ sourceId: `${bookId}:character:${characterId}`, version: 1, matchesBaseline: true }];
+        expect(validateExport(exported)).toBe(true);
+        const parsed = parseStoryArkWorkExport(serializeStoryArkWorkExport(exported));
+        expect(parsed.valid).toBe(true);
+        if (!parsed.valid) throw new Error('The generated work export did not round-trip.');
+        expect(parsed.value.planning.chapterSummaries[0].sourceSnapshot?.copyReferences).toEqual(copiedSnapshot.copyReferences);
+        expect(parsed.value.planning.chapterSummaries[0].sourceSnapshot?.copySourceVersions).toEqual(copiedSnapshot.copySourceVersions);
+        expect(parsed.value.planning.chapterSummaries[0]).toMatchObject({
+            provenance: 'ai-adopted',
+            sourceSnapshot: {
+                bodyFingerprint: fingerprint,
+                chapterDatabaseVersion: 3,
+                blockFingerprints: ['fedcba9876543210', 'fedcba9876543210'],
+            },
+            freshnessAcknowledgement: {
+                acknowledgedSourceSnapshot: { chapterId, chapterDatabaseVersion: 3, capturedAt: 1_700_000_000_050 },
+                allowedSourceVersions: [1],
+            },
+            generationMetadata: {
+                source: {
+                    allowedSources: [{ sourceVersion: 1 }],
+                    retrievalTrace: { includedHitIds: ['hit-1'] },
+                    includesFuturePlan: false,
+                },
+            },
+        });
+
+        const remappedToNewDatabase = structuredClone(exported);
+        remappedToNewDatabase.chapters[0].databaseVersion = 1;
+        remappedToNewDatabase.planning.chapterSummaries[0].sourceChapterVersion = 1;
+        remappedToNewDatabase.brainstormWorkspaces[0].generationMetadata!.source.selectedChapters[0].databaseVersion = 1;
+        expect(validateExport(remappedToNewDatabase)).toBe(true);
+
+        exported.planning.chapterSummaries[0].generationMetadata!.source.includesFuturePlan = true;
+        expect(parseStoryArkWorkExport(JSON.stringify(exported)).valid).toBe(false);
     });
 
     it('exports pending content with unknown marks and attributes for safe preservation', () => {

@@ -3,7 +3,7 @@ import { call } from './repository';
 export type AiProtocol = 'openai-responses' | 'openai-chat-completions' | 'anthropic-messages';
 export interface AiConfig {
     name: string; protocol: AiProtocol; baseUrl: string; modelId: string;
-    timeoutMs: number; maxOutputTokens: number;
+    timeoutMs: number; maxOutputTokens: number | null;
 }
 export interface AiConfigRecord {
     id: string; config: AiConfig; configVersion: number;
@@ -34,7 +34,7 @@ export const aiSettingsRepository = {
 export function aiErrorMessage(error: unknown): string {
     const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
     const messages: Record<string, string> = {
-        VALIDATION_ERROR: 'Check the fields, limits, and service URL.',
+        VALIDATION_ERROR: 'Check the model, service URL, request timeout, and provider output cap. Anthropic requires an output cap; it must stay within the model maximum.',
         INVALID_INPUT: 'The configuration identity is invalid. Reload the list.',
         VERSION_CONFLICT: 'This configuration changed elsewhere. Your edits are kept. Cancel to reload before editing again.',
         CREDENTIAL_REPLACEMENT_REQUIRED: 'Enter a key again when changing the service address or protocol.',
@@ -42,8 +42,8 @@ export function aiErrorMessage(error: unknown): string {
         AUTHENTICATION_FAILED: 'The service rejected authentication. Check the saved key and account access.',
         MODEL_NOT_FOUND: 'The model or API endpoint was not found.',
         RATE_LIMITED: 'The service rate limit was reached. Try again later.',
-        TIMEOUT: 'The connection test timed out.',
-        TRUNCATED: 'The response reached the output limit. Connection success was not confirmed.',
+        TIMEOUT: 'The AI request timed out. Check the service or increase the request timeout.',
+        TRUNCATED: 'The response reached the output limit before completion. Set or increase the provider output cap within the model maximum, or request a shorter result.',
         PROTOCOL_ERROR: 'The service did not return a valid completed text response for this protocol.',
         UNAVAILABLE: 'The service could not be reached.',
         NOT_FOUND: 'This configuration no longer exists. Cancel to reload the list.',

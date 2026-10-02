@@ -4,6 +4,10 @@ import { Button } from '../../../components/ui/Button';
 import { ForeshadowingNote, PlotSetting } from '../../../types';
 
 interface WritingContextPanelProps {
+    sidebarWidth?: number;
+    isResizing?: boolean;
+    isOverlay?: boolean;
+    resizeHandle?: React.ReactNode;
     isOpen: boolean;
     foreshadowings: ForeshadowingNote[];
     excerptMap: Map<string, string>;
@@ -24,6 +28,10 @@ interface WritingContextPanelProps {
  * mutation; this component only renders and forwards user intent.
  */
 export function WritingContextPanel({
+    sidebarWidth,
+    isResizing = false,
+    isOverlay = false,
+    resizeHandle,
     isOpen,
     foreshadowings,
     excerptMap,
@@ -41,13 +49,16 @@ export function WritingContextPanel({
 
     return (
         <aside
-            className={`flex-shrink-0 overflow-hidden bg-white dark:bg-slate-950 shadow-xl transition-all duration-300 ease-in-out ${
+            style={sidebarWidth === undefined ? undefined : { width: isOpen ? sidebarWidth : 0 }}
+            inert={!isOpen}
+            className={`min-w-0 flex-shrink-0 overflow-hidden bg-white dark:bg-slate-950 shadow-xl ${isResizing ? 'transition-none' : 'transition-[width,opacity,background-color,border-color] motion-reduce:transition-none'} duration-300 ease-in-out ${isOverlay ? 'absolute inset-y-0 right-0 z-30' : 'relative'} ${
                 isOpen
-                    ? 'w-80 xl:w-96 opacity-100 border-l border-slate-200 dark:border-slate-800'
+                    ? 'w-72 opacity-100 border-l border-slate-200 dark:border-slate-800'
                     : 'w-0 opacity-0 border-l-0 pointer-events-none'
             }`}
         >
-            <div className="h-full w-80 xl:w-96 flex flex-col">
+            {isOpen && resizeHandle}
+            <div style={sidebarWidth === undefined ? undefined : { width: sidebarWidth }} className={`h-full flex flex-col ${sidebarWidth === undefined ? 'w-72' : ''}`}>
                 <section className="flex-1 min-h-0 flex flex-col border-b border-slate-200 dark:border-slate-800">
                     <div className="h-14 px-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
                         <div className="min-w-0">

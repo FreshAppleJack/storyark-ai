@@ -3,8 +3,9 @@ import { BrainCircuit, CheckCircle2, Loader2, Sparkles, Wand2 } from 'lucide-rea
 import { Button } from '../../../components/ui/Button';
 import type { BrainstormCandidate } from '../brainstormCandidate';
 import type { BrainstormEditor } from '../hooks/useBrainstormWorkspace';
-type Props = Pick<BrainstormEditor, 'isGenerating' | 'isSaving' | 'handleGenerate' | 'regenerate' | 'stopGeneration' | 'discardCandidate' | 'generationAvailable' | 'selectedChapterIds' | 'missingSummaryChapters' | 'isSnapshotStale' | 'errorMessage' | 'visibleOptions' | 'hasSelectedOption' | 'workspace' | 'chooseOption' | 'showAllOptions' | 'updateFinalContent' | 'candidate' | 'isReadOnly'>;
-export function BrainstormResults({ isGenerating, isSaving, handleGenerate, regenerate, stopGeneration, discardCandidate, generationAvailable, selectedChapterIds, missingSummaryChapters, isSnapshotStale, errorMessage, visibleOptions, hasSelectedOption, workspace, chooseOption, showAllOptions, updateFinalContent, candidate, isReadOnly }: Props) {
+import { RetrievalContextPanel } from '../../retrieval/components/RetrievalContextPanel';
+type Props = Pick<BrainstormEditor, 'isGenerating' | 'isSaving' | 'handleGenerate' | 'regenerate' | 'stopGeneration' | 'discardCandidate' | 'generationAvailable' | 'selectedChapterIds' | 'missingSummaryChapters' | 'isSnapshotStale' | 'errorMessage' | 'visibleOptions' | 'hasSelectedOption' | 'workspace' | 'chooseOption' | 'showAllOptions' | 'updateFinalContent' | 'candidate' | 'isReadOnly' | 'toggleRetrievalHit'>;
+export function BrainstormResults({ isGenerating, isSaving, handleGenerate, regenerate, stopGeneration, discardCandidate, generationAvailable, selectedChapterIds, missingSummaryChapters, isSnapshotStale, errorMessage, visibleOptions, hasSelectedOption, workspace, chooseOption, showAllOptions, updateFinalContent, candidate, isReadOnly, toggleRetrievalHit }: Props) {
     const hasCandidate = candidate.status !== 'idle';
     const candidateAction = hasCandidate ? regenerate : handleGenerate;
     return (
@@ -35,15 +36,15 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, rege
                     )}
                     {isSnapshotStale && (
                         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
-                            The saved context snapshot was built from older chapter or summary versions. Save again to refresh it.
+                            Some chapters or summaries have changed. Review your brainstorm, then choose Save Result to update it.
                         </div>
                     )}
                     {missingSummaryChapters.length > 0 && (
                         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
-                            Some selected chapters do not have plot summaries yet. Add chapter summaries first, otherwise the brainstorm may be less relevant.
+                            Some chapter summaries are missing or out of date. The AI will use parts of those chapters instead. Update their summaries for a fuller picture.
                         </div>
                     )}
-                    {errorMessage && (
+                    {errorMessage && (!hasCandidate || candidate.status === 'invalid' || errorMessage !== candidate.errorMessage) && (
                         <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900/70 dark:bg-rose-950/30 dark:text-rose-200">
                             {errorMessage}
                         </div>
@@ -63,16 +64,17 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, rege
                         stopGeneration={stopGeneration}
                         regenerate={regenerate}
                         discardCandidate={discardCandidate}
+                        toggleRetrievalHit={toggleRetrievalHit}
                     />
                 )}
 
-                {visibleOptions.length === 0 ? (
+                {visibleOptions.length === 0 && !workspace.finalContent.trim() ? (
                     <section className="rounded-xl border border-dashed border-slate-300 bg-white py-16 text-center dark:border-slate-700 dark:bg-slate-900">
                         <BrainCircuit size={34} className="mx-auto mb-4 text-slate-300 dark:text-slate-600" />
                         <h3 className="text-lg font-semibold text-slate-900 dark:text-white">No brainstorm yet</h3>
                         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Select chapters, then generate three possible next directions.</p>
                     </section>
-                ) : (
+                ) : visibleOptions.length > 0 ? (
                     <div className="grid grid-cols-1 gap-4">
                         {visibleOptions.map(option => (
                             <article key={option.id} className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -103,7 +105,7 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, rege
                             </article>
                         ))}
                     </div>
-                )}
+                ) : null}
 
                 <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white">Editable Result</h3>
@@ -131,6 +133,7 @@ function CandidatePanel({
     stopGeneration,
     regenerate,
     discardCandidate,
+    toggleRetrievalHit,
 }: {
     candidate: BrainstormCandidate;
     isGenerating: boolean;
@@ -138,18 +141,25 @@ function CandidatePanel({
     stopGeneration: () => void;
     regenerate: () => Promise<void>;
     discardCandidate: () => void;
+    toggleRetrievalHit: (hitId: string) => void;
 }) {
     const status = candidate.status === 'starting'
-        ? 'Preparing the frozen chapter, planning, and relationship context...'
+        ? 'Preparing your chapters, planning, and relationships...'
         : candidate.status === 'streaming'
-            ? 'Streaming into a temporary candidate. The saved workspace is unchanged.'
+            ? 'Generating three directions. Existing options and manual edits are unchanged.'
             : candidate.status === 'completed'
                 ? 'Candidate ready. Choose a direction to add it to the editable workspace.'
                 : candidate.status === 'adopted'
-                    ? 'Candidate directions were added to the editable workspace. Save to persist them.'
+                    ? 'These directions were added to your draft. Choose Save Result to save them.'
                     : candidate.status === 'invalid'
                         ? 'The model response was kept for review, but it is not a valid brainstorm candidate.'
-                        : candidate.errorMessage || 'The candidate was not adopted.';
+                        : candidate.status === 'failed'
+                            ? 'Generation failed. Existing options and manual edits are unchanged.'
+                            : candidate.status === 'cancelled'
+                                ? 'Generation stopped. Existing options and manual edits are unchanged.'
+                                : candidate.status === 'stale'
+                                    ? 'The candidate needs review because its source context changed.'
+                                    : candidate.errorMessage || 'The candidate was not adopted.';
     return (
         <section className="rounded-xl border border-brand-200 bg-brand-50/60 p-5 shadow-sm dark:border-brand-900/70 dark:bg-brand-950/20">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -169,9 +179,38 @@ function CandidatePanel({
                     <Button variant="secondary" size="sm" onClick={discardCandidate} disabled={isGenerating || isSaving}>Discard candidate</Button>
                 </div>
             </div>
-            {candidate.rawText && (
-                <pre className="mt-4 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-brand-100 bg-white px-4 py-3 text-xs leading-5 text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200">{candidate.rawText}</pre>
+            {candidate.rawText && ['invalid', 'failed', 'cancelled', 'stale'].includes(candidate.status) && (
+                <details className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs dark:border-amber-900/70 dark:bg-amber-950/30">
+                    <summary className="cursor-pointer font-semibold text-amber-800 dark:text-amber-200">View AI response</summary>
+                    <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-amber-200 bg-white px-3 py-2 leading-5 text-slate-700 dark:border-amber-900/70 dark:bg-slate-950 dark:text-slate-200">{candidate.rawText}</pre>
+                </details>
             )}
+            {candidate.lastAttempt && (
+                <div role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-100">
+                    <div className="font-semibold">Latest generation attempt was not adopted</div>
+                    <p className="mt-1">{candidate.lastAttempt.errorMessage}</p>
+                    {candidate.lastAttempt.rawText && (
+                        <details className="mt-2">
+                            <summary className="cursor-pointer font-semibold">View AI response</summary>
+                            <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-amber-200 bg-white px-4 py-3 text-xs leading-5 text-slate-700 dark:border-amber-900/70 dark:bg-slate-950 dark:text-slate-200">{candidate.lastAttempt.rawText}</pre>
+                        </details>
+                    )}
+                    <RetrievalContextPanel
+                        context={candidate.lastAttempt.retrievalContext}
+                        notice={candidate.lastAttempt.retrievalNotice}
+                        excludedHitIds={candidate.lastAttempt.retrievalContext?.excludedHitIds ?? []}
+                        onToggleHit={toggleRetrievalHit}
+                        disabled={isGenerating || isSaving}
+                    />
+                </div>
+            )}
+            <RetrievalContextPanel
+                context={candidate.retrievalContext}
+                notice={candidate.retrievalNotice}
+                excludedHitIds={candidate.retrievalContext?.excludedHitIds ?? []}
+                onToggleHit={toggleRetrievalHit}
+                disabled={isGenerating || isSaving}
+            />
         </section>
     );
 }

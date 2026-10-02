@@ -1,4 +1,5 @@
 import type { CharacterRole, HandleConfig } from '../../../types';
+import type { ChapterSummarySourceSnapshot } from '../../../domain/chapterSummarySource';
 import {
     STORYARK_EXPORT_CONTENT_VERSION,
     STORYARK_EXPORT_SCHEMA_VERSION,
@@ -156,6 +157,100 @@ export interface ExchangeChapterSummary {
     summary: string;
     sourceChapterVersion?: number;
     updatedAt: Timestamp;
+    provenance?: 'author' | 'ai-adopted';
+    sourceSnapshot?: ExchangeChapterSummarySourceSnapshot;
+    freshnessAcknowledgement?: ExchangeChapterSummaryFreshnessAcknowledgement;
+    generationMetadata?: ExchangeChapterSummaryGenerationMetadata;
+    extensions?: ExchangeExtensions;
+}
+
+export interface ExchangeChapterSummarySourceSnapshot {
+    chapterId: UUID;
+    chapterDatabaseVersion: number | null;
+    chapterTitle: string;
+    contentFormat: ExchangeContentFormat;
+    contentVersion: number | null;
+    fingerprintAlgorithm: 'fnv1a64-utf16-v1';
+    bodyFingerprint: string;
+    structuredFingerprint: string;
+    blockFingerprints: string[];
+    mentionedCharacterIds: UUID[];
+    foreshadowingIds: string[];
+    foreshadowingNoteFingerprints: Array<{ noteId: string; fingerprint: string }>;
+    capturedAt: Timestamp;
+    copyReferences?: ChapterSummarySourceSnapshot['copyReferences'];
+    copySourceVersions?: ChapterSummarySourceSnapshot['copySourceVersions'];
+    extensions?: ExchangeExtensions;
+}
+
+export interface ExchangeChapterSummaryFreshnessAcknowledgement {
+    acknowledgedSourceSnapshot: ExchangeChapterSummarySourceSnapshot;
+    allowedSourceVersions: Array<number | null>;
+    acknowledgedAt: Timestamp;
+}
+
+export type ExchangeChapterSummarySourceKind = 'planning' | 'confirmed_setting' | 'character' | 'relationship' | 'foreshadowing_note';
+
+export interface ExchangeChapterSummaryRetrievalScope {
+    bookId: UUID;
+    allowedSourceKinds: Array<Extract<ExchangeChapterSummarySourceKind, 'confirmed_setting' | 'character'>>;
+    allowedChapterIds: UUID[];
+    beforeChapterOrder: number | null;
+    beforeAnchor: { chapterId: UUID; paragraphOrdinal?: number | null; textOffset?: number | null } | null;
+    includeFuturePlan: false;
+    includeGenerated: false;
+    includeStale: false;
+    timeRange: { updatedAfter?: Timestamp | null; updatedBefore?: Timestamp | null } | null;
+}
+
+export interface ExchangeChapterSummaryRetrievalBudget {
+    charBudget: number;
+    tokenBudget: number | null;
+}
+
+export interface ExchangeChapterSummaryGenerationSource {
+    bookId: UUID;
+    chapterId: UUID;
+    chapterDatabaseVersion: number;
+    sourceBodyFingerprint: string;
+    planningDatabaseVersion: number | null;
+    allowedSources: Array<{
+        sourceId: string;
+        entityId: string;
+        sourceKind: ExchangeChapterSummarySourceKind;
+        sourceVersion: number;
+        indexVersion: number | null;
+    }>;
+    retrievalTrace: {
+        searchId: string;
+        retrievalVersion: string;
+        task: 'chapter_summary';
+        requestedAt: Timestamp;
+        scope: ExchangeChapterSummaryRetrievalScope;
+        excludedHitIds: string[];
+        sourceVersions: Array<{
+            sourceId: string;
+            chapterId: UUID | null;
+            sourceVersion: number;
+            indexVersion: number;
+        }>;
+        includedHitIds: string[];
+        omittedHitIds: string[];
+        budget: ExchangeChapterSummaryRetrievalBudget;
+        indexVersion: number | null;
+        embeddingFingerprint: string | null;
+    } | null;
+    includesFuturePlan: false;
+}
+
+export interface ExchangeChapterSummaryGenerationMetadata {
+    providerId: string;
+    configId: UUID;
+    protocol: string;
+    modelId: string;
+    generatedAt: Timestamp;
+    promptVersion: string;
+    source: ExchangeChapterSummaryGenerationSource;
     extensions?: ExchangeExtensions;
 }
 
@@ -195,7 +290,25 @@ export interface ExchangeBrainstormGenerationMetadata {
     modelId: string;
     generatedAt: Timestamp;
     promptVersion: string;
+    includesPlanning?: boolean;
+    retrieval?: ExchangeBrainstormRetrievalMetadata | null;
     source: ExchangeBrainstormGenerationSource;
+    extensions?: ExchangeExtensions;
+}
+
+export interface ExchangeBrainstormRetrievalMetadata {
+    retrievalVersion: string;
+    requestedAt: Timestamp;
+    sourceVersions: Array<{
+        sourceId: string;
+        chapterId: UUID | null;
+        sourceVersion: number;
+        indexVersion: number;
+        extensions?: ExchangeExtensions;
+    }>;
+    includedHitIds: string[];
+    indexVersion: number | null;
+    embeddingFingerprint: string | null;
     extensions?: ExchangeExtensions;
 }
 

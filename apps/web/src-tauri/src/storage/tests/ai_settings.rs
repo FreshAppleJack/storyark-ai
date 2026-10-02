@@ -54,13 +54,37 @@ fn input(id: Option<String>, version: u64, remember: bool) -> SaveSettings {
             base_url: "https://example.com/v1".into(),
             model_id: "fixture".into(),
             timeout_ms: 30000,
-            max_output_tokens: 128,
+            max_output_tokens: Some(128),
         },
         credential: CredentialChange::Replace {
             key: "synthetic-test-value".into(),
             remember,
         },
     }
+}
+
+#[test]
+fn optional_output_cap_survives_save_reload_and_restart() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let mut config = input(None, 0, false);
+    config.config.timeout_ms = 300_000;
+    config.config.max_output_tokens = None;
+    let ack = db.ai_save(config).unwrap();
+    let id = ack["id"].as_str().unwrap().to_owned();
+    assert!(db.ai_list().unwrap()["configs"][0]["config"]["maxOutputTokens"].is_null());
+    drop(db);
+    let mut db = Database::open(&temp.0).unwrap();
+    let list = db.ai_list().unwrap();
+    assert!(list["configs"][0]["config"]["maxOutputTokens"].is_null());
+    assert_eq!(list["configs"][0]["config"]["timeoutMs"], 300_000);
+    let mut update = input(Some(id), 1, false);
+    update.config.max_output_tokens = Some(4096);
+    db.ai_save(update).unwrap();
+    assert_eq!(
+        db.ai_list().unwrap()["configs"][0]["config"]["maxOutputTokens"],
+        4096
+    );
 }
 #[test]
 fn configuration_crud_versions_secrets_and_restart() {

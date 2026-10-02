@@ -82,10 +82,12 @@ export interface SaveChapterRequest {
 }
 export type StorageResult<T> =
     | { ok: true; value: T }
-    | { ok: false; error: { code: 'NOT_FOUND' | 'OWNERSHIP_MISMATCH' | 'VERSION_CONFLICT' | 'READ_ONLY' | 'INVALID_INPUT' | 'CONTENT_INCOMPATIBLE' | 'STORAGE_FAILURE' | 'IMPORT_INVALID' | 'IMPORT_UNSUPPORTED_VERSION' | 'IMPORT_CONFLICT' | 'BACKUP_FAILED' | 'UNSUPPORTED_ASSET' | 'CANCELLED'; message: string; currentDatabaseVersion?: DatabaseVersion } };
+    | { ok: false; error: { code: 'NOT_FOUND' | 'OWNERSHIP_MISMATCH' | 'VERSION_CONFLICT' | 'READ_ONLY' | 'INVALID_INPUT' | 'CONTENT_INCOMPATIBLE' | 'STORAGE_FAILURE' | 'IMPORT_INVALID' | 'IMPORT_UNSUPPORTED_VERSION' | 'IMPORT_CONFLICT' | 'BACKUP_FAILED' | 'UNSUPPORTED_ASSET' | 'CANCELLED' | 'INDEX_STALE' | 'PROVIDER_UNAVAILABLE'; message: string; currentDatabaseVersion?: DatabaseVersion } };
 export interface LocalStorageCommands {
     listBooks(): Promise<StorageResult<LocalBook[]>>;
     readBook(input: { bookId: UUID }): Promise<StorageResult<{ book: LocalBook; volumes: LocalVolume[]; chapters: LocalChapter[] }>>;
+    readDirectory(input: { bookId: UUID }): Promise<StorageResult<{ book: LocalBook; volumes: LocalVolume[]; chapters: LocalChapter[]; bodyMode: 'directory' }>>;
+    readChapter(input: { bookId: UUID; chapterId: UUID }): Promise<StorageResult<LocalChapter>>;
     createBook(input: { title: string; author: string; coverColor: string }): Promise<StorageResult<LocalBook>>;
     createVolume(input: { bookId: UUID; title: string; expectedBookVersion: DatabaseVersion }): Promise<StorageResult<{ volume: LocalVolume; book: LocalBook }>>;
     createChapter(input: { bookId: UUID; volumeId: UUID; title: string; expectedVolumeVersion: DatabaseVersion }): Promise<StorageResult<{ chapter: LocalChapter; volume: LocalVolume }>>;
@@ -95,7 +97,7 @@ export interface LocalStorageCommands {
     setReadOnly(input: ExpectedTarget & { isReadOnly: boolean }): Promise<StorageResult<LocalRecord>>;
     reorder(input: {
         parent: null | ExpectedTarget;
-        items: Array<ExpectedTarget>;
+        items: Array<ExpectedTarget & { expectedPosition: number }>;
     }): Promise<StorageResult<LocalRecord[]>>;
     delete(input: ExpectedTarget & { expectedParentVersion?: DatabaseVersion }): Promise<StorageResult<{ deletedId: UUID; parent: LocalRecord | null }>>;
 }

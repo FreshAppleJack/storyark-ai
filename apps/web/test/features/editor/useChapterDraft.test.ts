@@ -25,6 +25,13 @@ function renderDraft(chapterId = 'c1', chapter: Chapter | undefined = makeChapte
 }
 
 describe('useChapterDraft', () => {
+    it.each(['', ' \t\n '])('normalizes a blank title in snapshots while preserving the editable draft (%j)', title => {
+        const { result } = renderDraft();
+        act(() => result.current.setTitle(title));
+        expect(result.current.title).toBe(title);
+        expect(result.current.getSnapshot().title).toBe('Untitled Chapter');
+    });
+
     it('captures book and volume identity and resets across books with matching chapter IDs', () => {
         const chapter = makeChapter();
         const { result, rerender } = renderHook(props => useChapterDraft(props), {

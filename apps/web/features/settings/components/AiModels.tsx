@@ -11,25 +11,29 @@ const credentialLabels = { session: 'This session only', configured: 'Configured
 const actionButtonClass = 'h-9 w-full whitespace-nowrap';
 
 interface NumericSettingInputProps {
-    value: number;
+    value: number | null;
     min: number;
     max: number;
-    onChange: (value: number) => void;
+    onChange: (value: number | null) => void;
+    allowEmpty?: boolean;
+    required?: boolean;
+    placeholder?: string;
 }
 
-function NumericSettingInput({ value, min, max, onChange }: NumericSettingInputProps) {
-    const [draft, setDraft] = useState(() => String(value));
+function NumericSettingInput({ value, min, max, onChange, allowEmpty = false, required = true, placeholder }: NumericSettingInputProps) {
+    const [draft, setDraft] = useState(() => value === null ? '' : String(value));
 
     const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
         const next = event.currentTarget.value.replace(/[^0-9]/g, '');
         const normalized = next.replace(/^0+(?=\d)/, '');
         setDraft(normalized);
         if (normalized) onChange(Number(normalized));
+        else if (allowEmpty) onChange(null);
     };
 
     const restoreValue = () => {
         if (!draft) {
-            setDraft(String(value));
+            if (!allowEmpty) setDraft(value === null ? '' : String(value));
             return;
         }
         const parsed = Number(draft);
@@ -45,7 +49,8 @@ function NumericSettingInput({ value, min, max, onChange }: NumericSettingInputP
         type="text"
         inputMode="numeric"
         pattern="[0-9]*"
-        required
+        required={required}
+        placeholder={placeholder}
         maxLength={String(max).length}
         className={inputClass}
         value={draft}
@@ -92,11 +97,12 @@ export function AiModels() {
                     <label className="block text-sm">API key<input type="password" autoComplete="off" spellCheck={false} maxLength={8192} className={inputClass} value={s.key} onChange={e => s.changeKey(e.target.value)} placeholder={s.selected ? 'Leave blank to keep the existing credential' : 'Enter your API key'} required={!s.selected} /></label>
                     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={s.remember} disabled={!s.key} onChange={e => s.changeRemember(e.target.checked)} />Remember replacement key on this device</label>
                     <p className="text-xs text-slate-500 dark:text-slate-400">{s.remember ? 'Uses Windows Credential Manager or macOS Keychain. Keys are not included in exports or database backups.' : 'Session keys must be entered again after restarting. Enter a new key to change its storage mode.'}</p>
-                    <details><summary className="cursor-pointer text-sm">Advanced limits</summary>
+                    <details open={s.form.protocol === 'anthropic-messages' ? true : undefined}><summary className="cursor-pointer text-sm">Advanced limits</summary>
                         <div className="mt-3 space-y-3">
-                            <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">These are technical provider safeguards. Set the author-facing AI Continue length in Writing Preferences. New configurations use a 60,000 ms timeout and a 100,000-token cap.</p>
-                            <label className="block text-sm">Request timeout (milliseconds)<NumericSettingInput value={s.form.timeoutMs} min={1000} max={600000} onChange={value => s.change({ timeoutMs: value })} /></label>
-                            <label className="block text-sm">Provider output cap (tokens)<NumericSettingInput value={s.form.maxOutputTokens} min={1} max={1000000} onChange={value => s.change({ maxOutputTokens: value })} /></label>
+                            <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">New configurations use a 300,000 ms (5 minute) request timeout. This is the total time allowed for one request, including streamed output. Set AI Continue writing length in Writing Preferences.</p>
+                            <label className="block text-sm">Request timeout (milliseconds)<NumericSettingInput value={s.form.timeoutMs} min={1000} max={600000} onChange={value => { if (value !== null) s.change({ timeoutMs: value }); }} /></label>
+                            <label className="block text-sm">Provider output cap (tokens)<NumericSettingInput value={s.form.maxOutputTokens} min={1} max={1000000} allowEmpty required={s.form.protocol === 'anthropic-messages'} placeholder={s.form.protocol === 'anthropic-messages' ? 'Required: check your model output limit' : 'Leave blank to use the service default'} onChange={value => s.change({ maxOutputTokens: value })} /></label>
+                            <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">{s.form.protocol === 'anthropic-messages' ? 'Anthropic requires an explicit output cap. Choose a value supported by your model.' : 'Optional for OpenAI and compatible services. Leave blank to omit the output cap from requests and use the service default.'} This caps generated tokens, which may include reasoning. It does not increase input capacity; model output and context limits still apply.</p>
                         </div>
                     </details>
                     <div className="flex gap-2"><Button type="submit">Save configuration</Button><Button type="button" variant="secondary" onClick={s.cancel}>Cancel</Button></div>

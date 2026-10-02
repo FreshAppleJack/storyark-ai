@@ -57,6 +57,10 @@ impl Database {
         if changed != 1 {
             return Err(StorageError::new("VERSION_CONFLICT", "Record changed"));
         }
+        if target.table == "chapters" {
+            let book_id = target.row["bookId"].as_str().ok_or_else(invalid)?;
+            super::retrieval_sources::sync_sources_in_transaction(&tx, book_id)?;
+        }
         let result = record(&tx, target.table, &target.id)?;
         tx.commit()?;
         Ok(result)
@@ -74,16 +78,35 @@ impl Database {
         if changed != 1 {
             return Err(StorageError::new("VERSION_CONFLICT", "Record changed"));
         }
+        let book_id = if target.table == "books" {
+            target.id.as_str()
+        } else {
+            target.row["bookId"].as_str().ok_or_else(invalid)?
+        };
+        super::retrieval_sources::sync_sources_in_transaction(&tx, book_id)?;
         let result = record(&tx, target.table, &target.id)?;
         tx.commit()?;
         Ok(result)
     }
     pub fn reorder(&mut self, input: Reorder) -> Result<Value> {
+        self.reorder_records(input, false)
+    }
+    pub fn reorder_directory(&mut self, input: Reorder) -> Result<Value> {
+        self.reorder_records(input, true)
+    }
+    fn reorder_records(&mut self, input: Reorder, directory_only: bool) -> Result<Value> {
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
-        // A reorder never bumps the parent version: position is a child-row
-        // property, and callers update children from the returned records.
+        let source_book_id = input
+            .parent
+            .as_ref()
+            .and_then(|parent| match &parent.target {
+                Target::Book { book_id } | Target::Volume { book_id, .. } => Some(book_id.clone()),
+                Target::Chapter { .. } => None,
+            });
+        // Position has its own compare-and-swap below. A pure reorder must not
+        // change content versions or invalidate chapter summaries/embeddings.
         let child_table: &str = match &input.parent {
             None => "books",
             Some(parent) => {
@@ -109,7 +132,7 @@ impl Database {
                 }
                 Target::Volume { volume_id, .. } => rows(
                     &tx,
-                    "SELECT * FROM chapters WHERE volume_id=?",
+                    "SELECT id FROM chapters WHERE volume_id=?",
                     &[volume_id],
                 )?,
                 Target::Chapter { .. } => return Err(invalid()),
@@ -121,7 +144,7 @@ impl Database {
         let mut seen = std::collections::HashSet::new();
         let mut ordered = Vec::with_capacity(input.items.len());
         for (index, item) in input.items.iter().enumerate() {
-            let belongs = match (&input.parent, &item.target) {
+            let belongs = match (&input.parent, &item.target.target) {
                 (None, Target::Book { .. }) => true,
                 (Some(parent), Target::Volume { book_id, .. }) => {
                     matches!(&parent.target, Target::Book { book_id: parent_id } if parent_id == book_id)
@@ -134,24 +157,53 @@ impl Database {
             if !belongs {
                 return Err(invalid());
             }
-            let located = locate(&tx, &item.target)?;
+            let located = locate(&tx, &item.target.target)?;
             if !seen.insert(located.id.clone()) {
                 return Err(invalid());
             }
             unlocked_ancestors(&located)?;
             unlocked(&located.row)?;
-            expected(&located.row, item.expected_database_version)?;
-            let changed = tx.execute(&format!("UPDATE {} SET position=?,database_version=database_version+1,updated_at=max(updated_at,?) WHERE id=? AND database_version=?", child_table), params![index as i64, now()?, located.id, item.expected_database_version])?;
-            if changed != 1 {
-                return Err(StorageError::new("VERSION_CONFLICT", "Record changed"));
+            expected(&located.row, item.target.expected_database_version)?;
+            if located.row["position"] != item.expected_position {
+                return Err(StorageError::new(
+                    "VERSION_CONFLICT",
+                    "Order changed; reload before reordering",
+                ));
             }
-            ordered.push(record(&tx, child_table, &located.id)?);
+            if item.expected_position != index as i64 {
+                let changed = tx.execute(
+                    &format!(
+                        "UPDATE {} SET position=? WHERE id=? AND database_version=? AND position=?",
+                        child_table
+                    ),
+                    params![
+                        index as i64,
+                        located.id,
+                        item.target.expected_database_version,
+                        item.expected_position
+                    ],
+                )?;
+                if changed != 1 {
+                    return Err(StorageError::new(
+                        "VERSION_CONFLICT",
+                        "Order changed; reload before reordering",
+                    ));
+                }
+            }
+            ordered.push(if directory_only && child_table == "chapters" {
+                super::records::chapter_directory_record(&tx, &located.id)?
+            } else {
+                record(&tx, child_table, &located.id)?
+            });
         }
         if siblings
             .iter()
             .any(|row| !seen.contains(row["id"].as_str().unwrap_or_default()))
         {
             return Err(invalid());
+        }
+        if let Some(book_id) = source_book_id {
+            super::retrieval_sources::sync_order_metadata_in_transaction(&tx, &book_id)?;
         }
         tx.commit()?;
         Ok(Value::Array(ordered))
@@ -161,6 +213,16 @@ impl Database {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let target = locate(&tx, &input.target.target)?;
+        let source_book_id = if target.table == "books" {
+            None
+        } else {
+            Some(
+                target.row["bookId"]
+                    .as_str()
+                    .ok_or_else(invalid)?
+                    .to_owned(),
+            )
+        };
         unlocked_ancestors(&target)?;
         unlocked(&target.row)?;
         expected(&target.row, input.target.expected_database_version)?;
@@ -214,6 +276,9 @@ impl Database {
             }
             None => None,
         };
+        if let Some(book_id) = source_book_id {
+            super::retrieval_sources::sync_sources_in_transaction(&tx, &book_id)?;
+        }
         tx.commit()?;
         Ok(json!({"deletedId":target.id,"parent":parent}))
     }

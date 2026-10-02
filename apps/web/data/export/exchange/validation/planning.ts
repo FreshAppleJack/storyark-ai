@@ -1,5 +1,12 @@
 import { EXCHANGE_LIMITS } from '../limits';
+import { parseChapterSummarySourceSnapshot } from '../../../../domain/chapterSummarySource';
 import type {
+    ExchangeChapterSummaryGenerationMetadata,
+    ExchangeChapterSummaryGenerationSource,
+    ExchangeChapterSummaryFreshnessAcknowledgement,
+    ExchangeChapterSummaryRetrievalBudget,
+    ExchangeChapterSummaryRetrievalScope,
+    ExchangeChapterSummarySourceSnapshot,
     ExchangeBrainstormGenerationMetadata,
     ExchangeBrainstormOption,
     ExchangeBrainstormWorkspace,
@@ -7,7 +14,7 @@ import type {
     ExchangePlotSetting,
     JsonObject,
 } from '../types';
-import { compareStrings, type AnyRecord, type ValidationContext } from './core';
+import { compareStrings, CONTENT_FORMATS, type AnyRecord, type ValidationContext } from './core';
 
 export function validatePlanning(context: ValidationContext, value: AnyRecord | undefined, path: string): ExchangePlanning | undefined {
     if (!value) return undefined;
@@ -29,16 +36,393 @@ export function validatePlanning(context: ValidationContext, value: AnyRecord | 
     return { bookId, databaseVersion, storySummary, storyBackground, chapterSummaries, plotSettings, ...(updatedAt === undefined ? {} : { updatedAt }) };
 }
 
+const SUMMARY_FINGERPRINT = /^[0-9a-f]{16}$/;
+
+function validateSummarySourceSnapshot(
+    context: ValidationContext,
+    value: unknown,
+    path: string,
+): ExchangeChapterSummarySourceSnapshot | undefined {
+    const object = context.requiredObjectValue(value, path);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set([
+        'chapterId', 'chapterDatabaseVersion', 'chapterTitle', 'contentFormat', 'contentVersion',
+        'fingerprintAlgorithm', 'bodyFingerprint', 'structuredFingerprint', 'blockFingerprints',
+        'mentionedCharacterIds', 'foreshadowingIds', 'foreshadowingNoteFingerprints', 'capturedAt', 'extensions',
+        'copyReferences', 'copySourceVersions',
+    ]), path);
+    const chapterId = context.requiredUuid(object, 'chapterId', path);
+    const chapterDatabaseVersion = object.chapterDatabaseVersion === null
+        ? null
+        : context.requiredInteger(object, 'chapterDatabaseVersion', path, 1, Number.MAX_SAFE_INTEGER);
+    const chapterTitle = context.requiredString(object, 'chapterTitle', path, EXCHANGE_LIMITS.maxTitleChars);
+    const contentFormat = context.enumValue(object, 'contentFormat', path, CONTENT_FORMATS);
+    const contentVersion = object.contentVersion === null
+        ? null
+        : context.requiredInteger(object, 'contentVersion', path, 0, Number.MAX_SAFE_INTEGER);
+    const fingerprintAlgorithm = context.requiredString(object, 'fingerprintAlgorithm', path, 64, 1);
+    const bodyFingerprint = context.requiredString(object, 'bodyFingerprint', path, 16, 16);
+    const structuredFingerprint = context.requiredString(object, 'structuredFingerprint', path, 16, 16);
+    const blockFingerprints = context.requiredStringArray(object, 'blockFingerprints', path, EXCHANGE_LIMITS.maxSummarySnapshotBlocks, 16, 16, false);
+    const mentionedCharacterIds = context.requiredUuidArray(object, 'mentionedCharacterIds', path, EXCHANGE_LIMITS.maxSummarySourceVersions);
+    const foreshadowingIds = context.requiredStringArray(object, 'foreshadowingIds', path, EXCHANGE_LIMITS.maxNotes, EXCHANGE_LIMITS.maxReferenceChars, 1);
+    const noteValues = context.requiredArray(object, 'foreshadowingNoteFingerprints', path);
+    if (noteValues && noteValues.length > EXCHANGE_LIMITS.maxNotes) {
+        context.add(`${path}.foreshadowingNoteFingerprints`, 'LIMIT_EXCEEDED', `A source snapshot cannot contain more than ${EXCHANGE_LIMITS.maxNotes} notes.`);
+    }
+    const foreshadowingNoteFingerprints = noteValues?.map((note, index) => validateSummaryNoteFingerprint(context, note, `${path}.foreshadowingNoteFingerprints[${index}]`))
+        .filter((note): note is NonNullable<ExchangeChapterSummarySourceSnapshot['foreshadowingNoteFingerprints'][number]> => note !== undefined);
+    if (foreshadowingNoteFingerprints) context.unique(foreshadowingNoteFingerprints, `${path}.foreshadowingNoteFingerprints`, note => note.noteId);
+    const capturedAt = context.requiredTimestamp(object, 'capturedAt', path);
+    if (!chapterId || chapterDatabaseVersion === undefined || chapterTitle === undefined || !contentFormat
+        || contentVersion === undefined || fingerprintAlgorithm === undefined || bodyFingerprint === undefined
+        || structuredFingerprint === undefined || !blockFingerprints || !mentionedCharacterIds
+        || !foreshadowingIds || !foreshadowingNoteFingerprints || capturedAt === undefined) return undefined;
+    if (fingerprintAlgorithm !== 'fnv1a64-utf16-v1') context.add(`${path}.fingerprintAlgorithm`, 'UNSUPPORTED_VERSION', 'Unsupported chapter source fingerprint algorithm.');
+    if (!SUMMARY_FINGERPRINT.test(bodyFingerprint)) context.add(`${path}.bodyFingerprint`, 'INVALID_VALUE', 'Expected a 64-bit lowercase hexadecimal fingerprint.');
+    if (!SUMMARY_FINGERPRINT.test(structuredFingerprint)) context.add(`${path}.structuredFingerprint`, 'INVALID_VALUE', 'Expected a 64-bit lowercase hexadecimal fingerprint.');
+    blockFingerprints.forEach((fingerprint, index) => {
+        if (!SUMMARY_FINGERPRINT.test(fingerprint)) context.add(`${path}.blockFingerprints[${index}]`, 'INVALID_VALUE', 'Expected a 64-bit lowercase hexadecimal fingerprint.');
+    });
+    const snapshot = {
+        chapterId, chapterDatabaseVersion, chapterTitle, contentFormat, contentVersion,
+        fingerprintAlgorithm: 'fnv1a64-utf16-v1' as const, bodyFingerprint, structuredFingerprint,
+        blockFingerprints, mentionedCharacterIds, foreshadowingIds, foreshadowingNoteFingerprints, capturedAt,
+        ...(object.copyReferences === undefined ? {} : { copyReferences: object.copyReferences }),
+        ...(object.copySourceVersions === undefined ? {} : { copySourceVersions: object.copySourceVersions }),
+    };
+    const parsed = parseChapterSummarySourceSnapshot(snapshot, chapterId);
+    if (!parsed) {
+        context.add(path, 'INVALID_VALUE', 'Invalid chapter summary comparison metadata.');
+        return undefined;
+    }
+    return parsed;
+}
+
+function validateSummaryNoteFingerprint(
+    context: ValidationContext,
+    value: unknown,
+    path: string,
+): ExchangeChapterSummarySourceSnapshot['foreshadowingNoteFingerprints'][number] | undefined {
+    const object = context.requiredObjectValue(value, path);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set(['noteId', 'fingerprint', 'extensions']), path);
+    const noteId = context.requiredString(object, 'noteId', path, EXCHANGE_LIMITS.maxReferenceChars, 1);
+    const fingerprint = context.requiredString(object, 'fingerprint', path, 16, 16);
+    if (fingerprint !== undefined && !SUMMARY_FINGERPRINT.test(fingerprint)) context.add(`${path}.fingerprint`, 'INVALID_VALUE', 'Expected a 64-bit lowercase hexadecimal fingerprint.');
+    if (noteId === undefined || fingerprint === undefined) return undefined;
+    return { noteId, fingerprint };
+}
+
+function validateSummaryGenerationMetadata(
+    context: ValidationContext,
+    value: unknown,
+    path: string,
+): ExchangeChapterSummaryGenerationMetadata | undefined {
+    const object = context.requiredObjectValue(value, path);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set(['providerId', 'configId', 'protocol', 'modelId', 'generatedAt', 'promptVersion', 'source', 'extensions']), path);
+    const providerId = context.requiredString(object, 'providerId', path, 128, 1);
+    const configId = context.requiredUuid(object, 'configId', path);
+    const protocol = context.requiredString(object, 'protocol', path, 128, 1);
+    const modelId = context.requiredString(object, 'modelId', path, EXCHANGE_LIMITS.maxModelIdChars, 1);
+    const generatedAt = context.requiredTimestamp(object, 'generatedAt', path);
+    const promptVersion = context.requiredString(object, 'promptVersion', path, EXCHANGE_LIMITS.maxPromptVersionChars, 1);
+    const source = validateSummaryGenerationSource(context, context.requiredObject(object, 'source', path), `${path}.source`);
+    if (providerId === undefined || !configId || protocol === undefined || modelId === undefined || generatedAt === undefined || promptVersion === undefined || !source) return undefined;
+    return { providerId, configId, protocol, modelId, generatedAt, promptVersion, source };
+}
+
+function validateSummaryFreshnessAcknowledgement(
+    context: ValidationContext,
+    value: unknown,
+    path: string,
+    chapterId: string,
+    allowedSourceCount: number,
+): ExchangeChapterSummaryFreshnessAcknowledgement | undefined {
+    const object = context.requiredObjectValue(value, path);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set([
+        'acknowledgedSourceSnapshot', 'allowedSourceVersions', 'acknowledgedAt', 'extensions',
+    ]), path);
+    const acknowledgedSourceSnapshot = validateSummarySourceSnapshot(
+        context,
+        object.acknowledgedSourceSnapshot,
+        `${path}.acknowledgedSourceSnapshot`,
+    );
+    const versions = context.requiredArray(object, 'allowedSourceVersions', path);
+    const acknowledgedAt = context.requiredTimestamp(object, 'acknowledgedAt', path);
+    if (versions && versions.length > EXCHANGE_LIMITS.maxSummarySourceVersions) {
+        context.add(`${path}.allowedSourceVersions`, 'LIMIT_EXCEEDED', 'A freshness acknowledgement cannot contain more than 512 source versions.');
+    }
+    const allowedSourceVersions = versions?.map((version, index) => {
+        if (version === null) return null;
+        if (typeof version !== 'number' || !Number.isSafeInteger(version) || version < 1) {
+            context.add(`${path}.allowedSourceVersions[${index}]`, 'INVALID_VALUE', 'A source version must be a positive integer or null.');
+            return null;
+        }
+        return version;
+    });
+    if (allowedSourceVersions && allowedSourceVersions.length !== allowedSourceCount) {
+        context.add(`${path}.allowedSourceVersions`, 'REFERENCE_MISMATCH', 'Acknowledged source versions must match the summary generation source list.');
+    }
+    if (acknowledgedSourceSnapshot && acknowledgedSourceSnapshot.chapterId !== chapterId) {
+        context.add(`${path}.acknowledgedSourceSnapshot.chapterId`, 'REFERENCE_MISMATCH', 'The acknowledged source snapshot must belong to the summary chapter.');
+    }
+    if (!acknowledgedSourceSnapshot || !allowedSourceVersions || acknowledgedAt === undefined) return undefined;
+    return { acknowledgedSourceSnapshot, allowedSourceVersions, acknowledgedAt };
+}
+
+function validateSummaryGenerationSource(
+    context: ValidationContext,
+    value: AnyRecord | undefined,
+    path: string,
+): ExchangeChapterSummaryGenerationSource | undefined {
+    if (!value) return undefined;
+    context.unknownFields(value, new Set([
+        'bookId', 'chapterId', 'chapterDatabaseVersion', 'sourceBodyFingerprint', 'planningDatabaseVersion',
+        'allowedSources', 'retrievalTrace', 'includesFuturePlan', 'extensions',
+    ]), path);
+    const bookId = context.requiredUuid(value, 'bookId', path);
+    const chapterId = context.requiredUuid(value, 'chapterId', path);
+    const chapterDatabaseVersion = context.requiredInteger(value, 'chapterDatabaseVersion', path, 1, Number.MAX_SAFE_INTEGER);
+    const sourceBodyFingerprint = context.requiredString(value, 'sourceBodyFingerprint', path, 16, 16);
+    const planningDatabaseVersion = value.planningDatabaseVersion === null
+        ? null
+        : context.requiredInteger(value, 'planningDatabaseVersion', path, 0, Number.MAX_SAFE_INTEGER);
+    const sourceValues = context.requiredArray(value, 'allowedSources', path);
+    if (sourceValues && sourceValues.length > EXCHANGE_LIMITS.maxSummarySourceVersions) {
+        context.add(`${path}.allowedSources`, 'LIMIT_EXCEEDED', `Summary generation cannot record more than ${EXCHANGE_LIMITS.maxSummarySourceVersions} allowed sources.`);
+    }
+    const allowedSources = sourceValues?.map((source, index) => validateSummaryAllowedSource(context, source, `${path}.allowedSources[${index}]`))
+        .filter((source): source is ExchangeChapterSummaryGenerationSource['allowedSources'][number] => source !== undefined);
+    if (allowedSources) context.unique(allowedSources, `${path}.allowedSources`, source => source.sourceId);
+    const retrievalTrace = validateSummaryRetrievalTrace(context, value, path);
+    const includesFuturePlan = context.requiredBoolean(value, 'includesFuturePlan', path);
+    if (!bookId || !chapterId || chapterDatabaseVersion === undefined || sourceBodyFingerprint === undefined
+        || planningDatabaseVersion === undefined || !allowedSources || retrievalTrace === undefined || includesFuturePlan === undefined) return undefined;
+    if (!SUMMARY_FINGERPRINT.test(sourceBodyFingerprint)) context.add(`${path}.sourceBodyFingerprint`, 'INVALID_VALUE', 'Expected a 64-bit lowercase hexadecimal fingerprint.');
+    if (includesFuturePlan) context.add(`${path}.includesFuturePlan`, 'UNSAFE_CONTENT', 'Chapter summaries cannot use future-plan sources.');
+    return { bookId, chapterId, chapterDatabaseVersion, sourceBodyFingerprint, planningDatabaseVersion, allowedSources, retrievalTrace, includesFuturePlan: false };
+}
+
+function validateSummaryAllowedSource(
+    context: ValidationContext,
+    value: unknown,
+    path: string,
+): ExchangeChapterSummaryGenerationSource['allowedSources'][number] | undefined {
+    const object = context.requiredObjectValue(value, path);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set(['sourceId', 'entityId', 'sourceKind', 'sourceVersion', 'indexVersion', 'extensions']), path);
+    const sourceId = context.requiredString(object, 'sourceId', path, 512, 1);
+    const sourceKind = context.enumValue(object, 'sourceKind', path, ['planning', 'confirmed_setting', 'character', 'relationship', 'foreshadowing_note'] as const);
+    const entityId = sourceKind === 'character'
+        ? context.requiredUuid(object, 'entityId', path)
+        : context.requiredString(object, 'entityId', path, EXCHANGE_LIMITS.maxReferenceChars, 1);
+    const sourceVersion = context.requiredInteger(object, 'sourceVersion', path, 1, Number.MAX_SAFE_INTEGER);
+    const indexVersion = object.indexVersion === null
+        ? null
+        : context.requiredInteger(object, 'indexVersion', path, 1, Number.MAX_SAFE_INTEGER);
+    if (sourceId === undefined || entityId === undefined || !sourceKind || sourceVersion === undefined || indexVersion === undefined) return undefined;
+    return { sourceId, entityId, sourceKind, sourceVersion, indexVersion };
+}
+
+function validateSummaryRetrievalTrace(
+    context: ValidationContext,
+    parent: AnyRecord,
+    path: string,
+): ExchangeChapterSummaryGenerationSource['retrievalTrace'] | undefined {
+    if (!Object.prototype.hasOwnProperty.call(parent, 'retrievalTrace')) {
+        context.add(`${path}.retrievalTrace`, 'MISSING_FIELD', 'Retrieval trace must be recorded, or explicitly set to null when no retrieval was used.');
+        return undefined;
+    }
+    if (parent.retrievalTrace === null) return null;
+    const object = context.requiredObjectValue(parent.retrievalTrace, `${path}.retrievalTrace`);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set([
+        'searchId', 'retrievalVersion', 'task', 'requestedAt', 'scope', 'excludedHitIds',
+        'sourceVersions', 'includedHitIds', 'omittedHitIds', 'budget', 'indexVersion',
+        'embeddingFingerprint', 'extensions',
+    ]), `${path}.retrievalTrace`);
+    const tracePath = `${path}.retrievalTrace`;
+    const searchId = context.requiredString(object, 'searchId', tracePath, 128, 1);
+    const retrievalVersion = context.requiredString(object, 'retrievalVersion', tracePath, EXCHANGE_LIMITS.maxPromptVersionChars, 1);
+    const task = context.enumValue(object, 'task', tracePath, ['chapter_summary'] as const);
+    const requestedAt = context.requiredTimestamp(object, 'requestedAt', tracePath);
+    const scope = validateSummaryRetrievalScope(context, object.scope, `${tracePath}.scope`, parent.bookId, parent.chapterId);
+    const excludedHitIds = context.requiredStringArray(object, 'excludedHitIds', tracePath, EXCHANGE_LIMITS.maxBrainstormRetrievalHits, 8192, 1);
+    const versionsValue = context.requiredArray(object, 'sourceVersions', tracePath);
+    if (versionsValue && versionsValue.length > EXCHANGE_LIMITS.maxBrainstormRetrievalSources) {
+        context.add(`${tracePath}.sourceVersions`, 'LIMIT_EXCEEDED', 'Summary retrieval trace contains too many sources.');
+    }
+    const sourceVersions = versionsValue?.map((item, index) => validateSummaryRetrievalSourceVersion(context, item, `${tracePath}.sourceVersions[${index}]`))
+        .filter((item): item is NonNullable<ExchangeChapterSummaryGenerationSource['retrievalTrace']>['sourceVersions'][number] => item !== undefined);
+    sourceVersions?.forEach((item, index) => {
+        if (item.sourceId.split(':')[1] === 'future_plan') {
+            context.add(`${tracePath}.sourceVersions[${index}].sourceId`, 'UNSAFE_CONTENT', 'Summary retrieval cannot use future-plan sources.');
+        }
+    });
+    if (sourceVersions) context.unique(sourceVersions, `${tracePath}.sourceVersions`, item => item.sourceId);
+    const includedHitIds = context.requiredStringArray(object, 'includedHitIds', tracePath, EXCHANGE_LIMITS.maxBrainstormRetrievalHits, 8192, 1);
+    const omittedHitIds = context.requiredStringArray(object, 'omittedHitIds', tracePath, EXCHANGE_LIMITS.maxBrainstormRetrievalHits, 8192, 1);
+    const budgetObject = context.requiredObject(object, 'budget', tracePath);
+    const budget = budgetObject ? validateSummaryRetrievalBudget(context, budgetObject, `${tracePath}.budget`) : undefined;
+    const indexVersion = object.indexVersion === null
+        ? null
+        : context.requiredInteger(object, 'indexVersion', tracePath, 1, Number.MAX_SAFE_INTEGER);
+    const embeddingFingerprint = object.embeddingFingerprint === null
+        ? null
+        : context.requiredString(object, 'embeddingFingerprint', tracePath, 1024, 1);
+    if (searchId === undefined || retrievalVersion === undefined || !task || requestedAt === undefined || !scope
+        || !excludedHitIds || !sourceVersions || !includedHitIds || !omittedHitIds || !budget
+        || indexVersion === undefined || embeddingFingerprint === undefined) return undefined;
+    if (new Set(excludedHitIds).size !== excludedHitIds.length) context.add(`${tracePath}.excludedHitIds`, 'INVALID_VALUE', 'Hit IDs must be unique.');
+    if (new Set(includedHitIds).size !== includedHitIds.length) context.add(`${tracePath}.includedHitIds`, 'INVALID_VALUE', 'Hit IDs must be unique.');
+    if (new Set(omittedHitIds).size !== omittedHitIds.length) context.add(`${tracePath}.omittedHitIds`, 'INVALID_VALUE', 'Hit IDs must be unique.');
+    return { searchId, retrievalVersion, task, requestedAt, scope, excludedHitIds, sourceVersions, includedHitIds, omittedHitIds, budget, indexVersion, embeddingFingerprint };
+}
+
+function validateSummaryRetrievalScope(
+    context: ValidationContext,
+    value: unknown,
+    path: string,
+    expectedBookId: unknown,
+    expectedChapterId: unknown,
+): ExchangeChapterSummaryRetrievalScope | undefined {
+    const object = context.requiredObjectValue(value, path);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set([
+        'bookId', 'allowedSourceKinds', 'allowedChapterIds', 'beforeChapterOrder', 'beforeAnchor',
+        'includeFuturePlan', 'includeGenerated', 'includeStale', 'timeRange', 'extensions',
+    ]), path);
+    const bookId = context.requiredUuid(object, 'bookId', path);
+    const kindsValue = context.requiredArray(object, 'allowedSourceKinds', path);
+    const allowedKinds = ['confirmed_setting', 'character'] as const;
+    const allowedSourceKinds = kindsValue?.map((kind, index) => {
+        if (typeof kind !== 'string' || !allowedKinds.includes(kind as typeof allowedKinds[number])) {
+            context.add(`${path}.allowedSourceKinds[${index}]`, 'UNSAFE_CONTENT', 'Chapter summary retrieval cannot include manuscript, planning, or future-plan sources.');
+            return undefined;
+        }
+        return kind as typeof allowedKinds[number];
+    }).filter((kind): kind is typeof allowedKinds[number] => kind !== undefined);
+    const allowedChapterIds = context.requiredUuidArray(object, 'allowedChapterIds', path, 1);
+    const includeFuturePlan = context.requiredBoolean(object, 'includeFuturePlan', path);
+    const includeGenerated = context.requiredBoolean(object, 'includeGenerated', path);
+    const includeStale = context.requiredBoolean(object, 'includeStale', path);
+    for (const field of ['beforeChapterOrder', 'beforeAnchor', 'timeRange'] as const) {
+        if (!Object.prototype.hasOwnProperty.call(object, field)) {
+            context.add(`${path}.${field}`, 'MISSING_FIELD', 'Summary retrieval must record empty range and anchor filters explicitly as null.');
+        } else if (object[field] !== null) {
+            context.add(`${path}.${field}`, 'UNSAFE_CONTENT', 'Chapter summary retrieval must not use range or anchor filters from another chapter.');
+        }
+    }
+    if (!bookId || !allowedKinds || !allowedSourceKinds || !allowedChapterIds
+        || includeFuturePlan === undefined || includeGenerated === undefined || includeStale === undefined) return undefined;
+    if (bookId !== expectedBookId || allowedChapterIds.length !== 1 || allowedChapterIds[0] !== expectedChapterId
+        || allowedSourceKinds.length === 0 || includeFuturePlan || includeGenerated || includeStale) {
+        context.add(path, 'REFERENCE_MISMATCH', 'Chapter summary retrieval must be limited to this book and chapter, with future, generated, and stale sources excluded.');
+    }
+    return {
+        bookId, allowedSourceKinds, allowedChapterIds,
+        beforeChapterOrder: null,
+        beforeAnchor: null,
+        includeFuturePlan: false,
+        includeGenerated: false,
+        includeStale: false,
+        timeRange: null,
+    };
+}
+
+function validateSummaryRetrievalBudget(
+    context: ValidationContext,
+    value: AnyRecord,
+    path: string,
+): ExchangeChapterSummaryRetrievalBudget | undefined {
+    const charBudget = context.requiredInteger(value, 'charBudget', path, 1, EXCHANGE_LIMITS.maxContextSnapshotChars);
+    const tokenBudget = value.tokenBudget === null
+        ? null
+        : context.requiredInteger(value, 'tokenBudget', path, 1, Number.MAX_SAFE_INTEGER);
+    if (charBudget === undefined || tokenBudget === undefined) return undefined;
+    return { charBudget, tokenBudget };
+}
+
+function validateSummaryRetrievalSourceVersion(
+    context: ValidationContext,
+    value: unknown,
+    path: string,
+): NonNullable<ExchangeChapterSummaryGenerationSource['retrievalTrace']>['sourceVersions'][number] | undefined {
+    const object = context.requiredObjectValue(value, path);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set(['sourceId', 'chapterId', 'sourceVersion', 'indexVersion', 'extensions']), path);
+    const sourceId = context.requiredString(object, 'sourceId', path, 512, 1);
+    const chapterId = object.chapterId === null ? null : context.requiredUuid(object, 'chapterId', path);
+    const sourceVersion = context.requiredInteger(object, 'sourceVersion', path, 1, Number.MAX_SAFE_INTEGER);
+    const indexVersion = context.requiredInteger(object, 'indexVersion', path, 1, Number.MAX_SAFE_INTEGER);
+    if (sourceId === undefined || chapterId === undefined || sourceVersion === undefined || indexVersion === undefined) return undefined;
+    return { sourceId, chapterId, sourceVersion, indexVersion };
+}
+
 function validateChapterSummary(context: ValidationContext, value: unknown, path: string): ExchangePlanning['chapterSummaries'][number] | undefined {
     const object = context.requiredObjectValue(value, path);
     if (!object) return undefined;
-    context.unknownFields(object, new Set(['chapterId', 'summary', 'sourceChapterVersion', 'updatedAt', 'extensions']), path);
+    context.unknownFields(object, new Set([
+        'chapterId', 'summary', 'sourceChapterVersion', 'updatedAt', 'provenance',
+        'sourceSnapshot', 'freshnessAcknowledgement', 'generationMetadata', 'extensions',
+    ]), path);
     const chapterId = context.requiredUuid(object, 'chapterId', path);
     const summary = context.requiredString(object, 'summary', path, EXCHANGE_LIMITS.maxSummaryChars);
     const sourceChapterVersion = context.optionalInteger(object, 'sourceChapterVersion', path, 1, Number.MAX_SAFE_INTEGER);
     const updatedAt = context.requiredTimestamp(object, 'updatedAt', path);
+    const provenance = Object.prototype.hasOwnProperty.call(object, 'provenance')
+        ? context.enumValue(object, 'provenance', path, ['author', 'ai-adopted'] as const)
+        : undefined;
+    const sourceSnapshot = Object.prototype.hasOwnProperty.call(object, 'sourceSnapshot')
+        ? validateSummarySourceSnapshot(context, object.sourceSnapshot, `${path}.sourceSnapshot`)
+        : undefined;
+    const generationMetadata = Object.prototype.hasOwnProperty.call(object, 'generationMetadata')
+        ? validateSummaryGenerationMetadata(context, object.generationMetadata, `${path}.generationMetadata`)
+        : undefined;
+    const freshnessAcknowledgement = Object.prototype.hasOwnProperty.call(object, 'freshnessAcknowledgement')
+        ? validateSummaryFreshnessAcknowledgement(
+            context,
+            object.freshnessAcknowledgement,
+            `${path}.freshnessAcknowledgement`,
+            chapterId ?? '',
+            generationMetadata?.source.allowedSources.length ?? 0,
+        )
+        : undefined;
     if (!chapterId || summary === undefined || updatedAt === undefined) return undefined;
-    return { chapterId, summary, ...(sourceChapterVersion === undefined ? {} : { sourceChapterVersion }), updatedAt };
+    if (provenance === 'ai-adopted' && !generationMetadata) {
+        context.add(`${path}.generationMetadata`, 'MISSING_FIELD', 'An adopted AI summary requires generation metadata.');
+    }
+    if (generationMetadata && provenance !== 'ai-adopted') {
+        context.add(`${path}.provenance`, 'REFERENCE_MISMATCH', 'Generation metadata is only valid for an adopted AI summary.');
+    }
+    if (sourceSnapshot && sourceSnapshot.chapterId !== chapterId) {
+        context.add(`${path}.sourceSnapshot.chapterId`, 'REFERENCE_MISMATCH', 'The source snapshot must belong to the summary chapter.');
+    }
+    if (generationMetadata && generationMetadata.source.chapterId !== chapterId) {
+        context.add(`${path}.generationMetadata.source.chapterId`, 'REFERENCE_MISMATCH', 'Generation metadata must belong to the summary chapter.');
+    }
+    if (generationMetadata && sourceSnapshot
+        && generationMetadata.source.sourceBodyFingerprint !== sourceSnapshot.bodyFingerprint) {
+        context.add(`${path}.generationMetadata.source.sourceBodyFingerprint`, 'REFERENCE_MISMATCH', 'Generation metadata must refer to the saved summary source snapshot.');
+    }
+    if (generationMetadata && sourceSnapshot
+        && sourceSnapshot.chapterDatabaseVersion !== null
+        && generationMetadata.source.chapterDatabaseVersion !== sourceSnapshot.chapterDatabaseVersion) {
+        context.add(`${path}.generationMetadata.source.chapterDatabaseVersion`, 'REFERENCE_MISMATCH', 'Generation metadata and source snapshot must freeze the same chapter version.');
+    }
+    return {
+        chapterId,
+        summary,
+        ...(sourceChapterVersion === undefined ? {} : { sourceChapterVersion }),
+        updatedAt,
+        ...(provenance === undefined ? {} : { provenance }),
+        ...(sourceSnapshot === undefined ? {} : { sourceSnapshot }),
+        ...(freshnessAcknowledgement === undefined ? {} : { freshnessAcknowledgement }),
+        ...(generationMetadata === undefined ? {} : { generationMetadata }),
+    };
 }
 
 function validatePlotSetting(context: ValidationContext, value: unknown, path: string): ExchangePlotSetting | undefined {
@@ -74,14 +458,74 @@ function validateBrainstormOption(context: ValidationContext, value: unknown, pa
 function validateGenerationMetadata(context: ValidationContext, value: unknown, path: string): ExchangeBrainstormGenerationMetadata | undefined {
     const object = context.requiredObjectValue(value, path);
     if (!object) return undefined;
-    context.unknownFields(object, new Set(['configId', 'modelId', 'generatedAt', 'promptVersion', 'source', 'extensions']), path);
+    context.unknownFields(object, new Set(['configId', 'modelId', 'generatedAt', 'promptVersion', 'includesPlanning', 'retrieval', 'source', 'extensions']), path);
     const configId = context.requiredUuid(object, 'configId', path);
     const modelId = context.requiredString(object, 'modelId', path, EXCHANGE_LIMITS.maxModelIdChars, 1);
     const generatedAt = context.requiredTimestamp(object, 'generatedAt', path);
     const promptVersion = context.requiredString(object, 'promptVersion', path, EXCHANGE_LIMITS.maxPromptVersionChars, 1);
     const source = validateGenerationSource(context, context.requiredObject(object, 'source', path), `${path}.source`);
+    const includesPlanning = Object.prototype.hasOwnProperty.call(object, 'includesPlanning')
+        ? context.requiredBoolean(object, 'includesPlanning', path)
+        : undefined;
+    const retrieval = validateGenerationRetrieval(context, object, path);
     if (!configId || modelId === undefined || generatedAt === undefined || promptVersion === undefined || !source) return undefined;
-    return { configId, modelId, generatedAt, promptVersion, source };
+    return {
+        configId,
+        modelId,
+        generatedAt,
+        promptVersion,
+        ...(includesPlanning === undefined ? {} : { includesPlanning }),
+        ...(retrieval === undefined ? {} : { retrieval }),
+        source,
+    };
+}
+
+function validateGenerationRetrieval(
+    context: ValidationContext,
+    parent: AnyRecord,
+    path: string,
+): ExchangeBrainstormGenerationMetadata['retrieval'] | undefined {
+    if (!Object.prototype.hasOwnProperty.call(parent, 'retrieval')) return undefined;
+    if (parent.retrieval === null) return null;
+    const object = context.requiredObjectValue(parent.retrieval, `${path}.retrieval`);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set(['retrievalVersion', 'requestedAt', 'sourceVersions', 'includedHitIds', 'indexVersion', 'embeddingFingerprint', 'extensions']), `${path}.retrieval`);
+    const retrievalPath = `${path}.retrieval`;
+    const retrievalVersion = context.requiredString(object, 'retrievalVersion', retrievalPath, EXCHANGE_LIMITS.maxPromptVersionChars, 1);
+    const requestedAt = context.requiredTimestamp(object, 'requestedAt', retrievalPath);
+    const sourceValues = context.requiredArray(object, 'sourceVersions', retrievalPath);
+    if (sourceValues && sourceValues.length > EXCHANGE_LIMITS.maxBrainstormRetrievalSources) {
+        context.add(`${retrievalPath}.sourceVersions`, 'LIMIT_EXCEEDED', `Retrieval source versions cannot exceed ${EXCHANGE_LIMITS.maxBrainstormRetrievalSources}.`);
+    }
+    const sourceVersions = sourceValues?.map((value, index) => validateRetrievalSourceVersion(context, value, `${retrievalPath}.sourceVersions[${index}]`))
+        .filter((value): value is NonNullable<ExchangeBrainstormGenerationMetadata['retrieval']>['sourceVersions'][number] => value !== undefined);
+    if (sourceVersions) context.unique(sourceVersions, `${retrievalPath}.sourceVersions`, source => source.sourceId);
+    const includedHitIds = context.requiredStringArray(object, 'includedHitIds', retrievalPath, EXCHANGE_LIMITS.maxBrainstormRetrievalHits, 512, 1);
+    const indexVersion = object.indexVersion === null
+        ? null
+        : context.requiredInteger(object, 'indexVersion', retrievalPath, 1, Number.MAX_SAFE_INTEGER);
+    const embeddingFingerprint = object.embeddingFingerprint === null
+        ? null
+        : context.requiredString(object, 'embeddingFingerprint', retrievalPath, 512, 1);
+    if (retrievalVersion === undefined || requestedAt === undefined || !sourceVersions || !includedHitIds
+        || indexVersion === undefined || embeddingFingerprint === undefined) return undefined;
+    return { retrievalVersion, requestedAt, sourceVersions, includedHitIds, indexVersion, embeddingFingerprint };
+}
+
+function validateRetrievalSourceVersion(
+    context: ValidationContext,
+    value: unknown,
+    path: string,
+): NonNullable<ExchangeBrainstormGenerationMetadata['retrieval']>['sourceVersions'][number] | undefined {
+    const object = context.requiredObjectValue(value, path);
+    if (!object) return undefined;
+    context.unknownFields(object, new Set(['sourceId', 'chapterId', 'sourceVersion', 'indexVersion', 'extensions']), path);
+    const sourceId = context.requiredString(object, 'sourceId', path, 512, 1);
+    const chapterId = object.chapterId === null ? null : context.requiredUuid(object, 'chapterId', path);
+    const sourceVersion = context.requiredInteger(object, 'sourceVersion', path, 1, Number.MAX_SAFE_INTEGER);
+    const indexVersion = context.requiredInteger(object, 'indexVersion', path, 1, Number.MAX_SAFE_INTEGER);
+    if (sourceId === undefined || chapterId === undefined || sourceVersion === undefined || indexVersion === undefined) return undefined;
+    return { sourceId, chapterId, sourceVersion, indexVersion };
 }
 
 function validateGenerationSource(

@@ -1,11 +1,20 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { userErrorMessage } from '../../../data/diagnostics';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
     AlertTriangle, ArrowLeft, ChevronDown, ChevronRight, FileText, Folder,
-    GripVertical, Lock, Pencil, Plus, ScrollText, Search, Trash2,
+    GripVertical, Lock, Pencil, Plus, ScrollText, Search, Sparkles, Trash2,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/Button';
 import { Book, Chapter, Volume } from '../../../types';
 import { getFuzzyScore } from '../../../utils/search';
+import { StorySearchResults } from '../../retrieval/components/StorySearchResults';
+import { useLocalStorySearch } from '../../retrieval/hooks/useLocalStorySearch';
+import { retrievalRepository } from '../../../data/local/retrievalRepository';
+import { mapRetrievalChunkOffset, resolveRetrievalChunkLocator } from '../../../domain/retrieval/locator';
+import type { RetrievalChunkLocator, RetrievalSearchHit, RetrievalTextFocus } from '../../../domain/retrieval/contracts';
+import type { SearchHitFocusAnchor } from '../../../domain/retrieval/searchPreview';
+import { VirtualChapterList, type VirtualChapterListHandle } from './VirtualChapterList';
+import { BrainstormShortcut } from '../../brainstorm/components/BrainstormShortcut';
 
 export type NavigatorItemType = 'volume' | 'chapter';
 
@@ -23,6 +32,30 @@ interface ContextMenuState {
     parentId?: string;
 }
 
+interface ContextMenuPosition {
+    left: number;
+    top: number;
+}
+
+const CONTEXT_MENU_GUTTER = 8;
+
+function clampContextMenuPosition(
+    anchorX: number,
+    anchorY: number,
+    menuWidth: number,
+    menuHeight: number,
+    viewportWidth: number,
+    viewportHeight: number,
+): ContextMenuPosition {
+    const maxLeft = Math.max(CONTEXT_MENU_GUTTER, viewportWidth - menuWidth - CONTEXT_MENU_GUTTER);
+    const maxTop = Math.max(CONTEXT_MENU_GUTTER, viewportHeight - menuHeight - CONTEXT_MENU_GUTTER);
+
+    return {
+        left: Math.min(Math.max(anchorX, CONTEXT_MENU_GUTTER), maxLeft),
+        top: Math.min(Math.max(anchorY, CONTEXT_MENU_GUTTER), maxTop),
+    };
+}
+
 interface RenamingState {
     id: string;
     type: NavigatorItemType;
@@ -30,12 +63,23 @@ interface RenamingState {
 }
 
 interface DragItemState {
-    index: number;
+    id: string;
     type: NavigatorItemType;
     parentId?: string;
 }
 
+function moveItem<T extends { id: string }>(items: T[], draggedId: string, targetId: string): T[] | null {
+    const from = items.findIndex(item => item.id === draggedId);
+    const to = items.findIndex(item => item.id === targetId);
+    if (from < 0 || to < 0 || from === to) return null;
+    const reordered = [...items];
+    const [moved] = reordered.splice(from, 1);
+    reordered.splice(to, 0, moved);
+    return reordered;
+}
+
 type SidebarSearchMode = 'chapter' | 'volume';
+type StorySearchMode = 'title' | 'semantic';
 
 interface SidebarSearchResult {
     type: SidebarSearchMode;
@@ -47,11 +91,18 @@ interface SidebarSearchResult {
 }
 
 interface ChapterNavigatorProps {
+    expanded?: boolean;
+    onExpandedChange?: (expanded: boolean) => void;
+    sidebarWidth?: number;
+    isResizing?: boolean;
+    isOverlay?: boolean;
+    resizeHandle?: React.ReactNode;
     localMode?: boolean;
     book: Book;
     activeChapterId: string;
     onNavigateDashboard: () => void;
-    onSelectChapter: (chapterId: string) => void;
+    onOpenBrainstorm?: () => void;
+    onSelectChapter: (chapterId: string) => Promise<boolean> | void;
     onAddVolume: (title: string) => Promise<string | null>;
     onAddChapter: (volumeId: string, title: string) => Promise<string | null>;
     onRenameVolume: (volumeId: string, title: string) => Promise<void>;
@@ -60,6 +111,8 @@ interface ChapterNavigatorProps {
     onReorderVolumes: (volumes: Volume[]) => void;
     onReorderChapters: (volumeId: string, chapters: Chapter[]) => void;
     onOpenPlotSetting: (chapterId: string) => void;
+    onOpenChapterSummary: (chapterId: string) => void;
+    onOpenRetrievalLocator?: (chapterId: string, locator: RetrievalChunkLocator, focus: RetrievalTextFocus | null) => void;
 }
 
 /**
@@ -69,10 +122,17 @@ interface ChapterNavigatorProps {
  * page through callbacks; this component owns only its local UI state.
  */
 export function ChapterNavigator({
+    expanded,
+    onExpandedChange,
+    sidebarWidth,
+    isResizing = false,
+    isOverlay,
+    resizeHandle,
     localMode = false,
     book,
     activeChapterId,
     onNavigateDashboard,
+    onOpenBrainstorm,
     onSelectChapter,
     onAddVolume,
     onAddChapter,
@@ -82,23 +142,47 @@ export function ChapterNavigator({
     onReorderVolumes,
     onReorderChapters,
     onOpenPlotSetting,
+    onOpenChapterSummary,
+    onOpenRetrievalLocator,
 }: ChapterNavigatorProps): React.ReactElement {
-    const [sidebarExpanded, setSidebarExpanded] = useState(true);
+    const [internalExpanded, setInternalExpanded] = useState(true);
+    const sidebarExpanded = expanded ?? internalExpanded;
+    const setSidebarExpanded = onExpandedChange ?? setInternalExpanded;
     const [expandedVolumes, setExpandedVolumes] = useState<Set<string>>(() => new Set(book.volumes.map(v => v.id)));
+    const [storySearchMode, setStorySearchMode] = useState<StorySearchMode>('title');
     const [sidebarSearchMode, setSidebarSearchMode] = useState<SidebarSearchMode>('chapter');
     const [sidebarSearchQuery, setSidebarSearchQuery] = useState('');
     const [sidebarSearchMessage, setSidebarSearchMessage] = useState('');
     const [sidebarSearchTarget, setSidebarSearchTarget] = useState<{ type: SidebarSearchMode; id: string } | null>(null);
 
     const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+    const [contextMenuPosition, setContextMenuPosition] = useState<ContextMenuPosition | null>(null);
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [itemToDelete, setItemToDelete] = useState<NavigatorDeleteTarget | null>(null);
     const [renamingState, setRenamingState] = useState<RenamingState | null>(null);
 
+    const treeRef = useRef<VirtualChapterListHandle>(null);
     const renameInputRef = useRef<HTMLInputElement>(null);
+    const contextMenuRef = useRef<HTMLDivElement>(null);
     const submittedRenameRef = useRef<RenamingState | null>(null);
     const dragItemRef = useRef<DragItemState | null>(null);
-    const dragOverItemRef = useRef<DragItemState | null>(null);
+    const [dragTarget, setDragTarget] = useState<DragItemState | null>(null);
+    const [draggingItem, setDraggingItem] = useState<DragItemState | null>(null);
+    const storySearchChapters = useMemo(() => book.volumes.flatMap(volume => volume.chapters.map(chapter => ({
+        id: chapter.id,
+        title: chapter.title,
+        volumeTitle: volume.title,
+    }))), [book.volumes]);
+    const storySearchChapterIds = useMemo(
+        () => storySearchChapters.map(chapter => chapter.id),
+        [storySearchChapters],
+    );
+    const storySearch = useLocalStorySearch(
+        book.id,
+        localMode && storySearchMode === 'semantic',
+        { chapterIds: storySearchChapterIds, activeChapterId },
+    );
+    const hideChapterTree = localMode && storySearchMode === 'semantic' && sidebarExpanded;
 
     // Only reconcile membership; content updates and reordering preserve user choices.
     const volumeIds = book.volumes.map(volume => volume.id);
@@ -190,52 +274,59 @@ export function ChapterNavigator({
     }, [book, sidebarSearchMode, sidebarSearchQuery]);
 
     // --- Drag & Drop Handlers ---
-    const handleDragStart = (e: React.DragEvent, type: NavigatorItemType, index: number, parentId?: string) => {
+    const handleDragStart = (e: React.DragEvent, type: NavigatorItemType, id: string, parentId?: string) => {
         if (renamingState) {
             e.preventDefault(); return;
         }
-        dragItemRef.current = { index, type, parentId };
+        dragItemRef.current = { id, type, parentId };
+        setDraggingItem({ id, type, parentId });
+        e.dataTransfer?.setData('text/plain', id);
+        if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
         (e.currentTarget as HTMLDivElement).style.opacity = '0.5';
         e.stopPropagation();
     };
 
-    const handleDragEnter = (e: React.DragEvent, type: NavigatorItemType, index: number, parentId?: string) => {
-        e.preventDefault(); e.stopPropagation();
-        if (renamingState) return;
+    const canDropOn = (type: NavigatorItemType, id: string, parentId?: string) => {
+        const dragged = dragItemRef.current;
+        return dragged !== null && dragged.type === type && dragged.id !== id
+            && (type !== 'chapter' || dragged.parentId === parentId);
+    };
 
-        dragOverItemRef.current = { index, type, parentId };
+    const handleDragEnter = (e: React.DragEvent, type: NavigatorItemType, id: string, parentId?: string) => {
+        e.stopPropagation();
+        if (!canDropOn(type, id, parentId)) { setDragTarget(null); return; }
+        setDragTarget(current => current?.type === type && current.id === id && current.parentId === parentId
+            ? current : { type, id, parentId });
+    };
 
-        if (!dragItemRef.current) return;
-        if (dragItemRef.current.type !== type) return;
-        if (type === 'chapter' && dragItemRef.current.parentId !== parentId) return;
+    const handleDragOver = (e: React.DragEvent, type: NavigatorItemType, id: string, parentId?: string) => {
+        e.stopPropagation();
+        if (!canDropOn(type, id, parentId)) return;
+        e.preventDefault();
+        if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    };
 
-        const dragIndex = dragItemRef.current.index;
-        const hoverIndex = index;
-        if (dragIndex === hoverIndex) return;
-
+    const handleDrop = (e: React.DragEvent, type: NavigatorItemType, id: string, parentId?: string) => {
+        e.stopPropagation();
+        if (!canDropOn(type, id, parentId)) return;
+        e.preventDefault();
+        const draggedId = dragItemRef.current!.id;
         if (type === 'volume') {
-            const newVolumes = [...book.volumes];
-            const draggedVol = newVolumes[dragIndex];
-            newVolumes.splice(dragIndex, 1);
-            newVolumes.splice(hoverIndex, 0, draggedVol);
-            onReorderVolumes(newVolumes);
-        } else if (type === 'chapter') {
-            const volume = book.volumes.find(v => v.id === parentId);
-            if (volume) {
-                const newChapters = [...volume.chapters];
-                const draggedChap = newChapters[dragIndex];
-                newChapters.splice(dragIndex, 1);
-                newChapters.splice(hoverIndex, 0, draggedChap);
-                onReorderChapters(volume.id, newChapters);
-            }
+            const reordered = moveItem(book.volumes, draggedId, id);
+            if (reordered) onReorderVolumes(reordered);
+        } else {
+            const volume = book.volumes.find(item => item.id === parentId);
+            const reordered = volume && moveItem(volume.chapters, draggedId, id);
+            if (volume && reordered) onReorderChapters(volume.id, reordered);
         }
-        dragItemRef.current.index = hoverIndex;
+        setDragTarget(null);
     };
 
     const handleDragEnd = (e: React.DragEvent) => {
         (e.currentTarget as HTMLDivElement).style.opacity = '1';
         dragItemRef.current = null;
-        dragOverItemRef.current = null;
+        setDraggingItem(null);
+        setDragTarget(null);
     };
 
     // --- Volume & Chapter Management Handlers ---
@@ -265,8 +356,44 @@ export function ChapterNavigator({
 
     const handleContextMenu = (e: React.MouseEvent, type: NavigatorItemType, id: string, parentId?: string) => {
         e.preventDefault(); e.stopPropagation();
+        setContextMenuPosition(null);
         setContextMenu({ x: e.clientX, y: e.clientY, type, id, parentId });
     };
+
+    const repositionContextMenu = useCallback(() => {
+        if (!contextMenu || !contextMenuRef.current) return;
+
+        const { width, height } = contextMenuRef.current.getBoundingClientRect();
+        const nextPosition = clampContextMenuPosition(
+            contextMenu.x,
+            contextMenu.y,
+            width,
+            height,
+            window.innerWidth,
+            window.innerHeight,
+        );
+        setContextMenuPosition(current => (
+            current?.left === nextPosition.left && current.top === nextPosition.top
+                ? current
+                : nextPosition
+        ));
+    }, [contextMenu]);
+
+    useLayoutEffect(() => {
+        if (!contextMenu) return;
+        repositionContextMenu();
+    }, [contextMenu, repositionContextMenu]);
+
+    useEffect(() => {
+        if (!contextMenu) return;
+
+        window.addEventListener('resize', repositionContextMenu);
+        window.addEventListener('scroll', repositionContextMenu, true);
+        return () => {
+            window.removeEventListener('resize', repositionContextMenu);
+            window.removeEventListener('scroll', repositionContextMenu, true);
+        };
+    }, [contextMenu, repositionContextMenu]);
 
     const startRenaming = () => {
         if (!contextMenu) return;
@@ -290,6 +417,7 @@ export function ChapterNavigator({
 
     const scrollSidebarItemIntoView = (type: SidebarSearchMode, id: string) => {
         window.setTimeout(() => {
+            treeRef.current?.scrollToItem(`${type}-${id}`);
             const element = document.getElementById(`sidebar-${type}-${id}`);
             element?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }, 80);
@@ -326,6 +454,11 @@ export function ChapterNavigator({
             return;
         }
 
+        if (storySearchMode === 'semantic') {
+            void storySearch.search(trimmedQuery);
+            return;
+        }
+
         const firstResult = sidebarSearchResults[0];
         if (!firstResult) {
             setSidebarSearchMessage(`No matching ${sidebarSearchMode}s found.`);
@@ -333,6 +466,82 @@ export function ChapterNavigator({
         }
 
         selectSidebarSearchResult(firstResult);
+    };
+
+    const selectStorySearchResult = async (hit: RetrievalSearchHit, previewAnchor: SearchHitFocusAnchor | null) => {
+        const chapterId = hit.chapterId || hit.locator.chapterId;
+        if (!chapterId) return;
+
+        const volume = book.volumes.find(candidate => candidate.chapters.some(chapter => chapter.id === chapterId));
+        if (!volume) {
+            setSidebarSearchMessage('This source belongs to a chapter that is no longer in the current book.');
+            return;
+        }
+
+        setExpandedVolumes(prev => {
+            const next = new Set(prev);
+            next.add(volume.id);
+            return next;
+        });
+        const navigationAccepted = await onSelectChapter(chapterId);
+        if (navigationAccepted === false) {
+            setSidebarSearchMessage('The chapter could not be opened because the current draft was not saved.');
+            return;
+        }
+
+        if (hit.sourceKind !== 'manuscript') {
+            setSidebarSearchTarget({ type: 'chapter', id: chapterId });
+            setSidebarSearchMessage(`Opened "${hit.locator.chapterTitleSnapshot || chapterId}". This result refers to the chapter as a whole.`);
+            scrollSidebarItemIntoView('chapter', chapterId);
+            return;
+        }
+
+        let resolution: ReturnType<typeof resolveRetrievalChunkLocator>;
+        try {
+            const scope = {
+                bookId: book.id,
+                allowedSourceKinds: [hit.sourceKind],
+                allowedChapterIds: [chapterId],
+                includeFuturePlan: false,
+                includeGenerated: false,
+                includeStale: false,
+            };
+            const [sources, chunks] = await Promise.all([
+                retrievalRepository.listSources(scope),
+                retrievalRepository.listChunks(scope),
+            ]);
+            const currentSource = sources.find(source => source.sourceId === hit.chunk.sourceId);
+            if (!currentSource) {
+                setSidebarSearchMessage('This passage changed or is no longer available. Refresh search and try again.');
+                return;
+            }
+            const currentChunks = chunks.filter(chunk => (
+                chunk.sourceId === hit.chunk.sourceId && chunk.locator.chapterId === chapterId
+            ));
+            resolution = resolveRetrievalChunkLocator(hit.chunk, {
+                chapterId,
+                sourceVersion: currentSource.sourceVersion,
+                chunks: currentChunks.map(chunk => ({ textHash: chunk.textHash, locator: chunk.locator })),
+            });
+        } catch (error) {
+            setSidebarSearchMessage(userErrorMessage(error, 'This passage could not be opened. Refresh search and try again.', 'search.open'));
+            return;
+        }
+        if (resolution.status === 'source-changed') {
+            setSidebarSearchMessage(`${resolution.message} The excerpt is still available above. Refresh search and try again.`);
+            return;
+        }
+        const focus = previewAnchor && hit.chunk.sourceText
+            ? mapRetrievalChunkOffset(
+                resolution.locator,
+                previewAnchor.chunkTextOffset,
+                previewAnchor.focusTextLength,
+            )
+            : null;
+        onOpenRetrievalLocator?.(chapterId, resolution.locator, focus);
+        setSidebarSearchTarget({ type: 'chapter', id: chapterId });
+        setSidebarSearchMessage(`Opened "${hit.locator.chapterTitleSnapshot || chapterId}" at the matching passage.`);
+        scrollSidebarItemIntoView('chapter', chapterId);
     };
 
     const handleDeleteClick = () => {
@@ -355,11 +564,140 @@ export function ChapterNavigator({
         setShowDeleteModal(false); setItemToDelete(null);
     };
 
+    type NavigatorRow = { id: string; height: number; kind: 'volume' | 'chapter' | 'empty' | 'add'; volume?: Volume; chapter?: Chapter };
+    const treeRows = useMemo<NavigatorRow[]>(() => {
+        const rows: NavigatorRow[] = [];
+        for (const volume of book.volumes) {
+            rows.push({ id: `volume-${volume.id}`, kind: 'volume', height: 40, volume });
+            if (expandedVolumes.has(volume.id)) {
+                for (const chapter of volume.chapters) rows.push({ id: `chapter-${chapter.id}`, kind: 'chapter', height: 38, volume, chapter });
+                if (!volume.chapters.length) rows.push({ id: `empty-${volume.id}`, kind: 'empty', height: 34, volume });
+            }
+        }
+        rows.push({ id: 'create-volume', kind: 'add', height: 64 });
+        return rows;
+    }, [book.volumes, expandedVolumes]);
+    const renderVolumeRow = (vol: Volume) => {
+        const isVolDraggable = !expandedVolumes.has(vol.id) && renamingState?.id !== vol.id;
+        const isRenamingVol = renamingState?.id === vol.id && renamingState?.type === 'volume';
+
+        return (
+            <div
+                id={`sidebar-volume-${vol.id}`}
+                key={vol.id}
+                className="h-9"
+                draggable={isVolDraggable}
+                onDragStart={(e) => handleDragStart(e, 'volume', vol.id)}
+                onDragEnter={(e) => handleDragEnter(e, 'volume', vol.id)}
+                onDragEnd={handleDragEnd}
+                onDragOver={(e) => handleDragOver(e, 'volume', vol.id)}
+                onDrop={(e) => handleDrop(e, 'volume', vol.id)}
+            >
+                <div className={`flex items-center justify-between group/vol rounded-md pr-2 ${dragTarget?.type === 'volume' && dragTarget.id === vol.id ? 'ring-2 ring-brand-400' : ''}`}>
+                    <button
+                        onClick={() => toggleVolume(vol.id)}
+                        onContextMenu={(e) => handleContextMenu(e, 'volume', vol.id)}
+                        className={`
+                        flex-1 flex items-center gap-1 p-2 text-xs font-semibold text-slate-500 dark:text-slate-400
+                        hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors
+                        ${sidebarSearchTarget?.type === 'volume' && sidebarSearchTarget.id === vol.id ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-200 dark:bg-brand-950/40 dark:text-brand-300 dark:ring-brand-800' : ''}
+                        ${isVolDraggable ? 'cursor-grab active:cursor-grabbing' : ''}
+                    `}
+                    >
+                        {isVolDraggable && <GripVertical size={12} className="opacity-0 group-hover/vol:opacity-50 mr-1" />}
+                        {expandedVolumes.has(vol.id) ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
+                        <Folder size={14} />
+
+                        {isRenamingVol ? (
+                            <input
+                                ref={renameInputRef}
+                                type="text"
+                                value={renamingState.value}
+                                onChange={(e) => setRenamingState({...renamingState, value: e.target.value})}
+                                onKeyDown={handleRenameKeyDown}
+                                onBlur={submitRename}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex-1 min-w-0 bg-white dark:bg-slate-900 border border-brand-300 dark:border-brand-800 rounded px-1 py-0.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-900"
+                            />
+                        ) : (
+                            <span className="truncate">{vol.title}</span>
+                        )}
+                    </button>
+                    <button onClick={() => handleAddChapter(vol.id)} title="Add Chapter" className="opacity-0 group-hover/vol:opacity-100 p-1 hover:bg-brand-100 dark:hover:bg-brand-950/40 text-brand-600 dark:text-brand-300 rounded">
+                        <Plus size={12} />
+                    </button>
+                </div>
+
+            </div>
+        );
+    };
+
+    const renderChapterRow = (vol: Volume, chapter: Chapter) => {
+        const isRenamingChap = renamingState?.id === chapter.id && renamingState?.type === 'chapter';
+
+        return (<div className="ml-4 border-l border-slate-200 dark:border-slate-800 pl-2 h-full">
+            <div
+                id={`sidebar-chapter-${chapter.id}`}
+                key={chapter.id}
+                onContextMenu={(e) => handleContextMenu(e, 'chapter', chapter.id, vol.id)}
+                draggable={!isRenamingChap}
+                onDragStart={(e) => handleDragStart(e, 'chapter', chapter.id, vol.id)}
+                onDragEnter={(e) => handleDragEnter(e, 'chapter', chapter.id, vol.id)}
+                onDragEnd={handleDragEnd}
+                onDragOver={(e) => handleDragOver(e, 'chapter', chapter.id, vol.id)}
+                onDrop={(e) => handleDrop(e, 'chapter', chapter.id, vol.id)}
+                onClick={() => {
+                    if (isRenamingChap) return;
+                    setSidebarSearchTarget(null);
+                    void onSelectChapter(chapter.id);
+                }}
+                className={`
+                    w-full flex items-center justify-between p-2 text-sm rounded-md transition-colors text-left group cursor-grab active:cursor-grabbing
+                    ${activeChapterId === chapter.id
+                    ? 'bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300 font-medium'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
+                }
+                    ${sidebarSearchTarget?.type === 'chapter' && sidebarSearchTarget.id === chapter.id && activeChapterId === chapter.id ? 'ring-1 ring-brand-200 dark:ring-brand-800' : ''}
+                    ${dragTarget?.type === 'chapter' && dragTarget.id === chapter.id && dragTarget.parentId === vol.id ? 'ring-2 ring-brand-400' : ''}
+                `}
+            >
+                <div className="flex items-center gap-2 overflow-hidden flex-1">
+                    <GripVertical size={12} className="opacity-0 group-hover:opacity-30 text-slate-400 flex-shrink-0" />
+                    <FileText size={14} className={`flex-shrink-0 ${activeChapterId === chapter.id ? 'text-brand-500' : 'text-slate-400'}`} />
+                    {chapter.isEditable === false && <Lock size={14} className="text-rose-500 flex-shrink-0" />}
+
+                    {isRenamingChap ? (
+                        <input
+                            ref={renameInputRef}
+                            type="text"
+                            value={renamingState.value}
+                            onChange={(e) => setRenamingState({...renamingState, value: e.target.value})}
+                            onKeyDown={handleRenameKeyDown}
+                            onBlur={submitRename}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex-1 min-w-0 bg-white dark:bg-slate-900 border border-brand-300 dark:border-brand-800 rounded px-1 py-0.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-900"
+                        />
+                    ) : (
+                        <span className="truncate">{chapter.title}</span>
+                    )}
+                </div>
+            </div>
+        </div>);
+    };
+
     return (
         <>
-            <aside className={`flex-shrink-0 bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 transition-all duration-300 ease-in-out flex flex-col ${sidebarExpanded ? 'w-72' : 'w-16'}`}>
+            <aside
+                style={sidebarWidth === undefined ? undefined : { width: sidebarWidth }}
+                className={`h-full min-h-0 min-w-0 flex-shrink-0 overflow-hidden bg-slate-50 dark:bg-slate-950 border-r border-slate-200 dark:border-slate-800 duration-300 ease-in-out flex flex-col ${
+                    sidebarWidth === undefined
+                        ? `relative max-w-[50vw] transition-all max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:left-0 max-[900px]:z-30 max-[900px]:shadow-2xl ${sidebarExpanded ? 'w-80 xl:w-96' : 'w-16'}`
+                        : `${isResizing ? 'transition-none' : 'transition-[width,background-color,border-color] motion-reduce:transition-none'} ${isOverlay ? 'absolute inset-y-0 left-0 z-30 shadow-2xl' : 'relative'}`
+                }`}
+            >
+                {sidebarExpanded && resizeHandle}
                 {/* Sidebar Header */}
-                <div className="h-14 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4">
+                <div className="h-14 flex-shrink-0 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4">
                     {sidebarExpanded ? (
                         <div className="flex items-center gap-2 overflow-hidden cursor-pointer" onClick={onNavigateDashboard}>
                             <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white flex-shrink-0">
@@ -372,23 +710,47 @@ export function ChapterNavigator({
                             <ArrowLeft size={16}/>
                         </div>
                     )}
-                    <button onClick={() => setSidebarExpanded(!sidebarExpanded)} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 focus:outline-none">
+                    <button onClick={() => setSidebarExpanded(!sidebarExpanded)} aria-label={sidebarExpanded ? 'Collapse chapter sidebar' : 'Expand chapter sidebar'} className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 focus:outline-none">
                         {sidebarExpanded ? <ChevronDown className="rotate-90" size={18}/> : <ChevronRight size={18}/>}
                     </button>
                 </div>
 
                 {sidebarExpanded && (
-                    <div className="p-4 border-b border-slate-100 dark:border-slate-800">
-                        <div className="flex items-center gap-3 mb-2">
+                    <div className={`min-w-0 p-4 ${hideChapterTree ? 'flex min-h-0 flex-1 flex-col' : 'flex-shrink-0 border-b border-slate-100 dark:border-slate-800'}`}>
+                        <div className="flex items-center gap-3">
                             <div className={`w-10 h-14 ${book.coverColor || 'bg-slate-700'} rounded shadow-sm flex-shrink-0`}></div>
-                            <div className="overflow-hidden">
+                            <div className="min-w-0 flex-1 overflow-hidden">
                                 <h2 className="font-semibold text-sm text-slate-900 dark:text-white truncate" title={book.title}>{book.title}</h2>
                                 <p className="text-xs text-slate-500 dark:text-slate-400 truncate">by {book.author}</p>
                             </div>
+                            {onOpenBrainstorm && <BrainstormShortcut bookId={book.id} localMode={localMode} onOpen={onOpenBrainstorm} />}
                         </div>
-                        <form className="mt-4 space-y-2" onSubmit={handleSidebarSearchSubmit}>
-                            <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 text-xs font-medium dark:bg-slate-900">
-                                {(['chapter', 'volume'] as SidebarSearchMode[]).map((mode) => (
+                        <form className={`mt-4 min-w-0 ${hideChapterTree ? 'flex min-h-0 flex-1 flex-col gap-2 [&>*]:shrink-0' : 'space-y-2'}`} onSubmit={handleSidebarSearchSubmit}>
+                            {localMode && (
+                                <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 text-[11px] font-medium dark:bg-slate-900">
+                                    {(['title', 'semantic'] as StorySearchMode[]).map((mode) => (
+                                        <button
+                                            key={mode}
+                                            type="button"
+                                            onClick={() => {
+                                                setStorySearchMode(mode);
+                                                setSidebarSearchMessage('');
+                                                storySearch.clearSearch();
+                                            }}
+                                            className={`rounded-md px-2 py-1.5 transition ${
+                                                storySearchMode === mode
+                                                    ? 'bg-white text-brand-700 shadow-sm dark:bg-slate-800 dark:text-brand-300'
+                                                    : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
+                                            }`}
+                                        >
+                                            {mode === 'title' ? 'Title / Chapter' : 'Semantic / Story'}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {(storySearchMode === 'title' || !localMode) && (
+                                <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 text-xs font-medium dark:bg-slate-900">
+                                    {(['chapter', 'volume'] as SidebarSearchMode[]).map((mode) => (
                                     <button
                                         key={mode}
                                         type="button"
@@ -404,27 +766,57 @@ export function ChapterNavigator({
                                     >
                                         {mode}
                                     </button>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
+                            )}
                             <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5 focus-within:border-brand-400 focus-within:ring-2 focus-within:ring-brand-100 dark:border-slate-800 dark:bg-slate-900 dark:focus-within:border-brand-500 dark:focus-within:ring-brand-950/60">
-                                <Search size={15} className="flex-shrink-0 text-slate-400" />
+                                {storySearchMode === 'semantic' ? (
+                                    <Sparkles size={15} className="flex-shrink-0 text-brand-500" />
+                                ) : (
+                                    <Search size={15} className="flex-shrink-0 text-slate-400" />
+                                )}
                                 <input
                                     value={sidebarSearchQuery}
                                     onChange={(event) => {
                                         setSidebarSearchQuery(event.target.value);
                                         setSidebarSearchMessage('');
+                                        if (storySearchMode === 'semantic') storySearch.clearSearch();
                                     }}
-                                    placeholder={`Search ${sidebarSearchMode}s`}
+                                    placeholder={storySearchMode === 'semantic' ? 'Search the story' : `Search ${sidebarSearchMode}s`}
                                     className="min-w-0 flex-1 bg-transparent text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none dark:text-slate-100"
                                 />
                                 <button
                                     type="submit"
+                                    disabled={storySearchMode === 'semantic' && storySearch.isSearching}
                                     className="rounded-md bg-brand-600 px-2 py-1 text-[11px] font-semibold text-white transition hover:bg-brand-700"
                                 >
-                                    Go
+                                    {storySearchMode === 'semantic' && storySearch.isSearching ? '…' : 'Go'}
                                 </button>
                             </div>
-                            {sidebarSearchQuery.trim() && sidebarSearchResults.length > 0 && (
+                            {storySearchMode === 'semantic' ? (
+                                <div className="min-h-0 min-w-0 flex-1 !shrink overflow-hidden">
+                                    <StorySearchResults
+                                        embeddingStatus={storySearch.embeddingStatus}
+                                        indexStatus={storySearch.indexStatus}
+                                        indexProgress={storySearch.indexProgress}
+                                        statusError={storySearch.statusError}
+                                        isStatusLoading={storySearch.isStatusLoading}
+                                        isIndexing={storySearch.isIndexing}
+                                        isSearching={storySearch.isSearching}
+                                        searchError={storySearch.searchError}
+                                        response={storySearch.response}
+                                        lastQuery={storySearch.lastQuery}
+                                        filters={storySearch.filters}
+                                        chapters={storySearchChapters}
+                                        activeChapterId={activeChapterId}
+                                        selectionMessage={sidebarSearchMessage}
+                                        onFiltersChange={storySearch.updateFilters}
+                                        onQueueIndex={() => void storySearch.queueIndex()}
+                                        onSelectHit={selectStorySearchResult}
+                                        onOpenChapterSummary={onOpenChapterSummary}
+                                    />
+                                </div>
+                            ) : sidebarSearchQuery.trim() && sidebarSearchResults.length > 0 && (
                                 <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-sm dark:border-slate-800 dark:bg-slate-900">
                                     {sidebarSearchResults.map((result) => (
                                         <button
@@ -443,7 +835,7 @@ export function ChapterNavigator({
                                     ))}
                                 </div>
                             )}
-                            {sidebarSearchMessage && (
+                            {storySearchMode !== 'semantic' && sidebarSearchMessage && (
                                 <p className={`text-xs leading-5 ${sidebarSearchMessage.startsWith('No ') || sidebarSearchMessage.startsWith('Type ') ? 'text-amber-600 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>
                                     {sidebarSearchMessage}
                                 </p>
@@ -453,137 +845,35 @@ export function ChapterNavigator({
                 )}
 
                 {/* Sidebar List */}
-                <div className="flex-1 overflow-y-auto py-2 custom-scrollbar relative">
-                    {sidebarExpanded ? (
-                        <div className="px-2 space-y-1">
-                            {book.volumes.length === 0 && (
-                                <div className="text-center py-4 text-xs text-slate-400">
-                                    No volumes yet.<br/>Create one to start writing.
-                                </div>
-                            )}
-
-                            {book.volumes.map((vol, vIndex) => {
-                                const isVolDraggable = !expandedVolumes.has(vol.id) && renamingState?.id !== vol.id;
-                                const isRenamingVol = renamingState?.id === vol.id && renamingState?.type === 'volume';
-
-                                return (
-                                    <div
-                                        id={`sidebar-volume-${vol.id}`}
-                                        key={vol.id}
-                                        className="mb-2"
-                                        draggable={isVolDraggable}
-                                        onDragStart={(e) => handleDragStart(e, 'volume', vIndex)}
-                                        onDragEnter={(e) => handleDragEnter(e, 'volume', vIndex)}
-                                        onDragEnd={handleDragEnd}
-                                        onDragOver={(e) => e.preventDefault()}
-                                    >
-                                        <div className="flex items-center justify-between group/vol pr-2">
-                                            <button
-                                                onClick={() => toggleVolume(vol.id)}
-                                                onContextMenu={(e) => handleContextMenu(e, 'volume', vol.id)}
-                                                className={`
-                                                flex-1 flex items-center gap-1 p-2 text-xs font-semibold text-slate-500 dark:text-slate-400
-                                                hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors
-                                                ${sidebarSearchTarget?.type === 'volume' && sidebarSearchTarget.id === vol.id ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-200 dark:bg-brand-950/40 dark:text-brand-300 dark:ring-brand-800' : ''}
-                                                ${isVolDraggable ? 'cursor-grab active:cursor-grabbing' : ''}
-                                            `}
-                                            >
-                                                {isVolDraggable && <GripVertical size={12} className="opacity-0 group-hover/vol:opacity-50 mr-1" />}
-                                                {expandedVolumes.has(vol.id) ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
-                                                <Folder size={14} />
-
-                                                {isRenamingVol ? (
-                                                    <input
-                                                        ref={renameInputRef}
-                                                        type="text"
-                                                        value={renamingState.value}
-                                                        onChange={(e) => setRenamingState({...renamingState, value: e.target.value})}
-                                                        onKeyDown={handleRenameKeyDown}
-                                                        onBlur={submitRename}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        className="flex-1 min-w-0 bg-white dark:bg-slate-900 border border-brand-300 dark:border-brand-800 rounded px-1 py-0.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-900"
-                                                    />
-                                                ) : (
-                                                    <span className="truncate">{vol.title}</span>
-                                                )}
-                                            </button>
-                                            <button onClick={() => handleAddChapter(vol.id)} title="Add Chapter" className="opacity-0 group-hover/vol:opacity-100 p-1 hover:bg-brand-100 dark:hover:bg-brand-950/40 text-brand-600 dark:text-brand-300 rounded">
-                                                <Plus size={12} />
-                                            </button>
-                                        </div>
-
-                                        {expandedVolumes.has(vol.id) && (
-                                            <div className="ml-4 mt-1 space-y-0.5 border-l border-slate-200 dark:border-slate-800 pl-2">
-                                                {vol.chapters.map((chapter, cIndex) => {
-                                                    const isRenamingChap = renamingState?.id === chapter.id && renamingState?.type === 'chapter';
-
-                                                    return (
-                                                        <div
-                                                            id={`sidebar-chapter-${chapter.id}`}
-                                                            key={chapter.id}
-                                                            onContextMenu={(e) => handleContextMenu(e, 'chapter', chapter.id, vol.id)}
-                                                            draggable={!isRenamingChap}
-                                                            onDragStart={(e) => handleDragStart(e, 'chapter', cIndex, vol.id)}
-                                                            onDragEnter={(e) => handleDragEnter(e, 'chapter', cIndex, vol.id)}
-                                                            onDragEnd={handleDragEnd}
-                                                            onDragOver={(e) => e.preventDefault()}
-                                                            onClick={() => !isRenamingChap && onSelectChapter(chapter.id)}
-                                                            className={`
-                                                                w-full flex items-center justify-between p-2 text-sm rounded-md transition-colors text-left group cursor-grab active:cursor-grabbing
-                                                                ${activeChapterId === chapter.id
-                                                                ? 'bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300 font-medium'
-                                                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
-                                                            }
-                                                                ${sidebarSearchTarget?.type === 'chapter' && sidebarSearchTarget.id === chapter.id ? 'ring-1 ring-brand-200 dark:ring-brand-800' : ''}
-                                                            `}
-                                                        >
-                                                            <div className="flex items-center gap-2 overflow-hidden flex-1">
-                                                                <GripVertical size={12} className="opacity-0 group-hover:opacity-30 text-slate-400 flex-shrink-0" />
-                                                                <FileText size={14} className={`flex-shrink-0 ${activeChapterId === chapter.id ? 'text-brand-500' : 'text-slate-400'}`} />
-                                                                {chapter.isEditable === false && <Lock size={14} className="text-rose-500 flex-shrink-0" />}
-
-                                                                {isRenamingChap ? (
-                                                                    <input
-                                                                        ref={renameInputRef}
-                                                                        type="text"
-                                                                        value={renamingState.value}
-                                                                        onChange={(e) => setRenamingState({...renamingState, value: e.target.value})}
-                                                                        onKeyDown={handleRenameKeyDown}
-                                                                        onBlur={submitRename}
-                                                                        onClick={(e) => e.stopPropagation()}
-                                                                        className="flex-1 min-w-0 bg-white dark:bg-slate-900 border border-brand-300 dark:border-brand-800 rounded px-1 py-0.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-900"
-                                                                    />
-                                                                ) : (
-                                                                    <span className="truncate">{chapter.title}</span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                                {vol.chapters.length === 0 && <div className="text-xs text-slate-300 dark:text-slate-600 italic p-2">No chapters</div>}
-                                            </div>
-                                        )}
-                                    </div>
-                                )})}
+                {sidebarExpanded ? <VirtualChapterList ref={treeRef} rows={treeRows} hidden={hideChapterTree}
+                    activeId={`chapter-${activeChapterId}`}
+                    pinnedIds={[...(renamingState ? [`${renamingState.type}-${renamingState.id}`] : []),
+                        ...(draggingItem ? [`${draggingItem.type}-${draggingItem.id}`] : [])]}
+                    renderRow={row => {
+                        if (row.kind === 'volume') return renderVolumeRow(row.volume!);
+                        if (row.kind === 'chapter') return renderChapterRow(row.volume!, row.chapter!);
+                        if (row.kind === 'empty') return <div className="ml-4 border-l border-slate-200 dark:border-slate-800 pl-4 py-2 text-xs text-slate-400 dark:text-slate-600 italic">No chapters</div>;
+                        return <>
+                            {!book.volumes.length && <div className="text-center text-xs text-slate-400">No volumes yet. Create one to start writing.</div>}
                             <button onClick={handleAddVolume} className="w-full flex items-center gap-2 p-2 mt-4 text-xs font-medium text-slate-500 dark:text-slate-400 border border-dashed border-slate-300 dark:border-slate-700 rounded-md hover:border-brand-400 hover:text-brand-600 dark:hover:text-brand-300 justify-center">
                                 <Plus size={14} /> Create Volume
                             </button>
-                        </div>
-                    ) : (
+                        </>;
+                    }} /> : <div className="min-h-0 flex-1 overflow-y-auto py-2 relative">
                         <div className="flex flex-col items-center gap-4 py-4">
                             <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300"><Folder size={20}/></div>
                             <div className="w-4 h-px bg-slate-200 dark:bg-slate-800"></div>
                             <div className="p-2 rounded-lg bg-brand-50 dark:bg-brand-950/40 text-brand-600 dark:text-brand-300"><FileText size={20}/></div>
                         </div>
-                    )}
-                </div>
+                    </div>}
             </aside>
 
             {/* Navigator context menu */}
             {contextMenu && (
                 <div
-                    className="fixed z-50 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-lg rounded-md py-1 w-44"
-                    style={{ top: contextMenu.y, left: contextMenu.x }}
+                    ref={contextMenuRef}
+                    className="fixed z-50 max-h-[calc(100vh-1rem)] w-44 overflow-y-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-800 dark:bg-slate-900"
+                    style={contextMenuPosition ?? { top: contextMenu.y, left: contextMenu.x }}
                     onClick={(e) => e.stopPropagation()}
                 >
                     {contextMenu.type === 'chapter' && (
@@ -605,17 +895,17 @@ export function ChapterNavigator({
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] backdrop-blur-sm">
                     <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-xl max-w-sm w-full mx-4 border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200">
                         <div className="flex items-center gap-3 mb-4 text-rose-600">
-                            <div className="p-2 bg-rose-100 rounded-full"><AlertTriangle size={24} /></div>
+                            <div className="p-2 bg-rose-100 dark:bg-rose-950/60 rounded-full"><AlertTriangle size={24} /></div>
                             <h3 className="text-lg font-bold text-slate-900 dark:text-white">Delete {itemToDelete.type === 'volume' ? 'Volume' : 'Chapter'}?</h3>
                         </div>
                         <p className="text-slate-600 dark:text-slate-300 mb-6 text-sm leading-relaxed">
                             Are you sure you want to delete this {itemToDelete.type}? <br/>
-                            {localMode && <span>Chapter summaries and live planning/brainstorm links will be removed. Plot text and historical snapshots will be retained with missing-source notices. </span>}
+                            {localMode && <span>Its summary and links in planning and brainstorms will be removed. Saved plot text and earlier brainstorms will be kept. </span>}
                             {itemToDelete.type === 'volume' ? <span className="font-semibold text-rose-600">All chapters inside will be lost.</span> : <span>This action cannot be undone.</span>}
                         </p>
                         <div className="flex justify-end gap-3">
                             <Button variant="ghost" onClick={() => { setShowDeleteModal(false); setItemToDelete(null); }}>Cancel</Button>
-                            <Button variant="primary" className="bg-rose-600 hover:bg-rose-700 text-white border-none shadow-md shadow-rose-200" onClick={confirmDelete}>Delete</Button>
+                            <Button variant="primary" className="bg-rose-600 hover:bg-rose-700 text-white border-none shadow-md shadow-rose-200 dark:shadow-rose-950/40" onClick={confirmDelete}>Delete</Button>
                         </div>
                     </div>
                 </div>

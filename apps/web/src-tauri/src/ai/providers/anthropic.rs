@@ -73,7 +73,7 @@ mod tests {
             base_url: "https://api.example.com/v1".into(),
             model_id: "test-model".into(),
             timeout_ms: 30_000,
-            max_output_tokens: 128,
+            max_output_tokens: Some(128),
         })
     }
 

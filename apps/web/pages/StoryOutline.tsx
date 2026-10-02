@@ -1,7 +1,8 @@
+import { DelayedLoading, PageLoading } from '../components/ui/DelayedLoading';
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Book } from '../types';
-import { localBookOptions, projectBook } from '../data/local/repository';
+import { localFullBookOptions, localCharactersOptions, projectBook, projectCharacter } from '../data/local/repository';
 import { localPlanningOptions, type LocalPlanning } from '../data/local/planningRepository';
 import { useLocalPlanningPersistence } from '../features/planning/hooks/useLocalPlanningPersistence';
 import type { PlanningPersistence } from '../features/planning/hooks/useStoryPlanning';
@@ -13,6 +14,7 @@ import { SaveStatusIndicator } from '../components/ui/SaveStatusIndicator';
 import { useBooks } from '../InteractionContent/BooksContext';
 import { useStoryPlanning } from '../features/planning/hooks/useStoryPlanning';
 import { ChapterSummariesPanel } from '../features/planning/components/ChapterSummariesPanel';
+import { useChapterSummarySuggestions } from '../features/planning/hooks/useChapterSummarySuggestions';
 import { StoryOverviewPanel } from '../features/planning/components/StoryOverviewPanel';
 import { PlotSettingsPanel } from '../features/planning/components/PlotSettingsPanel';
 
@@ -23,6 +25,19 @@ function StoryOutlineContent({ bookId, localBook, persistence }: { bookId: strin
     const book = localBook ?? getBook(bookId);
     const editor = useStoryPlanning(bookId, book, persistence);
     const { isLoading, loadError, isSaving, saveState, handleSave } = editor;
+    const summarySuggestions = useChapterSummarySuggestions({
+        enabled: Boolean(persistence && book && !loadError),
+        bookId,
+        book,
+        planning: editor.planning,
+        draftRevision: editor.draftRevision,
+        flushPlanning: editor.flush,
+        getPlanningSnapshot: editor.getPlanningSnapshot,
+        getDraftRevision: editor.getDraftRevision,
+        isReadOnly: Boolean(book?.isReadOnly),
+        updateManualSummary: editor.updateChapterSummary,
+        adoptSummary: editor.adoptChapterSummarySuggestion,
+    });
     const openAiBrainstorm = () => {
         const chapterId = searchParams.get('chapterId');
         navigate(`/books/${bookId}/ai-brainstorm${chapterId ? `?chapterId=${chapterId}` : ''}`);
@@ -65,12 +80,24 @@ function StoryOutlineContent({ bookId, localBook, persistence }: { bookId: strin
                 </div>
             ) : isLoading ? (
                 <div className="flex-1 flex items-center justify-center text-slate-400">
-                    <Loader2 size={22} className="animate-spin mr-2" />Loading planning workspace...
+                    <DelayedLoading identity={bookId}><span role="status" className="flex items-center"><Loader2 size={22} className="animate-spin mr-2" />Loading planning workspace...</span></DelayedLoading>
                 </div>
             ) : (
-                <div className="flex-1 min-h-0 grid grid-cols-1 xl:grid-cols-[340px_minmax(420px,1fr)_380px] overflow-hidden">
+                <div className="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto xl:grid-cols-[340px_minmax(420px,1fr)_380px] xl:overflow-hidden">
                     <ChapterSummariesPanel chapterOptions={editor.chapterOptions} targetChapterId={searchParams.get('chapterId')}
-                        updateChapterSummary={editor.updateChapterSummary} />
+                        updateChapterSummary={editor.updateChapterSummary}
+                        acknowledgeChapterSummaryChanges={editor.acknowledgeChapterSummaryChanges}
+                        suggestions={summarySuggestions.suggestions}
+                        activeSuggestionChapterId={summarySuggestions.activeChapterId}
+                        modelAvailability={summarySuggestions.modelAvailability}
+                        modelNotice={summarySuggestions.modelNotice}
+                        isReadOnly={Boolean(book.isReadOnly)}
+                        isSuggestionCurrent={summarySuggestions.isCurrent}
+                        generateSuggestion={chapterId => { void summarySuggestions.generate(chapterId); }}
+                        stopSuggestion={summarySuggestions.stop}
+                        acceptSuggestion={chapterId => { void summarySuggestions.accept(chapterId); }}
+                        keepManual={summarySuggestions.keepManual}
+                        toggleSuggestionHit={summarySuggestions.toggleRetrievalHit} />
                     <StoryOverviewPanel planning={editor.planning} updatePlanningField={editor.updatePlanningField} />
                     <PlotSettingsPanel planning={editor.planning} selectedPlot={editor.selectedPlot} selectedPlotId={editor.selectedPlotId}
                         setSelectedPlotId={editor.setSelectedPlotId} chapterOptions={editor.chapterOptions} addPlotSetting={editor.addPlotSetting}
@@ -91,13 +118,17 @@ function LoadedLocalOutline({ book, initial }: { book: Book; initial: LocalPlann
     return <StoryOutlineContent bookId={book.id} localBook={book} persistence={persistence} />;
 }
 function LocalOutline({ bookId }: { bookId: string }) {
-    const detail = useQuery({ ...localBookOptions(bookId), refetchOnMount: 'always' });
+    const detail = useQuery({ ...localFullBookOptions(bookId), refetchOnMount: 'always' });
+    const characters = useQuery({ ...localCharactersOptions(bookId), refetchOnMount: 'always' });
     const planning = useQuery(localPlanningOptions(bookId));
-    const book = useMemo(() => detail.data ? projectBook(detail.data.book, detail.data) : undefined, [detail.data]);
-    const error = detail.error ?? planning.error;
-    if (error || !book || !planning.data || detail.isFetching || planning.isFetching) return <main className="p-8">
+    const book = useMemo(() => detail.data && characters.data
+        ? projectBook(detail.data.book, detail.data, characters.data.map(projectCharacter))
+        : undefined, [detail.data, characters.data]);
+    const error = detail.error ?? characters.error ?? planning.error;
+    if (!error && (!book || !planning.data || detail.isFetching || characters.isFetching || planning.isFetching)) return <PageLoading identity={bookId}>Loading planning workspace...</PageLoading>;
+    if (error || !book || !planning.data || detail.isFetching || characters.isFetching || planning.isFetching) return <main className="p-8">
         <p role={error ? 'alert' : 'status'}>{error?.message ?? 'Loading planning workspace...'}</p>
-        {error && <Button onClick={() => { void detail.refetch(); void planning.refetch(); }}>Retry</Button>}
+        {error && <Button onClick={() => { void detail.refetch(); void characters.refetch(); void planning.refetch(); }}>Retry</Button>}
     </main>;
     return <LoadedLocalOutline book={book} initial={planning.data} />;
 }

@@ -1,3 +1,4 @@
+import { DelayedLoading, PageLoading } from '../components/ui/DelayedLoading';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ReactFlowProvider } from '@xyflow/react';
@@ -73,7 +74,7 @@ function RelationshipMapContent({ bookId, book, initial }: { bookId: string; boo
                     <Button onClick={graph.retry}>Retry</Button>
                 </div>
             ) : !isGraphLoaded ? (
-                <div role="status" className="flex-1 flex items-center justify-center text-slate-500">Loading relationship map...</div>
+                <div className="flex-1 flex items-center justify-center text-slate-500"><DelayedLoading identity={bookId}><p role="status">Loading relationship map...</p></DelayedLoading></div>
             ) : (
                 <div className="flex-1 flex overflow-hidden">
                     <CharacterPalette characters={book.characters.filter(character => !character.isArchived)} isSidebarOpen={isSidebarOpen} />
@@ -105,6 +106,7 @@ function LocalGraphRoute({ bookId }: { bookId: string }) {
             .catch((cause: unknown) => { if (active) setInitError(cause instanceof Error ? cause.message : 'Graph initialization failed.'); });
         return () => { active = false; };
     }, [bookId, client, error, initError, graph.isPending, graph.isFetching, graph.data]);
+    if (!error && !initError && (!book || graph.isPending || graph.isFetching || !graph.data)) return <PageLoading identity={bookId}>Loading local relationship map...</PageLoading>;
     if (error || initError || !book || graph.isPending || graph.isFetching || !graph.data) return <main className="p-8 space-y-4">
         <p role={error || initError ? 'alert' : 'status'}>{error?.message ?? initError ?? 'Loading local relationship map...'}</p>
         {(error || initError) && <Button onClick={() => { setInitError(null); void detail.refetch(); void characters.refetch(); void graph.refetch(); }}>Retry</Button>}

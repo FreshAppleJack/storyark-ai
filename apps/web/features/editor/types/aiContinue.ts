@@ -3,4 +3,8 @@ export interface AiContinueAnchor {
     to: number;
     docSize: number;
     selectedText: string;
+    retrievalAnchor: {
+        paragraphOrdinal: number;
+        textOffset: number;
+    };
 }

@@ -296,11 +296,10 @@ export function summarizeStoryArkWorkExport(value: StoryArkWorkExport): WorkExpo
         supportedAssetCount: value.assets.length,
         derivedIndexesRebuildable: true,
         exclusions: [
-            'Application preferences and editor UI settings',
-            'AI model configurations, credentials and API keys',
-            'Temporary candidates, running tasks and request state',
-            'Absolute machine paths and derived retrieval indexes',
-            'Unsupported attachments and local-path assets (preflight required)',
+            'App and editor preferences',
+            'AI model settings and API keys',
+            'Unsaved AI suggestions',
+            'Files linked from your computer',
         ],
     };
 }

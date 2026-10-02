@@ -1,14 +1,10 @@
 import { toast } from 'react-hot-toast';
 
 /**
- * The temporary save-success popup shared by every save flow. react-hot-toast
- * paints with inline styles, so the dark palette is passed explicitly based
- * on the current theme class.
+ * Shared save-success message. The global Toaster owns theme-aware styling,
+ * including theme changes while a notification is already visible.
  */
 export function showSaveSuccessToast(message = 'Saved successfully!') {
-    const dark = document.documentElement.classList.contains('dark');
     // Optional call: unit tests often mock only toast.error.
-    toast.success?.(message, dark
-        ? { style: { background: '#1e293b', color: '#f1f5f9', border: '1px solid #334155' } }
-        : undefined);
+    toast.success?.(message);
 }

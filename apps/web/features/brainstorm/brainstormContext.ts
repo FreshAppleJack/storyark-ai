@@ -1,6 +1,7 @@
 import type { Book, Chapter, Character, StoryPlanning, BrainstormOption } from '../../types';
 import { extractContentSignals, getEditorPlainText } from '../../domain/chapterContent';
 import { escapeRegex, getCharacterMatchTerms } from '../../domain/characters';
+import { assessChapterSummaryFreshness, createCurrentAllowedSourceVersions } from '../../domain/chapterSummarySource';
 
 export interface BrainstormRelationship {
     /** Display names are resolved only when the context snapshot is built. */
@@ -31,6 +32,7 @@ export interface ChapterOption {
     summary: string;
     content: string;
     databaseVersion?: number;
+    summaryStatus?: 'current' | 'stale' | 'missing';
 }
 
 export const getMentionedCharacterIds = (
@@ -62,16 +64,29 @@ export const formatOptionAsEditableText = (option: BrainstormOption) => (
 
 export function getBrainstormChapters(book: Book | undefined, planning: StoryPlanning): ChapterOption[] {
     if (!book) return [];
-    const summaryMap = new Map(planning.chapterSummaries.map(item => [item.chapterId, item.summary]));
+    const summaryMap = new Map(planning.chapterSummaries.map(item => [item.chapterId, item]));
+    const currentAllowedSourceVersions = createCurrentAllowedSourceVersions({
+        bookId: book.id,
+        planningDatabaseVersion: planning.databaseVersion,
+        characters: book.characters,
+        chapters: book.volumes.flatMap(volume => volume.chapters),
+    });
     return book.volumes.flatMap(volume => (
-        volume.chapters.map((chapter: Chapter) => ({
-            id: chapter.id,
-            title: chapter.title,
-            volumeTitle: volume.title,
-            summary: summaryMap.get(chapter.id) || '',
-            content: chapter.content || '',
-            databaseVersion: chapter.databaseVersion,
-        }))
+        volume.chapters.map((chapter: Chapter) => {
+            const summary = summaryMap.get(chapter.id);
+            const freshness = assessChapterSummaryFreshness(summary, chapter, currentAllowedSourceVersions);
+            const summaryStatus = freshness.status === 'missing' ? 'missing'
+                : freshness.status === 'current' ? 'current' : 'stale';
+            return {
+                id: chapter.id,
+                title: chapter.title,
+                volumeTitle: volume.title,
+                summary: summaryStatus === 'current' ? summary?.summary || '' : '',
+                content: chapter.content || '',
+                databaseVersion: chapter.databaseVersion,
+                summaryStatus,
+            };
+        })
     ));
 }
 // Minimal structural shape so both the legacy API DTO and the local graph
@@ -143,7 +158,7 @@ export function isContextSnapshotStale(snapshot: Record<string, unknown>, chapte
     });
 }
 
-function boundedChapterText(content: string, maxChars: number): string {
+export function boundedChapterText(content: string, maxChars: number): string {
     const text = getEditorPlainText(content);
     const characters = Array.from(text);
     if (characters.length <= maxChars) return text;
@@ -218,7 +233,9 @@ export function buildContextSnapshot(book: Book, planning: StoryPlanning, select
             volumeTitle: chapter.volumeTitle,
             summary: chapter.summary,
             databaseVersion: chapter.databaseVersion,
-            summarySource: chapter.summary.trim() ? 'stored-planning-summary' : 'missing',
+            summarySource: chapter.summaryStatus === 'stale'
+                ? 'stale-planning-summary'
+                : chapter.summary.trim() ? 'stored-planning-summary' : 'missing',
             boundedChapterText: chapter.summary.trim() ? undefined : boundedChapterText(chapter.content, 2000),
         })),
         missingSummaryChapterTitles: missingSummaryChapters.map(chapter => chapter.title),

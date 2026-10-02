@@ -5,6 +5,26 @@ import { fixture, openPage, renameChapter, setupEditorPageHarness } from './edit
 setupEditorPageHarness();
 
 describe('Chapter rename and draft ownership', () => {
+    it.each(['', '   \t'])('saves a cleared or whitespace-only title with a default without losing the body (%j)', async title => {
+        await openPage();
+        const input = screen.getByPlaceholderText('Chapter Title');
+        fireEvent.change(input, { target: { value: title } });
+
+        // The user can leave the field empty while composing a new title.
+        expect(input).toHaveValue(title);
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
+
+        expect(fixture.save).toHaveBeenCalledWith('b1', 'v1', 'c1', 'Untitled Chapter', 'unsaved body', 7,
+            [expect.objectContaining({ id: 'f1', note: 'unsaved note' })]);
+        expect(screen.getByText('Saved')).toBeInTheDocument();
+        expect(fixture.toastError).not.toHaveBeenCalled();
+
+        fireEvent.change(input, { target: { value: 'Replacement title' } });
+        await act(async () => vi.advanceTimersByTimeAsync(1000));
+        expect(fixture.save).toHaveBeenLastCalledWith('b1', 'v1', 'c1', 'Replacement title', 'unsaved body', 7,
+            [expect.objectContaining({ id: 'f1', note: 'unsaved note' })]);
+    });
+
     it('persists the renamed title with the current draft through one unified save', async () => {
         await openPage();
         await renameChapter('c1', 'Renamed first');

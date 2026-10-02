@@ -1,3 +1,11 @@
+import type {
+    ChapterSummaryContentFormat,
+    ChapterSummaryFreshnessAcknowledgement,
+    ChapterSummaryGenerationMetadata,
+    ChapterSummaryProvenance,
+    ChapterSummarySourceSnapshot,
+} from './domain/chapterSummarySource';
+
 export interface User {
   id: string;
   username: string;
@@ -59,12 +67,17 @@ export const AI_CONTINUE_LIMITS = {
 } as const;
 
 export interface Chapter {
+  /** False only for directory entries; an empty body must not become an editable draft. */
+  contentLoaded?: boolean;
+  contentFormat?: ChapterSummaryContentFormat;
+  contentVersion?: number;
   databaseVersion?: number;
   id: string;
   title: string;
   wordCount: number;
   status: 'draft' | 'published';
   content: string;
+  isReadOnly?: boolean;
   isEditable: boolean;
   foreshadowings: ForeshadowingNote[];
   lastModified?: number;
@@ -84,6 +97,10 @@ export interface ChapterSummary {
   chapterId: string;
   summary: string;
   updatedAt: number;
+  provenance?: ChapterSummaryProvenance;
+  sourceSnapshot?: ChapterSummarySourceSnapshot;
+  freshnessAcknowledgement?: ChapterSummaryFreshnessAcknowledgement;
+  generationMetadata?: ChapterSummaryGenerationMetadata;
 }
 
 export interface PlotSetting {
@@ -101,6 +118,7 @@ export interface StoryPlanning {
   storyBackground: string;
   chapterSummaries: ChapterSummary[];
   plotSettings: PlotSetting[];
+  databaseVersion?: number;
   updatedAt?: number;
 }
 
@@ -118,6 +136,20 @@ export interface BrainstormGenerationMetadata {
     modelId: string;
     generatedAt: number;
     promptVersion: string;
+    includesPlanning?: boolean;
+    retrieval?: {
+        retrievalVersion: string;
+        requestedAt: number;
+        sourceVersions: Array<{
+            sourceId: string;
+            chapterId: string | null;
+            sourceVersion: number;
+            indexVersion: number;
+        }>;
+        includedHitIds: string[];
+        indexVersion: number | null;
+        embeddingFingerprint: string | null;
+    } | null;
     source: {
         bookId: string;
         workspaceDatabaseVersion: number;
@@ -148,6 +180,7 @@ export interface HandleConfig {
 export interface Character {
   id: string;
   bookId: string;
+  databaseVersion?: number;
   name: string;
   aliases: string[];
   role: CharacterRole;

@@ -1,11 +1,29 @@
-## Data boundary
+# Data boundary
 
-- `domain/` contains pure normalization for preferences, character input and planning. `mappers.ts` converts server DTOs and write payloads. Time is supplied by callers; converters do not access React, storage or the network.
-- The API modules own URLs, HTTP methods and wire formats. They return frontend values (except the existing graph DTO) and reject on request/conversion failure. The HTTP wrapper explicitly returns `response.data`; its generic describes that body and defaults to `unknown`.
-- DTOs describe the server contract, not complete runtime schema validation. Authentication requires a valid identity and username. Numeric write IDs must be positive safe integers. Damaged chapter notes reject instead of becoming an empty writable list; missing legacy notes still default to empty. Preferences and graph handle configuration normalize to safe defaults.
-- HTTP failures, including 401, reject without forced navigation or page reload. The editor retains its draft and reports save failure. This is not a complete session reauthentication flow.
-- Context owns optimistic state and one shared chapter queue. Content saves, lock changes and chapter deletion use that queue; volume deletion drains its known chapters first. API functions must not create independent queues.
-- Context writes report `true`/`false`; book/volume/chapter creation returns an ID or `null`. Read failures return `null`, distinct from successful empty results. Character creation returns a boolean. Nickname failure restores its prior snapshot; other existing optimistic updates remain local on failure.
-- Preference setters update local state/storage immediately and sync remotely on a best-effort basis. Login success means authentication succeeded, independently of initial settings/book loading. A created book ID confirms creation even if the subsequent list refresh fails.
-- Existing fire-and-forget UI mutations may ignore the new boolean result. Their completion must not be treated as proof of persistence; comprehensive mutation feedback/rollback and state ownership are separate work.
-- `POST /books` must return the created book object with its generated ID. Deploy the matching `BookController` change with this frontend.
+Desktop persistence uses the typed repositories in `local/` and Tauri commands.
+The local provider stack owns the shared query cache and coordinates chapter
+writes. Repositories do not create independent draft stores or save queues.
+
+- `domain/` contains shared normalization and content rules without React,
+  storage or network access.
+- `local/repository.ts` unwraps native results, preserves error codes and exposes
+  readable recovery messages. Original diagnostics are logged without arguments,
+  credentials or authored content. Browser preview rejects desktop-only operations.
+- Feature repositories own IPC payloads and result types. Validation, ownership,
+  locks and optimistic version checks also run in Rust before persistence.
+- Reads distinguish failure from valid empty data. Writes acknowledge committed
+  versions; dispatching a request alone cannot mark a draft saved.
+- Chapter saves, locking and deletion share the write queue. Parent deletion drains
+  affected drafts first. Late completions cannot clear a newer draft revision.
+- `export/` defines the portable work envelope, validation and import/export
+  boundaries. It does not export SQLite rows, credentials or transient requests.
+- AI generation repositories own transport and events. Feature hooks own temporary
+  candidates; adopting a result uses the normal writing or planning save path.
+
+Legacy HTTP API modules and `mappers.ts` remain for compatibility/reference. Their
+DTOs are separate from the native contracts and do not authorize desktop operations
+to fall back to a server. HTTP errors reject to the caller without forcing a page
+reload that could discard a draft.
+
+See the [maintenance documentation](../docs/README.md) for storage, AI and exchange
+contracts.

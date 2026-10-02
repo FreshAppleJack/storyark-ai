@@ -15,6 +15,8 @@ fn main() {
     };
     tauri_build::try_build(
         attributes.app_manifest(tauri_build::AppManifest::new().commands(&[
+            "diagnostic_report_error",
+            "diagnostic_log_info",
             "ai_list_configs",
             "ai_save_config",
             "ai_set_default",
@@ -23,8 +25,11 @@ fn main() {
             "ai_prepare_context",
             "ai_start_generation",
             "ai_cancel_generation",
+            "ai_validate_adoption",
             "local_list_books",
             "local_read_book",
+            "local_read_book_directory",
+            "local_read_chapter",
             "local_read_work_export_snapshot",
             "local_prepare_work_import",
             "local_import_work",
@@ -54,6 +59,18 @@ fn main() {
             "local_save_preferences",
             "local_read_brainstorm",
             "local_save_brainstorm",
+            "local_sync_retrieval_sources",
+            "local_list_retrieval_sources",
+            "local_list_retrieval_chunks",
+            "local_embedding_status",
+            "local_index_schedule_status",
+            "local_save_index_preferences",
+            "local_queue_retrieval_index",
+            "local_list_retrieval_index_jobs",
+            "local_pause_retrieval_index_job",
+            "local_cancel_retrieval_index_job",
+            "local_retry_retrieval_index_job",
+            "local_search_retrieval",
         ])),
     )
     .expect("Failed to build the application permission manifest")

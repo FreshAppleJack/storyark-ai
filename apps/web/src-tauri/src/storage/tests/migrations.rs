@@ -3,6 +3,66 @@ use super::*;
 const MIGRATION_0001: &str = include_str!("../../../migrations/0001_library.sql");
 
 #[test]
+fn optional_output_cap_upgrade_preserves_saved_limits_credentials_and_default() {
+    let temp = TempDirectory::new();
+    std::fs::create_dir_all(&temp.0).unwrap();
+    let db = Connection::open(temp.0.join("storyark.sqlite3")).unwrap();
+    db.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+    for migration in [
+        MIGRATION_0001,
+        include_str!("../../../migrations/0002_local_content.sql"),
+        include_str!("../../../migrations/0003_book_cover.sql"),
+        include_str!("../../../migrations/0004_ai_model_configs.sql"),
+        include_str!("../../../migrations/0005_ai_credentials.sql"),
+        include_str!("../../../migrations/0006_content_state.sql"),
+        include_str!("../../../migrations/0007_retrieval_sources.sql"),
+        include_str!("../../../migrations/0008_retrieval_chunks.sql"),
+        include_str!("../../../migrations/0009_retrieval_indexing.sql"),
+        include_str!("../../../migrations/0010_retrieval_audit.sql"),
+        include_str!("../../../migrations/0011_retrieval_search_task.sql"),
+        include_str!("../../../migrations/0012_retrieval_scheduler.sql"),
+    ] {
+        db.execute_batch(migration).unwrap();
+    }
+    db.execute_batch("INSERT INTO ai_model_configs VALUES ('11111111-1111-4111-8111-111111111111','Saved','openai-responses','https://example.com/v1','fixture',60000,100000,'22222222-2222-4222-8222-222222222222',7,1,2,'system'); INSERT INTO ai_generation_settings VALUES (1,'11111111-1111-4111-8111-111111111111',4,2); PRAGMA user_version=12;").unwrap();
+    drop(db);
+    let upgraded = Database::open(&temp.0).unwrap();
+    let saved: (i64, i64, String, String, i64) = upgraded.connection.query_row(
+        "SELECT timeout_ms,max_output_tokens,credential_ref,credential_mode,config_version FROM ai_model_configs", [],
+        |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))).unwrap();
+    assert_eq!(
+        saved,
+        (
+            60000,
+            100000,
+            "22222222-2222-4222-8222-222222222222".into(),
+            "system".into(),
+            7
+        )
+    );
+    let default: (String, i64) = upgraded
+        .connection
+        .query_row(
+            "SELECT default_config_id,database_version FROM ai_generation_settings",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(default, ("11111111-1111-4111-8111-111111111111".into(), 4));
+    upgraded
+        .connection
+        .execute("UPDATE ai_model_configs SET max_output_tokens=NULL", [])
+        .unwrap();
+    assert!(upgraded
+        .connection
+        .execute(
+            "UPDATE ai_model_configs SET protocol='anthropic-messages'",
+            []
+        )
+        .is_err());
+}
+
+#[test]
 fn future_unversioned_and_corrupt_databases_are_not_reset() {
     for scenario in ["future", "unversioned", "corrupt"] {
         let temp = TempDirectory::new();
@@ -59,7 +119,7 @@ fn upgrade_from_v1_preserves_work_data_and_creates_a_prior_backup() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 6);
+    assert_eq!(version, 13);
     let loaded = db.read_book(&book_id).unwrap();
     let chapter = &loaded["chapters"][0];
     // Content, original recovery copy, ids, unknown note fields and the lock
@@ -88,6 +148,12 @@ fn upgrade_from_v1_preserves_work_data_and_creates_a_prior_backup() {
         "planning",
         "application_preferences",
         "brainstorm_workspaces",
+        "retrieval_sources",
+        "retrieval_chunks",
+        "retrieval_chunks_fts",
+        "retrieval_index_jobs",
+        "retrieval_search_events",
+        "ai_generation_events",
     ] {
         let count: i64 = db
             .connection
@@ -112,6 +178,62 @@ fn upgrade_from_v1_preserves_work_data_and_creates_a_prior_backup() {
         .query_row("SELECT count(*) FROM books", [], |r| r.get(0))
         .unwrap();
     assert_eq!(backup_books, 1);
+}
+
+#[test]
+fn version_eight_database_runs_the_retrieval_index_migration() {
+    let temp = TempDirectory::new();
+    seed_v1_database(&temp.0);
+    let connection = Connection::open(temp.0.join("storyark.sqlite3")).unwrap();
+    for (version, migration) in [
+        (
+            2,
+            include_str!("../../../migrations/0002_local_content.sql"),
+        ),
+        (3, include_str!("../../../migrations/0003_book_cover.sql")),
+        (
+            4,
+            include_str!("../../../migrations/0004_ai_model_configs.sql"),
+        ),
+        (
+            5,
+            include_str!("../../../migrations/0005_ai_credentials.sql"),
+        ),
+        (
+            6,
+            include_str!("../../../migrations/0006_content_state.sql"),
+        ),
+        (
+            7,
+            include_str!("../../../migrations/0007_retrieval_sources.sql"),
+        ),
+        (
+            8,
+            include_str!("../../../migrations/0008_retrieval_chunks.sql"),
+        ),
+    ] {
+        connection.execute_batch(migration).unwrap();
+        connection
+            .pragma_update(None, "user_version", version)
+            .unwrap();
+    }
+    drop(connection);
+
+    let db = Database::open(&temp.0).unwrap();
+    let version: i64 = db
+        .connection
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 13);
+    db.connection
+        .prepare("SELECT * FROM retrieval_index_jobs LIMIT 0")
+        .unwrap();
+    db.connection
+        .prepare("SELECT * FROM retrieval_search_events LIMIT 0")
+        .unwrap();
+    db.connection
+        .prepare("SELECT task FROM retrieval_search_events LIMIT 0")
+        .unwrap();
 }
 
 #[test]
@@ -163,7 +285,7 @@ fn a_fresh_database_initializes_at_the_latest_version_with_all_tables() {
         .connection
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 6);
+    assert_eq!(version, 13);
     for table in [
         "books",
         "volumes",
@@ -177,6 +299,12 @@ fn a_fresh_database_initializes_at_the_latest_version_with_all_tables() {
         "planning",
         "application_preferences",
         "brainstorm_workspaces",
+        "retrieval_sources",
+        "retrieval_chunks",
+        "retrieval_chunks_fts",
+        "retrieval_index_jobs",
+        "retrieval_search_events",
+        "ai_generation_events",
     ] {
         db.connection
             .prepare(&format!("SELECT * FROM {table} LIMIT 0"))
@@ -184,6 +312,56 @@ fn a_fresh_database_initializes_at_the_latest_version_with_all_tables() {
     }
     // A fresh empty database takes no pre-upgrade backup.
     assert!(!temp.0.join("backups").exists());
+}
+
+#[test]
+fn version_ten_audit_database_without_task_column_is_repaired() {
+    let temp = TempDirectory::new();
+    let db = Database::open(&temp.0).unwrap();
+    db.connection
+        .execute_batch(
+            "DROP INDEX retrieval_search_events_book_time_idx;
+             ALTER TABLE retrieval_search_events RENAME TO retrieval_search_events_v10;
+             CREATE TABLE retrieval_search_events (
+                 event_id TEXT PRIMARY KEY NOT NULL,
+                 book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+                 retrieval_version TEXT NOT NULL,
+                 requested_mode TEXT NOT NULL,
+                 effective_mode TEXT NOT NULL,
+                 status TEXT NOT NULL,
+                 query_hash TEXT NOT NULL,
+                 embedding_fingerprint TEXT,
+                 source_versions_json TEXT NOT NULL,
+                 hit_ids_json TEXT NOT NULL,
+                 created_at INTEGER NOT NULL
+             ) STRICT;
+             INSERT INTO retrieval_search_events(
+                 event_id,book_id,retrieval_version,requested_mode,effective_mode,status,
+                 query_hash,embedding_fingerprint,source_versions_json,hit_ids_json,created_at
+             ) SELECT event_id,book_id,retrieval_version,requested_mode,effective_mode,status,
+                 query_hash,embedding_fingerprint,source_versions_json,hit_ids_json,created_at
+                 FROM retrieval_search_events_v10;
+             DROP TABLE retrieval_search_events_v10;
+             CREATE INDEX retrieval_search_events_book_time_idx
+                 ON retrieval_search_events(book_id, created_at, event_id);
+             DROP TABLE retrieval_dirty_sources;
+             DROP TABLE retrieval_preferences;
+             ALTER TABLE retrieval_index_jobs DROP COLUMN automatic;
+             PRAGMA user_version = 10;",
+        )
+        .unwrap();
+    drop(db);
+
+    let repaired = Database::open(&temp.0).unwrap();
+    let version: i64 = repaired
+        .connection
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .unwrap();
+    assert_eq!(version, 13);
+    repaired
+        .connection
+        .prepare("SELECT task FROM retrieval_search_events LIMIT 0")
+        .unwrap();
 }
 
 #[test]

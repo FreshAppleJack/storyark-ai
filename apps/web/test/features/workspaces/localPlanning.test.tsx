@@ -5,6 +5,8 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import { planningRepository, type LocalPlanning } from '../../../data/local/planningRepository';
 import { localKeys, projectBook, type LocalBookDetail } from '../../../data/local/repository';
 import { useStoryPlanning } from '../../../features/planning/hooks/useStoryPlanning';
+import { getBrainstormChapters } from '../../../features/brainstorm/brainstormContext';
+import { createChapterSummarySourceSnapshot } from '../../../domain/chapterSummarySource';
 import { useLocalPlanningPersistence } from '../../../features/planning/hooks/useLocalPlanningPersistence';
 import { useLocalNoteDrafts } from '../../../features/foreshadowing/hooks/useLocalNoteDrafts';
 import { collectForeshadowingCards, foreshadowingCardKey } from '../../../features/foreshadowing/foreshadowingSelectors';
@@ -44,11 +46,16 @@ it('saves newer planning edits in order and keeps the chapter source version', a
     expect(save.mock.calls.map(([input]) => input.expectedDatabaseVersion)).toEqual([0, 1]);
     expect(save.mock.calls[1][0].storyBackground).toBe('New world rule');
     expect(save.mock.calls[1][0].chapterSummaries[0].sourceChapterVersion).toBe(1);
+    expect(save.mock.calls[1][0].chapterSummaries[0]).toMatchObject({
+        provenance: 'author',
+        sourceSnapshot: { chapterId: chapter.id, chapterDatabaseVersion: 1, fingerprintAlgorithm: 'fnv1a64-utf16-v1' },
+    });
+    expect(result.current.planning.databaseVersion).toBe(2);
     expect(result.current.isDirty).toBe(false);
     expect(legacy.save).not.toHaveBeenCalled();
 });
 
-it('clears stale chapter summary prompts after a successful planning save', async () => {
+it('keeps a stale legacy summary flagged until the author explicitly edits it', async () => {
     const currentChapter = { ...chapter, databaseVersion: 2 };
     const currentDetail: LocalBookDetail = { ...detail, chapters: [currentChapter, { ...chapter, id: 'other-chapter' }] };
     const currentBook = projectBook(book, currentDetail);
@@ -69,9 +76,116 @@ it('clears stale chapter summary prompts after a successful planning save', asyn
     await act(async () => { await result.current.handleSave(); });
 
     expect(save).toHaveBeenCalledWith(expect.objectContaining({
-        chapterSummaries: [expect.objectContaining({ sourceChapterVersion: 2 })],
+        chapterSummaries: [expect.objectContaining({ sourceChapterVersion: 1 })],
     }));
+    expect(result.current.chapterOptions[0].sourceChanged).toBe(true);
+    expect(result.current.chapterOptions[0].summaryFreshness?.status).toBe('needs-review');
+
+    act(() => result.current.updateChapterSummary(currentChapter.id, 'Reviewed against the current chapter.'));
+    await act(async () => { await result.current.flush(); });
+
+    expect(save.mock.calls.at(-1)?.[0].chapterSummaries[0]).toMatchObject({
+        sourceChapterVersion: 2,
+        provenance: 'author',
+        sourceSnapshot: { chapterId: currentChapter.id, chapterDatabaseVersion: 2 },
+    });
     expect(result.current.chapterOptions[0].sourceChanged).toBe(false);
+    expect(result.current.chapterOptions[0].summaryFreshness?.status).toBe('current');
+});
+
+it('acknowledges a changed chapter summary without changing its text and keeps it current for Brainstorm', async () => {
+    const currentContent = JSON.stringify({
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: '正文新增了一段。' }] }],
+    });
+    const changedDetail: LocalBookDetail = {
+        ...detail,
+        chapters: detail.chapters.map(item => item.id === chapter.id
+            ? { ...item, databaseVersion: 2, body: { ...item.body, content: currentContent } }
+            : item),
+    };
+    const changedBook = projectBook(book, changedDetail);
+    const originalChapter = projected.volumes[0].chapters[0];
+    const stalePlanning: LocalPlanning = {
+        ...initial,
+        databaseVersion: 1,
+        chapterSummaries: [{
+            chapterId: chapter.id,
+            summary: '保留这段人工概括。',
+            sourceChapterVersion: 1,
+            sourceSnapshot: createChapterSummarySourceSnapshot(originalChapter, 100),
+            provenance: 'author',
+            updatedAt: 100,
+        }],
+    };
+    const save = vi.spyOn(planningRepository, 'save').mockImplementation(async input => ({
+        planning: { ...stalePlanning, ...input, databaseVersion: input.expectedDatabaseVersion + 1 },
+        sessionKey: input.sessionKey,
+        revision: input.revision,
+    }));
+    const { result } = renderHook(() => useStoryPlanning(book.id, changedBook, useLocalPlanningPersistence(stalePlanning)), wrapper());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.chapterOptions[0].summaryFreshness?.status).toBe('possibly-stale');
+
+    act(() => result.current.acknowledgeChapterSummaryChanges(chapter.id));
+
+    expect(result.current.planning.chapterSummaries[0].summary).toBe('保留这段人工概括。');
+    expect(result.current.chapterOptions[0].summaryFreshness?.status).toBe('current');
+    await act(async () => { expect(await result.current.flush()).toBe(true); });
+    expect(save.mock.calls[0][0].chapterSummaries[0].freshnessAcknowledgement).toMatchObject({
+        acknowledgedSourceSnapshot: { chapterId: chapter.id, chapterDatabaseVersion: 2 },
+        allowedSourceVersions: [],
+    });
+
+    const brainstormChapters = getBrainstormChapters(changedBook, result.current.planning);
+    expect(brainstormChapters[0]).toMatchObject({
+        summary: '保留这段人工概括。',
+        summaryStatus: 'current',
+    });
+});
+
+it('keeps an accepted AI summary in the planning draft when the optimistic save conflicts', async () => {
+    const save = vi.spyOn(planningRepository, 'save').mockRejectedValue(new Error('VERSION_CONFLICT'));
+    const { result } = renderHook(() => useStoryPlanning(book.id, projected, useLocalPlanningPersistence(initial)), wrapper());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    const sourceSnapshot = createChapterSummarySourceSnapshot(projected.volumes[0].chapters[0], 100);
+    const generationMetadata = {
+        providerId: 'api.example.invalid',
+        configId: '00000000-0000-4000-8000-000000000080',
+        protocol: 'openai-responses',
+        modelId: 'model-a',
+        generatedAt: 100,
+        promptVersion: 'chapter-summary-v1',
+        source: {
+            bookId: book.id,
+            chapterId: chapter.id,
+            chapterDatabaseVersion: 1,
+            sourceBodyFingerprint: sourceSnapshot.bodyFingerprint,
+            planningDatabaseVersion: 0,
+            allowedSources: [],
+            retrievalTrace: null,
+            includesFuturePlan: false as const,
+        },
+    };
+
+    await act(async () => {
+        expect(await result.current.adoptChapterSummarySuggestion({
+            chapterId: chapter.id,
+            summary: 'Accepted candidate kept in the draft.',
+            sourceSnapshot,
+            generationMetadata,
+            expectedDraftRevision: 0,
+        })).toBe('save-failed');
+    });
+
+    expect(result.current.planning.chapterSummaries[0]).toMatchObject({
+        summary: 'Accepted candidate kept in the draft.',
+        provenance: 'ai-adopted',
+        generationMetadata: { modelId: 'model-a' },
+    });
+    expect(result.current.isDirty).toBe(true);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save.mock.calls[0][0].expectedDatabaseVersion).toBe(0);
 });
 
 it('retains planning on conflict and does not advance the expected version', async () => {

@@ -3,15 +3,17 @@ import type {
     ContextSection,
     GenerationTarget,
 } from '../../data/local/aiGenerationRepository';
+import type { RetrievalScope } from '../../domain/retrieval/contracts';
 import {
     buildContextSnapshot,
+    boundedChapterText,
     validateBrainstormSources,
     type BrainstormRelationship,
     type BrainstormSourceVersions,
     type ChapterOption,
 } from './brainstormContext';
 
-export const BRAINSTORM_PROMPT_VERSION = 'brainstorm-v1';
+export const BRAINSTORM_PROMPT_VERSION = 'brainstorm-v2';
 export const BRAINSTORM_CONTEXT_MAX_CHARS = 60_000;
 export const BRAINSTORM_OUTPUT_CHARS = 12_000;
 
@@ -23,6 +25,8 @@ export interface BrainstormGenerationContext {
     draftRevision: number;
     sourceFingerprint: string;
     sourceSnapshot: Record<string, unknown>;
+    retrievalScope: RetrievalScope | null;
+    retrievalQuery: string;
 }
 
 function boundedText(value: string, maxChars: number): string {
@@ -96,6 +100,23 @@ export function buildBrainstormGenerationContext(
         },
     ];
 
+    // Current summaries are already present in the explicit source snapshot.
+    // Retrieve manuscript evidence only for chapters using the text fallback.
+    const chaptersWithoutCurrentSummary = selectedChapters.filter(chapter => !chapter.summary.trim());
+    const retrievalQuery = chaptersWithoutCurrentSummary.length
+        ? boundedText(chaptersWithoutCurrentSummary.map(chapter => (
+            `${chapter.title}\n${boundedChapterText(chapter.content, 1200)}`
+        )).join('\n\n'), 6_000)
+        : '';
+    const retrievalScope: RetrievalScope | null = chaptersWithoutCurrentSummary.length ? {
+        bookId: book.id,
+        allowedSourceKinds: ['manuscript'],
+        allowedChapterIds: chaptersWithoutCurrentSummary.map(chapter => chapter.id),
+        includeFuturePlan: false,
+        includeGenerated: false,
+        includeStale: false,
+    } : null;
+
     const fingerprint = JSON.stringify({ bookId: book.id, draftRevision, target, sourceSnapshot });
     return {
         target,
@@ -105,5 +126,7 @@ export function buildBrainstormGenerationContext(
         draftRevision,
         sourceFingerprint: fingerprint,
         sourceSnapshot,
+        retrievalScope,
+        retrievalQuery,
     };
 }

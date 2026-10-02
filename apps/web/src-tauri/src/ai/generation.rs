@@ -8,6 +8,31 @@ pub struct SourceVersion {
     pub database_version: u64,
 }
 
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GenerationRetrievalTrace {
+    pub retrieval_version: String,
+    pub source_versions: Vec<SourceVersion>,
+    #[serde(default)]
+    pub retrieval_source_versions: Vec<crate::rag::contracts::RetrievalSourceVersionRecord>,
+    #[serde(default)]
+    pub search_id: Option<String>,
+    #[serde(default)]
+    pub task: Option<crate::rag::contracts::RetrievalTaskStrategy>,
+    #[serde(default)]
+    pub requested_at: Option<i64>,
+    #[serde(default)]
+    pub scope: Option<crate::rag::contracts::RetrievalScope>,
+    #[serde(default)]
+    pub excluded_hit_ids: Vec<String>,
+    #[serde(default)]
+    pub included_hit_ids: Vec<String>,
+    #[serde(default)]
+    pub index_version: Option<i64>,
+    #[serde(default)]
+    pub embedding_fingerprint: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
 pub enum GenerationTarget {
@@ -16,6 +41,14 @@ pub enum GenerationTarget {
         chapter_id: String,
         #[serde(rename = "databaseVersion")]
         database_version: u64,
+    },
+    ChapterSummary {
+        #[serde(rename = "chapterId")]
+        chapter_id: String,
+        #[serde(rename = "databaseVersion")]
+        database_version: u64,
+        #[serde(rename = "planningDatabaseVersion")]
+        planning_database_version: u64,
     },
     Brainstorm {
         #[serde(rename = "workspaceDatabaseVersion")]
@@ -40,6 +73,8 @@ pub struct GenerateRequest {
     pub target: GenerationTarget,
     pub context_snapshot_id: String,
     pub output_chars: u32,
+    #[serde(default)]
+    pub retrieval_trace: Option<GenerationRetrievalTrace>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -47,6 +82,18 @@ pub struct GenerateRequest {
 pub struct CancelRequest {
     pub request_id: String,
     pub session_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ValidateAiAdoption {
+    pub book_id: String,
+    pub chapter_id: String,
+    pub database_version: u64,
+    #[serde(default)]
+    pub planning_database_version: Option<u64>,
+    #[serde(default)]
+    pub retrieval_source_versions: Vec<crate::rag::contracts::RetrievalSourceVersionRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -148,6 +195,7 @@ pub enum ContextKind {
     AuthorSetting,
     ManualSummary,
     FuturePlan,
+    RetrievalEvidence,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -159,6 +207,8 @@ pub struct ContextInput {
     pub max_chars: u32,
     pub target: GenerationTarget,
     pub sections: Vec<ContextSection>,
+    #[serde(default)]
+    pub retrieval_context: Option<crate::rag::contracts::RetrievalContext>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,6 +221,8 @@ pub struct ContextSnapshot {
     pub target: GenerationTarget,
     pub sections: Vec<ContextSection>,
     pub char_count: u32,
+    #[serde(default)]
+    pub retrieval_context: Option<crate::rag::contracts::RetrievalContext>,
 }
 
 #[cfg(test)]
@@ -195,6 +247,20 @@ mod tests {
             "kind":"continue", "chapterId":"chapter"
         }))
         .is_err());
+        assert!(matches!(
+            serde_json::from_value::<GenerationTarget>(json!({
+                "kind":"chapterSummary",
+                "chapterId":"chapter",
+                "databaseVersion":7,
+                "planningDatabaseVersion":3
+            }))
+            .unwrap(),
+            GenerationTarget::ChapterSummary {
+                database_version: 7,
+                planning_database_version: 3,
+                ..
+            }
+        ));
         let event = GenerationEvent {
             request_id: "request".into(),
             session_id: "session".into(),

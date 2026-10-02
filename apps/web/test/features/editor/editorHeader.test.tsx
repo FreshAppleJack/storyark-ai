@@ -28,11 +28,32 @@ function createProps(overrides: Record<string, unknown> = {}) {
 }
 
 describe('EditorHeader', () => {
+    it('exposes the full long chapter title on hover', () => {
+        const chapterTitle = '标题测试'.repeat(100);
+        render(<EditorHeader {...createProps({ chapterTitle })} />);
+        expect(screen.getByTitle(chapterTitle)).toHaveTextContent(chapterTitle);
+    });
+
+    it.each(['', '   '])('shows the default chapter name for a blank title (%j)', chapterTitle => {
+        render(<EditorHeader {...createProps({ chapterTitle })} />);
+        expect(screen.getByTitle('Untitled Chapter')).toHaveTextContent('Untitled Chapter');
+    });
+
     it('shows the volume and chapter breadcrumb', () => {
         render(<EditorHeader {...createProps()} />);
 
         expect(screen.getByText('Volume 1')).toBeInTheDocument();
         expect(screen.getByText('My Chapter')).toBeInTheDocument();
+    });
+
+    it('keeps navigation focus outlines inside the visible header area', () => {
+        render(<EditorHeader {...createProps()} />);
+
+        const header = screen.getByRole('banner');
+        const actions = screen.getByText('AI Continue').closest('div');
+
+        expect(header).toHaveClass('overflow-visible');
+        expect(actions).toHaveClass('py-1');
     });
 
     it('prompts to select a chapter when none is active', () => {
@@ -119,6 +140,10 @@ describe('ExportMenu', () => {
         expect(screen.queryByText('Word Document')).not.toBeInTheDocument();
         await user.click(screen.getByText('Export'));
         expect(screen.getByText('Word Document')).toBeInTheDocument();
+
+        const exportMenu = screen.getByTestId('export-menu');
+        expect(exportMenu.parentElement).toBe(document.body);
+        expect(exportMenu).toHaveClass('fixed');
 
         await user.click(screen.getByText('Word Document'));
         expect(props.onExportWord).toHaveBeenCalledTimes(1);

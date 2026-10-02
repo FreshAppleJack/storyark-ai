@@ -2,7 +2,7 @@
 
 -- Full schema snapshot for NEW EMPTY databases only; not an incremental migration.
 
--- Based on the registered Rust migrations through version 6. No application data.
+-- Based on the registered Rust migrations through version 13. No application data.
 
 -- Do not add this file to the runtime migration registry or execute all *.sql files.
 
@@ -181,31 +181,138 @@ CREATE TABLE brainstorm_workspaces (
     FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
 ) STRICT;
 
-CREATE TABLE ai_model_configs (
+CREATE TABLE ai_credential_cleanup (
+    credential_ref TEXT PRIMARY KEY NOT NULL CHECK(length(credential_ref)=36),
+    credential_mode TEXT NOT NULL CHECK(credential_mode IN ('session','system'))
+) STRICT;
+
+CREATE TABLE retrieval_sources (
+    source_id TEXT PRIMARY KEY NOT NULL CHECK(length(trim(source_id)) BETWEEN 1 AND 8192),
+    book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    entity_id TEXT NOT NULL CHECK(length(trim(entity_id)) BETWEEN 1 AND 4096),
+    source_kind TEXT NOT NULL CHECK(source_kind IN (
+        'manuscript', 'chapter_summary', 'planning', 'confirmed_setting',
+        'character', 'relationship', 'foreshadowing_note', 'future_plan'
+    )),
+    source_status TEXT NOT NULL CHECK(source_status IN ('active', 'stale', 'pending', 'discarded')),
+    source_version INTEGER NOT NULL CHECK(source_version > 0),
+    origin TEXT NOT NULL CHECK(origin IN ('author', 'generated')),
+    authoring_status TEXT NOT NULL CHECK(authoring_status IN ('author_confirmed', 'ai_suggestion', 'discarded')),
+    visibility_scope_json TEXT NOT NULL CHECK(json_valid(visibility_scope_json)),
+    source_text TEXT NOT NULL CHECK(length(source_text) <= 8388608),
+    index_text TEXT NOT NULL CHECK(length(index_text) <= 8388608),
+    updated_at INTEGER NOT NULL CHECK(updated_at >= 0),
+    index_status TEXT NOT NULL CHECK(index_status IN ('not_configured', 'queued', 'indexing', 'ready', 'partial', 'stale', 'failed')),
+    index_version INTEGER CHECK(index_version IS NULL OR index_version > 0),
+    embedding_fingerprint TEXT CHECK(embedding_fingerprint IS NULL OR length(embedding_fingerprint) <= 4096),
+    entity_metadata_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(entity_metadata_json)),
+    UNIQUE(book_id, source_kind, entity_id)
+) STRICT;
+
+CREATE TABLE retrieval_chunks (
+    chunk_id TEXT PRIMARY KEY NOT NULL CHECK(length(trim(chunk_id)) BETWEEN 1 AND 8192),
+    source_id TEXT NOT NULL REFERENCES retrieval_sources(source_id) ON DELETE CASCADE,
+    book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    source_version INTEGER NOT NULL CHECK(source_version > 0),
+    index_version INTEGER NOT NULL CHECK(index_version > 0),
+    ordinal INTEGER NOT NULL CHECK(ordinal >= 0),
+    source_text TEXT NOT NULL CHECK(length(source_text) <= 8388608),
+    index_text TEXT NOT NULL CHECK(length(index_text) <= 8388608),
+    text_hash TEXT NOT NULL CHECK(length(trim(text_hash)) BETWEEN 1 AND 256),
+    short_quote TEXT NOT NULL CHECK(length(short_quote) <= 4096),
+    locator_json TEXT NOT NULL CHECK(json_valid(locator_json)),
+    created_at INTEGER NOT NULL CHECK(created_at >= 0), embedding_blob BLOB,
+    UNIQUE(source_id, source_version, index_version, ordinal, text_hash)
+) STRICT;
+
+CREATE VIRTUAL TABLE retrieval_chunks_fts USING fts5(
+    chunk_id UNINDEXED,
+    book_id UNINDEXED,
+    source_id UNINDEXED,
+    source_version UNINDEXED,
+    index_version UNINDEXED,
+    search_text,
+    tokenize = 'unicode61'
+);
+
+CREATE TABLE retrieval_index_jobs (
+    job_id TEXT PRIMARY KEY NOT NULL,
+    book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    source_id TEXT NOT NULL REFERENCES retrieval_sources(source_id) ON DELETE CASCADE,
+    source_version INTEGER NOT NULL CHECK (source_version > 0),
+    index_version INTEGER NOT NULL CHECK (index_version > 0),
+    embedding_fingerprint TEXT NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('queued','indexing','paused','cancelled','completed','failed')),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    last_error TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL, automatic INTEGER NOT NULL DEFAULT 0 CHECK(automatic IN (0,1)),
+    UNIQUE(source_id, source_version, index_version, embedding_fingerprint)
+) STRICT;
+
+CREATE TABLE retrieval_search_events (
+    event_id TEXT PRIMARY KEY NOT NULL CHECK(length(trim(event_id)) BETWEEN 1 AND 128),
+    book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    retrieval_version TEXT NOT NULL CHECK(length(trim(retrieval_version)) BETWEEN 1 AND 128),
+    task TEXT NOT NULL CHECK(length(trim(task)) BETWEEN 1 AND 64),
+    requested_mode TEXT NOT NULL,
+    effective_mode TEXT NOT NULL,
+    status TEXT NOT NULL,
+    query_hash TEXT NOT NULL CHECK(length(trim(query_hash)) BETWEEN 1 AND 256),
+    embedding_fingerprint TEXT,
+    source_versions_json TEXT NOT NULL CHECK(json_valid(source_versions_json)),
+    hit_ids_json TEXT NOT NULL CHECK(json_valid(hit_ids_json)),
+    created_at INTEGER NOT NULL CHECK(created_at >= 0)
+) STRICT;
+
+CREATE TABLE ai_generation_events (
+    event_id TEXT PRIMARY KEY NOT NULL CHECK(length(trim(event_id)) BETWEEN 1 AND 128),
+    request_id TEXT NOT NULL UNIQUE CHECK(length(trim(request_id)) BETWEEN 1 AND 128),
+    book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    session_id TEXT NOT NULL CHECK(length(trim(session_id)) BETWEEN 1 AND 4096),
+    prompt_version TEXT NOT NULL CHECK(length(trim(prompt_version)) BETWEEN 1 AND 128),
+    retrieval_version TEXT,
+    config_id TEXT NOT NULL CHECK(length(trim(config_id)) BETWEEN 1 AND 128),
+    model_id TEXT NOT NULL CHECK(length(trim(model_id)) BETWEEN 1 AND 256),
+    source_versions_json TEXT NOT NULL CHECK(json_valid(source_versions_json)),
+    created_at INTEGER NOT NULL CHECK(created_at >= 0)
+) STRICT;
+
+CREATE TABLE retrieval_preferences (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    auto_index INTEGER NOT NULL DEFAULT 0 CHECK(auto_index IN (0,1)),
+    database_version INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE TABLE retrieval_dirty_sources (
+    source_id TEXT PRIMARY KEY REFERENCES retrieval_sources(source_id) ON DELETE CASCADE,
+    book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+    source_version INTEGER NOT NULL,
+    first_changed INTEGER NOT NULL,
+    last_changed INTEGER NOT NULL
+);
+
+CREATE TABLE "ai_model_configs" (
     id TEXT PRIMARY KEY NOT NULL CHECK(length(id) = 36),
     name TEXT NOT NULL CHECK(length(trim(name)) BETWEEN 1 AND 120),
     protocol TEXT NOT NULL CHECK(protocol IN ('openai-responses','openai-chat-completions','anthropic-messages')),
     base_url TEXT NOT NULL CHECK(length(base_url) BETWEEN 1 AND 2048),
     model_id TEXT NOT NULL CHECK(length(trim(model_id)) BETWEEN 1 AND 256),
     timeout_ms INTEGER NOT NULL CHECK(timeout_ms BETWEEN 1000 AND 600000),
-    max_output_tokens INTEGER NOT NULL CHECK(max_output_tokens BETWEEN 1 AND 1000000),
+    max_output_tokens INTEGER CHECK(max_output_tokens BETWEEN 1 AND 1000000)
+        CHECK(protocol != 'anthropic-messages' OR max_output_tokens IS NOT NULL),
     credential_ref TEXT UNIQUE CHECK(credential_ref IS NULL OR length(credential_ref) = 36),
     config_version INTEGER NOT NULL DEFAULT 1 CHECK(config_version > 0),
     created_at INTEGER NOT NULL CHECK(created_at >= 0),
-    updated_at INTEGER NOT NULL CHECK(updated_at >= created_at)
-, credential_mode TEXT NOT NULL DEFAULT 'session'
-    CHECK(credential_mode IN ('session','system'))) STRICT;
+    updated_at INTEGER NOT NULL CHECK(updated_at >= created_at),
+    credential_mode TEXT NOT NULL DEFAULT 'session' CHECK(credential_mode IN ('session','system'))
+) STRICT;
 
 CREATE TABLE ai_generation_settings (
     id INTEGER PRIMARY KEY CHECK(id = 1),
     default_config_id TEXT REFERENCES ai_model_configs(id) ON DELETE RESTRICT,
     database_version INTEGER NOT NULL DEFAULT 1 CHECK(database_version > 0),
     updated_at INTEGER NOT NULL CHECK(updated_at >= 0)
-) STRICT;
-
-CREATE TABLE ai_credential_cleanup (
-    credential_ref TEXT PRIMARY KEY NOT NULL CHECK(length(credential_ref)=36),
-    credential_mode TEXT NOT NULL CHECK(credential_mode IN ('session','system'))
 ) STRICT;
 
 CREATE INDEX books_order ON books(position, id);
@@ -220,7 +327,31 @@ CREATE INDEX graph_nodes_book ON graph_nodes(book_id, node_key);
 
 CREATE INDEX graph_edges_book ON graph_edges(book_id, id);
 
-PRAGMA user_version = 6;
+CREATE INDEX retrieval_sources_book_kind ON retrieval_sources(book_id, source_kind, source_status);
+
+CREATE INDEX retrieval_sources_book_status ON retrieval_sources(book_id, source_status, index_status);
+
+CREATE INDEX retrieval_chunks_book_version
+    ON retrieval_chunks(book_id, source_id, source_version, index_version, ordinal);
+
+CREATE INDEX retrieval_chunks_hash
+    ON retrieval_chunks(book_id, text_hash);
+
+CREATE INDEX retrieval_index_jobs_book_state_idx
+    ON retrieval_index_jobs(book_id, state, updated_at, job_id);
+
+CREATE INDEX retrieval_index_jobs_source_idx
+    ON retrieval_index_jobs(source_id, source_version, index_version);
+
+CREATE INDEX retrieval_search_events_book_time_idx
+    ON retrieval_search_events(book_id, created_at, event_id);
+
+CREATE INDEX ai_generation_events_book_time_idx
+    ON ai_generation_events(book_id, created_at, event_id);
+
+CREATE INDEX retrieval_dirty_book ON retrieval_dirty_sources(book_id);
+
+PRAGMA user_version = 13;
 
 COMMIT;
 

@@ -49,7 +49,7 @@ export function BookActionsMenu({ contextMenu, showDeleteModal, setShowDeleteMod
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] backdrop-blur-sm">
                 <div className="bg-white dark:bg-slate-900 p-6 rounded-lg shadow-xl max-w-sm w-full mx-4 border border-slate-200 dark:border-slate-800 animate-in fade-in zoom-in duration-200">
                     <div className="flex items-center gap-3 mb-4 text-rose-600">
-                        <div className="p-2 bg-rose-100 rounded-full">
+                        <div className="p-2 bg-rose-100 dark:bg-rose-950/60 rounded-full">
                             <AlertTriangle size={24} />
                         </div>
                         <h3 className="text-lg font-bold text-slate-900 dark:text-white">Delete Book?</h3>
@@ -70,7 +70,7 @@ export function BookActionsMenu({ contextMenu, showDeleteModal, setShowDeleteMod
                         </Button>
                         <Button
                             variant="primary"
-                            className="bg-rose-600 hover:bg-rose-700 text-white border-none shadow-md shadow-rose-200"
+                            className="bg-rose-600 hover:bg-rose-700 text-white border-none shadow-md shadow-rose-200 dark:shadow-rose-950/40"
                             onClick={confirmDelete}
                         >
                             Delete Book

@@ -57,15 +57,52 @@ pub(super) fn build_id_map(work: &Value) -> Result<IdMap> {
     Ok(map)
 }
 
-fn mapped(map: &HashMap<String, String>, value: &str) -> String {
+pub(super) fn mapped(map: &HashMap<String, String>, value: &str) -> String {
     map.get(value).cloned().unwrap_or_else(|| value.to_owned())
 }
 
-fn mapped_note(map: &IdMap, chapter_id: &str, note_id: &str) -> String {
+pub(super) fn mapped_note(map: &IdMap, chapter_id: &str, note_id: &str) -> String {
     map.notes
         .get(&(chapter_id.to_owned(), note_id.to_owned()))
         .cloned()
         .unwrap_or_else(|| note_id.to_owned())
+}
+
+fn mapped_source_entity(map: &IdMap, kind: &str, entity_id: &str) -> String {
+    match kind {
+        "character" => mapped(&map.characters, entity_id),
+        "relationship" => mapped(&map.edges, entity_id),
+        "manuscript" | "chapter_summary" | "future_plan" => mapped(&map.chapters, entity_id),
+        "foreshadowing_note" => entity_id
+            .split_once(':')
+            .map(|(chapter_id, note_id)| {
+                format!(
+                    "{}:{}",
+                    mapped(&map.chapters, chapter_id),
+                    mapped_note(map, chapter_id, note_id)
+                )
+            })
+            .unwrap_or_else(|| entity_id.to_owned()),
+        _ => entity_id.to_owned(),
+    }
+}
+
+pub(super) fn mapped_source_id(map: &IdMap, source_id: &str) -> String {
+    let Some((book_id, kind, entity_id)) = source_id.split_once(':').and_then(|(book_id, rest)| {
+        rest.split_once(':')
+            .map(|(kind, entity_id)| (book_id, kind, entity_id))
+    }) else {
+        return source_id.to_owned();
+    };
+    if !map.book.contains_key(book_id) {
+        return source_id.to_owned();
+    }
+    format!(
+        "{}:{}:{}",
+        mapped(&map.book, book_id),
+        kind,
+        mapped_source_entity(map, kind, entity_id)
+    )
 }
 
 fn rewrite_json_references(value: &mut Value, map: &IdMap, chapter_id: Option<&str>) {
@@ -82,6 +119,15 @@ fn rewrite_json_references(value: &mut Value, map: &IdMap, chapter_id: Option<&s
         .get("type")
         .and_then(Value::as_str)
         .map(str::to_owned);
+    let source_kind = object
+        .get("sourceKind")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let chapter_context = object
+        .get("chapterId")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| chapter_id.map(str::to_owned));
     for (key, child) in object.iter_mut() {
         match key.as_str() {
             "bookId" => {
@@ -99,6 +145,16 @@ fn rewrite_json_references(value: &mut Value, map: &IdMap, chapter_id: Option<&s
                     *child = Value::String(mapped(&map.characters, id));
                 }
             }
+            "entityId" => {
+                if let (Some(id), Some(source_kind)) = (child.as_str(), source_kind.as_deref()) {
+                    *child = Value::String(mapped_source_entity(map, source_kind, id));
+                }
+            }
+            "sourceId" => {
+                if let Some(id) = child.as_str() {
+                    *child = Value::String(mapped_source_id(map, id));
+                }
+            }
             "sourceCharacterId" | "targetCharacterId" => {
                 if let Some(id) = child.as_str() {
                     *child = Value::String(mapped(&map.characters, id));
@@ -114,12 +170,47 @@ fn rewrite_json_references(value: &mut Value, map: &IdMap, chapter_id: Option<&s
                     *child = Value::String(mapped(&map.node_keys, id));
                 }
             }
-            "selectedChapterIds" | "chapterIds" | "missingChapterIds" => {
+            "selectedChapterIds"
+            | "chapterIds"
+            | "missingChapterIds"
+            | "allowedChapterIds"
+            | "mentionedCharacterIds" => {
                 if let Some(ids) = child.as_array_mut() {
                     for id in ids {
                         let old = id.as_str().map(str::to_owned);
                         if let Some(old) = old {
-                            *id = Value::String(mapped(&map.chapters, &old));
+                            let mapped_id = if key == "mentionedCharacterIds" {
+                                mapped(&map.characters, &old)
+                            } else {
+                                mapped(&map.chapters, &old)
+                            };
+                            *id = Value::String(mapped_id);
+                        }
+                    }
+                }
+            }
+            "foreshadowingIds" => {
+                if let (Some(ids), Some(chapter_id)) =
+                    (child.as_array_mut(), chapter_context.as_deref())
+                {
+                    for id in ids {
+                        if let Some(old) = id.as_str().map(str::to_owned) {
+                            *id = Value::String(mapped_note(map, chapter_id, &old));
+                        }
+                    }
+                }
+            }
+            "foreshadowingNoteFingerprints" => {
+                if let (Some(notes), Some(chapter_id)) =
+                    (child.as_array_mut(), chapter_context.as_deref())
+                {
+                    for note in notes {
+                        if let Some(note_id) = note
+                            .get("noteId")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned)
+                        {
+                            note["noteId"] = Value::String(mapped_note(map, chapter_id, &note_id));
                         }
                     }
                 }
@@ -131,7 +222,7 @@ fn rewrite_json_references(value: &mut Value, map: &IdMap, chapter_id: Option<&s
             }
             _ => {}
         }
-        rewrite_json_references(child, map, chapter_id);
+        rewrite_json_references(child, map, chapter_context.as_deref());
     }
     if kind.as_deref() == Some("mention") {
         if let Some(attrs) = object.get_mut("attrs").and_then(Value::as_object_mut) {
@@ -283,6 +374,7 @@ pub(super) fn copy_work(work: &Value, map: &IdMap, title: &str) -> Result<Value>
     } else {
         0
     });
+    super::summary_copy::preserve_summary_baselines(planning, work, map);
     rewrite_json_references(planning, map, None);
     if let Some(summaries) = planning
         .get_mut("chapterSummaries")

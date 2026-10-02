@@ -1,3 +1,4 @@
+import { DelayedLoading } from '../components/ui/DelayedLoading';
 import React, { useCallback, useRef, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
@@ -133,7 +134,7 @@ const Dashboard: React.FC = () => {
                     <span className="font-bold text-xl text-slate-800 dark:text-white tracking-tight">StoryArk</span>
                 </div>
                 <div className="flex items-center gap-4">
-                    {isLocal ? <span className="text-sm text-slate-500">Local workspace · No account required</span> : <>
+                    {!isLocal && <>
                     <span className="text-sm text-slate-600 dark:text-slate-300">Welcome, <strong>{user?.username}</strong></span>
                     </>}
                     <Link to="/settings">
@@ -151,7 +152,7 @@ const Dashboard: React.FC = () => {
                 <div className="flex flex-col gap-5 mb-8 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                         <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">My Bookshelf</h1>
-                        <p className="text-slate-500 dark:text-slate-400">{isLocal ? 'Your books are saved on this device.' : 'Manage your stories and worlds.'}</p>
+                        <p className="text-slate-500 dark:text-slate-400">Enjoy bringing your stories to life.</p>
                     </div>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                         <div className="relative w-full sm:w-80">
@@ -203,14 +204,14 @@ const Dashboard: React.FC = () => {
                 </div>
 
                 {isLocal && <p className="mb-4 text-sm text-slate-500">Create books, volumes and chapters, then write locally. Configure a model in Settings to use AI Continue.</p>}
-                {booksLoading && <p role="status">Loading local books...</p>}
+                {booksLoading && !booksError && <DelayedLoading identity="bookshelf"><p role="status">Loading local books...</p></DelayedLoading>}
                 {booksError && <div role="alert" className="mb-6 rounded border border-rose-300 p-4">
                     <p>{booksError}</p><Button variant="secondary" onClick={() => void refreshBooks?.()}>Retry</Button>
                 </div>}
                 {showCreate && <form onSubmit={submitCreate} className="mb-6 rounded-xl border border-slate-300 bg-white p-6 space-y-4 dark:bg-slate-900">
                     <h2 className="text-lg font-semibold">Create a local book</h2>
-                    <label className="block">Title<input autoFocus required maxLength={512} value={newTitle} onChange={e => setNewTitle(e.target.value)} className="block w-full rounded border p-2 bg-transparent" /></label>
-                    <label className="block">Author (optional)<input maxLength={256} value={author} onChange={e => setAuthor(e.target.value)} className="block w-full rounded border p-2 bg-transparent" /></label>
+                    <label className="block">Title<input autoFocus required maxLength={512} value={newTitle} onChange={e => setNewTitle(e.target.value)} className="block w-full rounded border bg-transparent p-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40" /></label>
+                    <label className="block">Author (optional)<input maxLength={256} value={author} onChange={e => setAuthor(e.target.value)} className="block w-full rounded border bg-transparent p-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/40" /></label>
                     <div className="flex gap-3"><Button type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create Book'}</Button>
                         <Button type="button" variant="secondary" disabled={creating} onClick={() => setShowCreate(false)}>Cancel</Button></div>
                 </form>}

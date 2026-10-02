@@ -1,3 +1,4 @@
+import { PageLoading } from '../components/ui/DelayedLoading';
 import React, { useEffect } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -41,9 +42,10 @@ function CharacterSettingsContent({ bookId }: { bookId: string }) {
     if (isLocal) {
         const pending = detailQuery.isPending || charactersQuery.isPending;
         const error = detailQuery.error ?? charactersQuery.error;
+        if (pending && !error) return <PageLoading identity={bookId}>Loading local book...</PageLoading>;
         if (pending || error) {
             return <main className="min-h-screen flex flex-col items-center justify-center gap-4 p-8">
-                {pending ? <p role="status">Loading local book...</p> : <>
+                {pending && !error ? <p role="status">Loading local book...</p> : <>
                     <p role="alert">{error?.message}</p>
                     <Button variant="secondary" onClick={() => { void detailQuery.refetch(); void charactersQuery.refetch(); }}>Retry</Button>
                 </>}
@@ -60,7 +62,7 @@ function CharacterSettingsContent({ bookId }: { bookId: string }) {
                     <button onClick={() => navigate(`/editor/${bookId}`)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-500 dark:text-slate-400">
                         <ArrowLeft size={20} />
                     </button>
-                    <h1 className="font-bold text-lg text-slate-800 dark:text-white">World Settings:《{book.title}》</h1>
+                    <h1 className="font-bold text-lg text-slate-800 dark:text-white">World Settings: <em className="italic [font-synthesis:style]">{book.title}</em></h1>
                 </div>
 
                 <div className="flex items-center gap-2">

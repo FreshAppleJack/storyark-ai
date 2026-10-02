@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { retrievalRepository } from '../../../data/local/retrievalRepository';
 import { ChapterNavigator } from '../../../features/editor/components/ChapterNavigator';
 import { Book } from '../../../types';
 
@@ -43,6 +44,7 @@ function createProps(overrides: Record<string, unknown> = {}) {
         onReorderVolumes: vi.fn(),
         onReorderChapters: vi.fn(),
         onOpenPlotSetting: vi.fn(),
+        onOpenChapterSummary: vi.fn(),
         ...overrides,
     };
 }
@@ -87,6 +89,44 @@ describe('ChapterNavigator', () => {
         const updatedBook = { ...book, volumes: book.volumes.map(v => ({ ...v, chapters: v.chapters.map(c => ({ ...c, content: 'updated body' })) })).reverse() };
         rerender(<ChapterNavigator {...props} book={updatedBook} />);
         expect(screen.queryByText('Chapter One')).not.toBeInTheDocument();
+    });
+
+    it('commits a chapter reorder once on drop and ignores cancelled drags', () => {
+        const props = createProps();
+        const { container } = render(<ChapterNavigator {...props} />);
+        const first = container.querySelector('#sidebar-chapter-c1') as HTMLElement;
+        const second = container.querySelector('#sidebar-chapter-c2') as HTMLElement;
+
+        fireEvent.dragStart(first);
+        fireEvent.dragEnter(second);
+        fireEvent.dragOver(second);
+        expect(props.onReorderChapters).not.toHaveBeenCalled();
+        expect(second).toHaveClass('ring-2');
+        fireEvent.drop(second);
+        fireEvent.dragEnd(first);
+        expect(props.onReorderChapters).toHaveBeenCalledTimes(1);
+        expect(props.onReorderChapters).toHaveBeenCalledWith('v1', [book.volumes[0].chapters[1], book.volumes[0].chapters[0]]);
+
+        fireEvent.dragStart(first);
+        fireEvent.dragEnter(second);
+        fireEvent.dragEnd(first);
+        expect(props.onReorderChapters).toHaveBeenCalledTimes(1);
+    });
+
+    it('commits a volume reorder only after dropping on another volume', () => {
+        const props = createProps();
+        const { container } = render(<ChapterNavigator {...props} />);
+        fireEvent.click(screen.getByText('Volume 1'));
+        const first = container.querySelector('#sidebar-volume-v1') as HTMLElement;
+        const second = container.querySelector('#sidebar-volume-v2') as HTMLElement;
+
+        fireEvent.dragStart(first);
+        fireEvent.dragEnter(second);
+        expect(props.onReorderVolumes).not.toHaveBeenCalled();
+        fireEvent.drop(second);
+        fireEvent.dragEnd(first);
+        expect(props.onReorderVolumes).toHaveBeenCalledOnce();
+        expect(props.onReorderVolumes).toHaveBeenCalledWith([book.volumes[1], book.volumes[0]]);
     });
 
     it('expands new volumes and removes deleted volume preferences', async () => {
@@ -154,6 +194,41 @@ describe('ChapterNavigator', () => {
         expect(props.onSelectChapter).toHaveBeenCalledWith('c2');
     });
 
+    it('clears the search target outline when another chapter is selected', async () => {
+        const user = userEvent.setup();
+        const { container, rerender } = render(<ChapterNavigator {...createProps({ localMode: true })} />);
+        fireEvent.change(screen.getByPlaceholderText('Search chapters'), { target: { value: 'One' } });
+        await user.click(screen.getByRole('button', { name: /Chapter One.*Volume 1/ }));
+        rerender(<ChapterNavigator {...createProps({ localMode: true })} activeChapterId="c1" />);
+        expect(container.querySelector('#sidebar-chapter-c1')).toHaveClass('ring-1');
+
+        await user.click(screen.getByText('Chapter Two'));
+        rerender(<ChapterNavigator {...createProps({ localMode: true })} activeChapterId="c2" />);
+        expect(container.querySelector('#sidebar-chapter-c1')).not.toHaveClass('ring-1');
+        expect(container.querySelector('#sidebar-chapter-c2')).not.toHaveClass('ring-1');
+    });
+
+    it('keeps the search form layout stable when a semantic search fails', async () => {
+        const search = vi.spyOn(retrievalRepository, 'search').mockRejectedValue(new Error('Search probe failure'));
+        const { container } = render(<ChapterNavigator {...createProps({ localMode: true })} />);
+        const form = container.querySelector('form') as HTMLFormElement;
+        fireEvent.click(screen.getByRole('button', { name: 'Semantic / Story' }));
+        const initialFormClass = form.className;
+        expect(screen.getByText('Create Volume')).not.toBeVisible();
+        expect(form).toHaveClass('flex-1');
+        fireEvent.change(screen.getByPlaceholderText('Search the story'), { target: { value: '脆弱' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+
+        await waitFor(() => expect(screen.getAllByRole('alert').some(alert => alert.textContent?.includes('The story search could not be completed.'))).toBe(true));
+        expect(container.textContent).not.toContain('Search probe failure');
+        expect(form.className).toBe(initialFormClass);
+        expect(screen.getByText('Create Volume')).not.toBeVisible();
+        expect(form).not.toHaveClass('overflow-hidden');
+        fireEvent.click(screen.getByRole('button', { name: 'Title / Chapter' }));
+        expect(screen.getByText('Create Volume')).toBeVisible();
+        search.mockRestore();
+    });
+
     it('creates a volume with a generated title and starts renaming it', async () => {
         const user = userEvent.setup();
         const props = createProps();
@@ -188,6 +263,26 @@ describe('ChapterNavigator', () => {
         expect(screen.getByText('Plot Setting')).toBeInTheDocument();
         expect(screen.getByText('Rename')).toBeInTheDocument();
         expect(screen.getByText('Delete')).toBeInTheDocument();
+    });
+
+    it('keeps the context menu inside the viewport near the bottom-right corner', async () => {
+        render(<ChapterNavigator {...createProps()} />);
+
+        const chapter = screen.getByText('Chapter One');
+        fireEvent.contextMenu(chapter, { clientX: window.innerWidth - 1, clientY: window.innerHeight - 1 });
+
+        const menu = screen.getByText('Plot Setting').parentElement as HTMLDivElement;
+        Object.defineProperty(menu, 'getBoundingClientRect', {
+            configurable: true,
+            value: () => ({ width: 176, height: 104 }),
+        });
+
+        fireEvent.contextMenu(chapter, { clientX: window.innerWidth - 1, clientY: window.innerHeight - 1 });
+
+        await waitFor(() => {
+            expect(menu.style.left).toBe(`${window.innerWidth - 184}px`);
+            expect(menu.style.top).toBe(`${window.innerHeight - 112}px`);
+        });
     });
 
     it('renames a chapter through the context menu', async () => {
@@ -228,4 +323,25 @@ describe('ChapterNavigator', () => {
 
         expect(props.onNavigateDashboard).toHaveBeenCalledTimes(1);
     });
+});
+
+
+it('virtualizes 10,000 chapters and can reveal a distant active chapter without rendering the whole directory', () => {
+    const chapters = Array.from({ length: 10000 }, (_, index) => ({ ...book.volumes[0].chapters[0], id: `large-${index}`, title: `Large chapter ${index}`, content: '' }));
+    const props = createProps({ book: { ...book, volumes: [{ ...book.volumes[0], chapters }] }, activeChapterId: 'large-9999' });
+    const { container } = render(<ChapterNavigator {...props} />);
+    expect(screen.getByText('Large chapter 9999')).toBeInTheDocument();
+    expect(container.querySelectorAll('[id^="sidebar-chapter-"]').length).toBeLessThan(40);
+    expect(screen.queryByText('Large chapter 0')).not.toBeInTheDocument();
+    const scroll = screen.getByTestId('chapter-tree-scroll');
+    fireEvent.scroll(scroll, { target: { scrollTop: 0 } });
+    expect(screen.getByText('Large chapter 0')).toBeInTheDocument();
+    expect(screen.queryByText('Large chapter 9999')).not.toBeInTheDocument();
+    fireEvent.contextMenu(screen.getByText('Large chapter 0'));
+    fireEvent.click(screen.getByText('Rename'));
+    fireEvent.change(screen.getByDisplayValue('Large chapter 0'), { target: { value: 'Pinned rename' } });
+    fireEvent.scroll(scroll, { target: { scrollTop: 300000 } });
+    expect(screen.getByDisplayValue('Pinned rename')).toBeInTheDocument();
+    expect(props.onRenameChapter).not.toHaveBeenCalled();
+    expect(container.querySelectorAll('[id^="sidebar-chapter-"]').length).toBeLessThan(40);
 });

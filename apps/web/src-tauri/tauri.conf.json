@@ -21,7 +21,8 @@
         "center": true,
         "resizable": true,
         "fullscreen": false,
-        "dragDropEnabled": false
+        "dragDropEnabled": false,
+        "scrollBarStyle": "fluentOverlay"
       }
     ],
     "security": {
@@ -30,6 +31,9 @@
   },
   "bundle": {
     "active": true,
+    "license": "MIT",
+    "licenseFile": "../../../LICENSE",
+    "useLocalToolsDir": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",

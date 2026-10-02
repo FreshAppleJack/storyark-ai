@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { Chapter, ForeshadowingNote } from '../../../types';
+import { chapterTitleOrDefault } from '../../../domain/chapterTitle';
 
 /**
  * Immutable capture of the draft at save time. `revision` is a local,
@@ -156,7 +157,7 @@ export function useChapterDraft({ bookId = '', volumeId = '', chapterId, chapter
         volumeId,
         chapterId: chapter ? chapterId : '',
         revision: draft.revision,
-        title: draft.title,
+        title: chapterTitleOrDefault(draft.title),
         content: draft.content,
         wordCount: draft.wordCount,
         foreshadowings: draft.foreshadowings.map(note => ({ ...note })),

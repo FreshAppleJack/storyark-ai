@@ -6,6 +6,9 @@ import { AppProvider, useApp } from '../../InteractionContent/AppContext';
 import { localKeys, localRepository, projectBook, projectCharacter, type LocalBookDetail } from '../../data/local/repository';
 import type { LocalCharacter } from '../../data/local/contracts';
 import type { ChapterDraftSnapshot } from '../../features/editor/hooks/useChapterDraft';
+import { useChapterDraft } from '../../features/editor/hooks/useChapterDraft';
+import { chapterBodyCache } from '../../data/local/chapterBodyCache';
+import { directoryChapter } from '../../data/local/repository';
 
 const native = vi.hoisted(() => ({ invoke: vi.fn(), isTauri: vi.fn() }));
 const http = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() }));
@@ -19,10 +22,13 @@ const chapter = { ...volume, id: 'chapter-1', volumeId: volume.id, title: 'Chapt
 const detail: LocalBookDetail = { book, volumes: [volume], chapters: [chapter] };
 const snapshot: ChapterDraftSnapshot = { bookId: book.id, volumeId: volume.id, chapterId: chapter.id, title: 'Saved title', content: chapter.body.content, wordCount: 0, foreshadowings: [], revision: 1 };
 
-function setup() {
+function setupHook<T>(useSubject: () => T) {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: Infinity } } });
     const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}><AppProvider mode="local">{children}</AppProvider></QueryClientProvider>;
-    return { ...renderHook(() => useApp(), { wrapper }), client };
+    return { ...renderHook(useSubject, { wrapper }), client };
+}
+function setup() {
+    return setupHook(useApp);
 }
 beforeEach(() => {
     vi.clearAllMocks(); native.isTauri.mockReturnValue(true);
@@ -32,6 +38,46 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Local books', () => {
+    it('renames an inactive directory chapter even when its full body is still cached', async () => {
+        const { result, client } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        client.setQueryData(localKeys.book(book.id), { ...detail, bodyMode: 'directory', chapters: [directoryChapter(chapter)] });
+        chapterBodyCache(client).put(chapter);
+        native.invoke.mockResolvedValue({ ok: true, value: { ...chapter, title: 'Renamed', databaseVersion: 2 } });
+        await act(async () => {
+            expect(await result.current.updateChapterContent(book.id, volume.id, chapter.id, 'Renamed', '', chapter.wordCount, [])).toBe(true);
+        });
+        expect(native.invoke).toHaveBeenLastCalledWith('local_rename', expect.objectContaining({ input: expect.objectContaining({ title: 'Renamed' }) }));
+        expect(client.getQueryData<LocalBookDetail>(localKeys.book(book.id))?.chapters[0].body.content).toBe('');
+        expect(chapterBodyCache(client).get(book.id, chapter.id, 2)?.body.content).toBe(chapter.body.content);
+    });
+
+    it.each(['', '   '])('persists a blank editor title through desktop IPC with its body intact (%j)', async title => {
+        const projectedChapter = projectBook(book, detail).volumes[0].chapters[0];
+        const { result, client } = setupHook(() => ({
+            app: useApp(),
+            draft: useChapterDraft({ bookId: book.id, volumeId: volume.id, chapterId: chapter.id, chapter: projectedChapter }),
+        }));
+        await waitFor(() => expect(result.current.app.booksLoading).toBe(false));
+        client.setQueryData(localKeys.book(book.id), detail);
+        native.invoke.mockImplementation(async (_command, { input }) => input.title.trim() ? ({ ok: true, value: {
+            chapter: { ...chapter, title: input.title, body: { ...chapter.body, content: input.content }, databaseVersion: 2 },
+            sessionKey: input.sessionKey, revision: input.revision,
+        } }) : ({ ok: false, error: { code: 'INVALID_INPUT', message: 'Invalid storage request' } }));
+
+        act(() => result.current.draft.setTitle(title));
+        const draftSnapshot = result.current.draft.getSnapshot();
+        await act(async () => {
+            expect(await result.current.app.saveLocalSnapshot!(draftSnapshot, result.current.draft.sessionKey)).toBe(true);
+        });
+
+        expect(native.invoke).toHaveBeenLastCalledWith('local_save_chapter', expect.objectContaining({
+            input: expect.objectContaining({ title: 'Untitled Chapter', content: chapter.body.content }),
+        }));
+        expect(client.getQueryData<LocalBookDetail>(localKeys.book(book.id))?.chapters[0])
+            .toMatchObject({ title: 'Untitled Chapter', body: chapter.body });
+    });
+
     it('loads without a session and blocks legacy operations without HTTP', async () => {
         const { result } = setup();
         await waitFor(() => expect(result.current.booksLoading).toBe(false));
@@ -67,7 +113,7 @@ describe('Local books', () => {
         expect(command).toBe('local_create_book');
         expect(args).toMatchObject({ input: { title: 'Local book', author: 'Writer' } });
         expect((args as { input: { coverColor: string } }).input.coverColor).toMatch(/^bg-(blue|emerald|rose|amber|purple)-600$/);
-        expect(client.getQueryData(localKeys.book(book.id))).toEqual({ book, volumes: [], chapters: [] });
+        expect(client.getQueryData(localKeys.book(book.id))).toEqual({ book, volumes: [], chapters: [], bodyMode: 'directory' });
     });
 
     it('creates volume and chapter using committed parent versions', async () => {
@@ -204,8 +250,8 @@ describe('Local book mutations', () => {
             input: {
                 parent: { kind: 'volume', bookId: book.id, volumeId: volume.id, expectedDatabaseVersion: 1 },
                 items: [
-                    { kind: 'chapter', bookId: book.id, volumeId: volume.id, chapterId: secondChapter.id, expectedDatabaseVersion: 1 },
-                    { kind: 'chapter', bookId: book.id, volumeId: volume.id, chapterId: chapter.id, expectedDatabaseVersion: 1 },
+                    { kind: 'chapter', bookId: book.id, volumeId: volume.id, chapterId: secondChapter.id, expectedDatabaseVersion: 1, expectedPosition: secondChapter.position },
+                    { kind: 'chapter', bookId: book.id, volumeId: volume.id, chapterId: chapter.id, expectedDatabaseVersion: 1, expectedPosition: chapter.position },
                 ],
             },
         });

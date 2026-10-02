@@ -41,7 +41,7 @@ describe('API data conversion', () => {
         const value = { chapterSummaries: '[{"chapterId":3,"summary":"Note"},null]', plotSettings: [{ id: 7, chapterIds: [3] }] };
         const planning = normalizeStoryPlanning(value, 100);
         expect(normalizeStoryPlanning(value, 100)).toEqual(planning);
-        expect(planning.chapterSummaries).toEqual([{ chapterId: '3', summary: 'Note', updatedAt: 100 }]);
+        expect(planning.chapterSummaries).toEqual([{ chapterId: '3', summary: 'Note', updatedAt: 100, provenance: 'author' }]);
         expect(planning.plotSettings[0]).toMatchObject({ id: '7', chapterIds: ['3'], createdAt: 100, updatedAt: 100 });
         expect(JSON.parse(toPlanningPayload(planning).plotSettings)).toEqual(planning.plotSettings);
         expect(normalizeStoryPlanning({ chapterSummaries: '{bad', plotSettings: 'null' }, 100).plotSettings).toEqual([]);

@@ -27,6 +27,24 @@ describe('shared workspace rules', () => {
         expect(() => toRelationshipGraph(null, [alice])).toThrow('unavailable');
     });
 
+    it('keeps multiple nodes for one character as separate brainstorm relationship endpoints', () => {
+        const graph = {
+            nodes: [
+                { nodeKey: 'alice-first', characterId: '4' },
+                { nodeKey: 'alice-second', characterId: '4' },
+                { nodeKey: 'bob', characterId: '9' },
+            ],
+            edges: [
+                { sourceNodeKey: 'alice-first', targetNodeKey: 'bob', label: 'Distrusts' },
+                { sourceNodeKey: 'alice-second', targetNodeKey: 'bob', label: 'Protects' },
+            ],
+        };
+        expect(buildRelationships(graph, [alice, bob])).toMatchObject([
+            { sourceCharacterId: '4', sourceNodeKey: 'alice-first', label: 'Distrusts' },
+            { sourceCharacterId: '4', sourceNodeKey: 'alice-second', label: 'Protects' },
+        ]);
+    });
+
     it('keeps explicit mentions and legacy HTML IDs while respecting the automatic matching cast', () => {
         const json = JSON.stringify({ type: 'doc', content: [{ type: 'paragraph', content: [
             { type: 'mention', attrs: { id: '4', label: 'Alice' } },
@@ -47,5 +65,25 @@ describe('shared workspace rules', () => {
         expect(JSON.parse(payload.contextSnapshot)).toEqual({ bookTitle: 'Book' });
         expect(JSON.parse(payload.generatedOptions)).toEqual(workspace.generatedOptions);
         expect(mapBrainstormResponse({ selectedChapterIds: 'null', generatedOptions: '{bad' })).toMatchObject({ selectedChapterIds: [], generatedOptions: [] });
+    });
+
+    it('round-trips brainstorm generation source and retrieval metadata', () => {
+        const metadata = {
+            configId: 'config-1', modelId: 'model-1', generatedAt: 1234, promptVersion: 'brainstorm-v2',
+            includesPlanning: true,
+            retrieval: {
+                retrievalVersion: 'retrieval-v2', requestedAt: 1200,
+                sourceVersions: [{ sourceId: 'book:character:alice', chapterId: null, sourceVersion: 3, indexVersion: 2 }],
+                includedHitIds: ['hit-1'], indexVersion: 2, embeddingFingerprint: 'local-fingerprint',
+            },
+            source: {
+                bookId: 'book', workspaceDatabaseVersion: 4, planningDatabaseVersion: 2, graphDatabaseVersion: 3,
+                selectedChapters: [{ chapterId: 'chapter', databaseVersion: 7 }],
+            },
+        };
+        const workspace = mapBrainstormResponse({ selectedChapterIds: '[]', contextSnapshot: JSON.stringify({ generationMetadata: metadata }), generatedOptions: '[]' });
+        expect(workspace.generationMetadata).toEqual(metadata);
+        const payload = toBrainstormPayload(workspace);
+        expect(JSON.parse(payload.contextSnapshot).generationMetadata).toEqual(metadata);
     });
 });

@@ -1,4 +1,6 @@
 import type { BrainstormGenerationMetadata, BrainstormOption } from '../../types';
+import type { RetrievalContext, RetrievalSearchStatus } from '../../domain/retrieval/contracts';
+import { reportError } from '../../data/diagnostics';
 
 export const BRAINSTORM_FIELD_LIMITS = {
     title: { min: 1, max: 240 },
@@ -25,6 +27,18 @@ export interface BrainstormCandidate {
     metadata: BrainstormGenerationMetadata | null;
     sourceFingerprint: string | null;
     draftRevision: number | null;
+    retrievalContext: RetrievalContext | null;
+    retrievalStatus: RetrievalSearchStatus | null;
+    retrievalNotice: string | null;
+    lastAttempt?: {
+        status: 'invalid' | 'failed' | 'cancelled' | 'stale';
+        rawText: string;
+        errorMessage: string;
+        metadata: BrainstormGenerationMetadata | null;
+        retrievalContext: RetrievalContext | null;
+        retrievalStatus: RetrievalSearchStatus | null;
+        retrievalNotice: string | null;
+    };
 }
 
 export const EMPTY_BRAINSTORM_CANDIDATE: BrainstormCandidate = {
@@ -35,6 +49,9 @@ export const EMPTY_BRAINSTORM_CANDIDATE: BrainstormCandidate = {
     metadata: null,
     sourceFingerprint: null,
     draftRevision: null,
+    retrievalContext: null,
+    retrievalStatus: null,
+    retrievalNotice: null,
 };
 
 function makeId(): string {
@@ -52,16 +69,6 @@ function parseJsonText(rawText: string): unknown {
     try {
         return JSON.parse(unfenced);
     } catch {
-        const objectStart = unfenced.indexOf('{');
-        const objectEnd = unfenced.lastIndexOf('}');
-        if (objectStart >= 0 && objectEnd > objectStart) {
-            try { return JSON.parse(unfenced.slice(objectStart, objectEnd + 1)); } catch { /* Keep the original validation error. */ }
-        }
-        const arrayStart = unfenced.indexOf('[');
-        const arrayEnd = unfenced.lastIndexOf(']');
-        if (arrayStart >= 0 && arrayEnd > arrayStart) {
-            try { return JSON.parse(unfenced.slice(arrayStart, arrayEnd + 1)); } catch { /* Keep the original validation error. */ }
-        }
         throw new Error('The model response is not valid JSON.');
     }
 }
@@ -97,22 +104,26 @@ export function parseBrainstormCandidate(rawText: string): { options: Brainstorm
     try {
         parsed = parseJsonText(rawText);
     } catch (error) {
-        return { errorMessage: error instanceof Error ? error.message : 'The model response is not valid JSON.' };
+        reportError('brainstorm.parse', error, 'INVALID_AI_RESPONSE');
+        return { errorMessage: 'The AI response could not be used. Try generating again.' };
     }
 
-    const optionsValue = Array.isArray(parsed)
-        ? parsed
-        : parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-            ? (parsed as Record<string, unknown>).options
-            : undefined;
-    if (!Array.isArray(optionsValue)) return { errorMessage: 'The JSON response must contain an options array.' };
+    const optionsValue = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>).options
+        : undefined;
+    if (!Array.isArray(optionsValue)) {
+        reportError('brainstorm.parse', 'The JSON response must contain an options array.', 'INVALID_AI_RESPONSE');
+        return { errorMessage: 'The AI did not return any usable directions. Try generating again.' };
+    }
     if (optionsValue.length !== BRAINSTORM_FIELD_LIMITS.maxOptions) {
-        return { errorMessage: `The response must contain exactly ${BRAINSTORM_FIELD_LIMITS.maxOptions} options.` };
+        reportError('brainstorm.parse', `Expected ${BRAINSTORM_FIELD_LIMITS.maxOptions} options; received ${optionsValue.length}.`, 'INVALID_AI_RESPONSE');
+        return { errorMessage: 'The AI did not return all three directions. Try generating again.' };
     }
     try {
         return { options: optionsValue.map(optionValue) };
     } catch (error) {
-        return { errorMessage: error instanceof Error ? error.message : 'The brainstorm option shape is invalid.' };
+        reportError('brainstorm.parse', error, 'INVALID_AI_RESPONSE');
+        return { errorMessage: 'Some AI directions are incomplete or too long. Try generating again.' };
     }
 }
 
@@ -140,5 +151,8 @@ export function candidateFromOptions(
         metadata,
         sourceFingerprint,
         draftRevision,
+        retrievalContext: null,
+        retrievalStatus: null,
+        retrievalNotice: null,
     };
 }
