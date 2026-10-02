@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { HELP_QUESTION_COUNT, HELP_SECTIONS, searchHelp } from '../../../features/help/helpContent';
 
 describe('help guide content and search', () => {
-    it('keeps all 60 answers in the six agreed topics with unique disclosure IDs', () => {
+    it('keeps all 61 answers in the six agreed topics with unique disclosure IDs', () => {
         const questions = HELP_SECTIONS.flatMap(section => section.questions);
         expect(HELP_SECTIONS).toHaveLength(6);
-        expect(HELP_QUESTION_COUNT).toBe(60);
-        expect(new Set(questions.map(item => item.id)).size).toBe(60);
+        expect(HELP_QUESTION_COUNT).toBe(61);
+        expect(new Set(questions.map(item => item.id)).size).toBe(61);
         expect(questions.every(item => item.question.trim() && item.answer.trim())).toBe(true);
     });
 
