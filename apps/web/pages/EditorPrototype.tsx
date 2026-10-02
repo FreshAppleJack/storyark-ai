@@ -506,6 +506,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                 book={book}
                 activeChapterId={activeChapterId}
                 onNavigateDashboard={() => void navigateAfterSave('/dashboard')}
+                onOpenBrainstorm={() => void navigateAfterSave(`/books/${book.id}/ai-brainstorm`)}
                 onSelectChapter={requestChapterSwitch}
                 onAddVolume={handleAddVolume}
                 onAddChapter={handleAddChapter}

@@ -4,6 +4,28 @@ import { StorySearchResults } from '../../../features/retrieval/components/Story
 import type { RetrievalSearchFilters, RetrievalSearchHit, RetrievalSearchResponse } from '../../../domain/retrieval/contracts';
 
 describe('StorySearchResults', () => {
+    it('preserves identical paragraph spacing for keyword and semantic excerpts, including expanded text', () => {
+        const sourceText = `第一句中有目标。\n\u3000\u3000第二句包含 English words.\n${'后续段落。'.repeat(25)}`;
+        const hits = ['lexical', 'semantic'].map(method => ({
+            hitId: method, chapterId: 'chapter-1', sourceKind: 'manuscript', freshness: 'fresh', recallMethods: [method],
+            chunk: { sourceText }, locator: { chapterId: 'chapter-1', chapterTitleSnapshot: 'Chapter One', paragraphSpans: [] },
+        })) as unknown as RetrievalSearchHit[];
+        const { container } = render(<StorySearchResults
+            embeddingStatus={null} indexStatus={null} indexProgress={null} statusError={null} isStatusLoading={false}
+            isIndexing={false} isSearching={false} searchError={null} response={{ hits, status: 'ready', effectiveMode: 'semantic', degraded: false } as RetrievalSearchResponse}
+            lastQuery="目标" filters={{ sourceKinds: [], includePlanning: false, chapterRange: 'all', updatedAfter: null, updatedBefore: null }}
+            chapters={[]} activeChapterId="chapter-1" selectionMessage="" onFiltersChange={vi.fn()} onQueueIndex={vi.fn()}
+            onSelectHit={vi.fn()} onOpenChapterSummary={vi.fn()} />);
+        const excerpts = container.querySelectorAll('article p');
+        expect(excerpts[0].textContent).toBe(excerpts[1].textContent);
+        expect(excerpts[0].textContent).toContain('\n\u3000\u3000第二句包含 English words.\n');
+        expect(excerpts[0].querySelector('mark')).not.toBeNull();
+        expect(excerpts[1].querySelector('mark')).toBeNull();
+        for (const excerpt of excerpts) expect(excerpt).toHaveClass('whitespace-pre-wrap');
+        screen.getAllByRole('button', { name: 'Show full excerpt' }).forEach(button => fireEvent.click(button));
+        for (const excerpt of excerpts) expect(excerpt.textContent).toBe(sourceText);
+    });
+
     it('shows a compact query-centered excerpt and sends its offset to Open and locate', () => {
         const query = '目标命中短语';
         const sourceText = `${'前文铺垫。'.repeat(40)}${query}${'后续叙述。'.repeat(40)}`;

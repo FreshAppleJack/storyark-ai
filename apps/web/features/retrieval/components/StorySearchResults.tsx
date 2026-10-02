@@ -190,7 +190,7 @@ function SearchHitCard({
                 <span className="flex-shrink-0 font-normal text-slate-400">{SOURCE_LABELS[hit.sourceKind]}</span>
             </div>
             {hit.freshness !== 'fresh' && <p className="mt-1 text-[10px] text-amber-600 dark:text-amber-300">This match may be out of date. Refresh search to check it.</p>}
-            <p className={`mt-1 text-xs leading-5 text-slate-700 dark:text-slate-300 ${expanded ? '' : 'line-clamp-3'}`}>
+            <p className={`mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-slate-700 dark:text-slate-300 ${expanded ? '' : 'line-clamp-3'}`}>
                 {expanded ? excerpt : highlightedPreview ? <>
                     {highlightedPreview.before}
                     <mark className="rounded-sm bg-amber-200/80 text-slate-950 dark:bg-amber-500/40 dark:text-slate-50">

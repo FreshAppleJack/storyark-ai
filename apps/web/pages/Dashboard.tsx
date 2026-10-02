@@ -133,7 +133,7 @@ const Dashboard: React.FC = () => {
                     <span className="font-bold text-xl text-slate-800 dark:text-white tracking-tight">StoryArk</span>
                 </div>
                 <div className="flex items-center gap-4">
-                    {isLocal ? <span className="text-sm text-slate-500">Local workspace · No account required</span> : <>
+                    {!isLocal && <>
                     <span className="text-sm text-slate-600 dark:text-slate-300">Welcome, <strong>{user?.username}</strong></span>
                     </>}
                     <Link to="/settings">
@@ -151,7 +151,7 @@ const Dashboard: React.FC = () => {
                 <div className="flex flex-col gap-5 mb-8 lg:flex-row lg:items-end lg:justify-between">
                     <div>
                         <h1 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">My Bookshelf</h1>
-                        <p className="text-slate-500 dark:text-slate-400">{isLocal ? 'Your books are saved on this device.' : 'Manage your stories and worlds.'}</p>
+                        <p className="text-slate-500 dark:text-slate-400">Enjoy bringing your stories to life.</p>
                     </div>
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                         <div className="relative w-full sm:w-80">
