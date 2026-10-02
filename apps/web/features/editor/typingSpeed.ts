@@ -1,24 +1,24 @@
 import { calculateCharacterCount } from '../../utils/textUtils';
 
 const WINDOW_MS = 30_000;
-const IDLE_MS = 10_000;
+const IDLE_MS = 1_500;
 const WARMUP_MS = 5_000;
 
 /** A short rolling estimate of characters typed, independent of saved word counts. */
 export function createTypingSpeedTracker() {
     let samples: { at: number; count: number }[] = [];
     let startedAt: number | null = null;
+    let speed = 0;
 
     const read = (now: number): number => {
         const latest = samples.at(-1);
         if (!latest || now - latest.at >= IDLE_MS) {
             samples = [];
             startedAt = null;
-            return 0;
+            speed = 0;
         }
-        samples = samples.filter(sample => sample.at > now - WINDOW_MS);
-        const elapsed = Math.min(WINDOW_MS, Math.max(WARMUP_MS, now - (startedAt ?? now)));
-        return Math.round(samples.reduce((total, sample) => total + sample.count, 0) * 60_000 / elapsed);
+        // Hold the last estimate during a short pause, then clear it when idle.
+        return speed;
     };
 
     return {
@@ -29,6 +29,9 @@ export function createTypingSpeedTracker() {
             if (count > 0) {
                 startedAt ??= now;
                 samples.push({ at: now, count });
+                samples = samples.filter(sample => sample.at > now - WINDOW_MS);
+                const elapsed = Math.min(WINDOW_MS, Math.max(WARMUP_MS, now - startedAt));
+                speed = Math.round(samples.reduce((total, sample) => total + sample.count, 0) * 60_000 / elapsed);
             }
             return read(now);
         },

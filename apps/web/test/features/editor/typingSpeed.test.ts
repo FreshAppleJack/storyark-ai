@@ -5,15 +5,23 @@ describe('typing speed estimate', () => {
     it('counts Chinese characters and English letters, not English words or spaces', () => {
         const tracker = createTypingSpeedTracker();
         expect(tracker.record('你好 hello', 0)).toBe(84);
-        expect(tracker.read(5_000)).toBe(84);
-        expect(tracker.read(9_000)).toBe(47);
-        expect(tracker.read(10_000)).toBe(0);
-        expect(tracker.record('新', 11_000)).toBe(12);
+        expect(tracker.read(1_499)).toBe(84);
+        expect(tracker.read(1_500)).toBe(0);
+        expect(tracker.record('新', 2_000)).toBe(12);
+    });
+
+    it('holds the last speed during a pause after sustained typing, then resets immediately', () => {
+        const tracker = createTypingSpeedTracker();
+        for (let time = 0; time <= 10_000; time += 1_000) tracker.record('ab', time);
+        expect(tracker.read(10_000)).toBe(132);
+        expect(tracker.read(11_499)).toBe(132);
+        expect(tracker.read(11_500)).toBe(0);
+        expect(tracker.record('新', 11_501)).toBe(12);
     });
 
     it('uses only the rolling window during continuous typing', () => {
         const tracker = createTypingSpeedTracker();
-        for (let time = 0; time <= 40_000; time += 5_000) tracker.record('abcdefghij', time);
+        for (let time = 0; time <= 40_000; time += 1_000) tracker.record('ab', time);
         expect(tracker.read(40_000)).toBe(120);
         expect(tracker.record(' \n\u200B', 40_000)).toBe(120);
     });

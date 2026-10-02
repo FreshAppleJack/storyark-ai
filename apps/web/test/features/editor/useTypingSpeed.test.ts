@@ -13,7 +13,9 @@ describe('useTypingSpeed', () => {
         );
         act(() => result.current.recordTypedText('中文hello'));
         expect(result.current.speed).toBe(84);
-        act(() => vi.advanceTimersByTime(10_000));
+        act(() => vi.advanceTimersByTime(1_499));
+        expect(result.current.speed).toBe(84);
+        act(() => vi.advanceTimersByTime(1));
         expect(result.current.speed).toBe(0);
         act(() => result.current.recordTypedText('新'));
         expect(result.current.speed).toBe(12);
@@ -25,6 +27,23 @@ describe('useTypingSpeed', () => {
         expect(result.current.speed).toBe(0);
         rerender({ session: 'chapter-2', enabled: true });
         expect(result.current.speed).toBe(0);
+        unmount();
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('extends the idle deadline for each new input and stops updating after unmount', () => {
+        vi.useFakeTimers();
+        const { result, unmount } = renderHook(() => useTypingSpeed('chapter-1', true));
+        act(() => result.current.recordTypedText('ab'));
+        act(() => vi.advanceTimersByTime(1_000));
+        act(() => result.current.recordTypedText('cd'));
+        expect(result.current.speed).toBe(48);
+        act(() => vi.advanceTimersByTime(1_499));
+        expect(result.current.speed).toBe(48);
+        act(() => vi.advanceTimersByTime(1));
+        expect(result.current.speed).toBe(0);
+        act(() => result.current.recordTypedText('e'));
+        expect(result.current.speed).toBe(12);
         unmount();
         expect(vi.getTimerCount()).toBe(0);
     });

@@ -14,7 +14,7 @@ export function useTypingSpeed(sessionKey: string, enabled: boolean) {
             const value = tracker.read(Date.now());
             setReading(previous => previous.tracker === tracker && previous.value === value
                 ? previous : { tracker, value });
-        }, 1000);
+        }, 250);
         return () => window.clearInterval(timer);
     }, [tracker, enabled]);
 
