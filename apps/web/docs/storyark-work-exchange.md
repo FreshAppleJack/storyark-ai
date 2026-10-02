@@ -273,8 +273,13 @@ version is a historical source snapshot and may differ from the receiving
 device's chapter version. The optional `sourceChapterVersion` is rebased for
 the imported local record; it is not the sole freshness or concurrency test.
 When creating a copy, acknowledgement snapshot references are rewritten using
-the same old-ID to new-ID mapping as the rest of the work; local source versions
-are rebased for the copied records.
+the same old-ID to new-ID mapping as the rest of the work. Optional
+`copyReferences` arrays preserve the IDs used to compute historical fingerprints
+without retaining another body. Optional `copySourceVersions` records preserve
+whether each allowed source matched the baseline before the local versions were
+reset. These comparison fields survive later exports and compose when copying a
+copy. They do not acknowledge existing changes or alter AI generation provenance;
+a new author acknowledgement captures a normal snapshot without copy metadata.
 An adopted AI summary
 requires generation metadata containing provider/config/model IDs, generation
 time, prompt version, allowed source IDs and versions, and an optional retrieval

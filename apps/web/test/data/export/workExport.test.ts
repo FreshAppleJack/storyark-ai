@@ -335,10 +335,18 @@ describe('whole-work export construction', () => {
             exportedAt: '2026-09-17T00:00:00.000Z',
             producer: { appVersion: 'test', platform: 'windows' },
         });
+        const copiedSnapshot = exported.planning.chapterSummaries[0].sourceSnapshot!;
+        copiedSnapshot.copyReferences = {
+            characters: [{ id: characterId, fingerprintId: '00000000-0000-4000-8000-000000000099' }],
+            foreshadowings: [{ id: 'legacy-note', fingerprintId: 'original-note' }],
+        };
+        copiedSnapshot.copySourceVersions = [{ sourceId: `${bookId}:character:${characterId}`, version: 1, matchesBaseline: true }];
         expect(validateExport(exported)).toBe(true);
         const parsed = parseStoryArkWorkExport(serializeStoryArkWorkExport(exported));
         expect(parsed.valid).toBe(true);
         if (!parsed.valid) throw new Error('The generated work export did not round-trip.');
+        expect(parsed.value.planning.chapterSummaries[0].sourceSnapshot?.copyReferences).toEqual(copiedSnapshot.copyReferences);
+        expect(parsed.value.planning.chapterSummaries[0].sourceSnapshot?.copySourceVersions).toEqual(copiedSnapshot.copySourceVersions);
         expect(parsed.value.planning.chapterSummaries[0]).toMatchObject({
             provenance: 'ai-adopted',
             sourceSnapshot: {

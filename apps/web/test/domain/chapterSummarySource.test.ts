@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     assessChapterSummaryFreshness,
     createChapterSummarySourceSnapshot,
+    parseChapterSummarySourceSnapshot,
     parseChapterSummaryGenerationMetadata,
     type ChapterSummaryForFreshness,
     type ChapterSummarySourceInput,
@@ -84,6 +85,54 @@ const generationMetadata = {
 };
 
 describe('chapter summary source snapshots', () => {
+    it('keeps a copied summary current without hiding subsequent text, mention, or note edits', () => {
+        const original = source(document({ type: 'paragraph', content: [
+            { type: 'mention', attrs: { id: characterA, label: 'Alice' } },
+            { type: 'text', text: ' opens the door.', marks: [{ type: 'foreshadowing', attrs: { id: 'old-note' } }] },
+        ] }), 3);
+        original.foreshadowings = [{ id: 'old-note', excerpt: 'door', note: 'Return later' }];
+        const originalSummary = summaryFor(original);
+        const copied = { ...original, databaseVersion: 1,
+            content: original.content.replaceAll(characterA, characterB).replaceAll('old-note', 'new-note'),
+            foreshadowings: [{ ...original.foreshadowings[0], id: 'new-note' }],
+        };
+        const summary = { ...originalSummary, sourceSnapshot: {
+            ...originalSummary.sourceSnapshot!,
+            mentionedCharacterIds: [characterB], foreshadowingIds: ['new-note'],
+            foreshadowingNoteFingerprints: originalSummary.sourceSnapshot!.foreshadowingNoteFingerprints.map(note => ({ ...note, noteId: 'new-note' })),
+            copyReferences: {
+                characters: [{ id: characterB, fingerprintId: characterA }],
+                foreshadowings: [{ id: 'new-note', fingerprintId: 'old-note' }],
+            },
+        } };
+        expect(assessChapterSummaryFreshness(summary, copied).status).toBe('current');
+        expect(assessChapterSummaryFreshness(summary, { ...copied, content: copied.content.replace('door.', 'window.') }).changedBlocks).toBe(1);
+        expect(assessChapterSummaryFreshness(summary, { ...copied, foreshadowings: [{ ...copied.foreshadowings[0], note: 'Changed' }] }).changedForeshadowingNoteIds).toEqual(['new-note']);
+        expect(assessChapterSummaryFreshness(summary, { ...copied, content: copied.content.replace(characterB, characterA) }).reasons).toContain('character-mentions-changed');
+        // A new acknowledgement uses the copy's identities rather than the import aliases.
+        expect(assessChapterSummaryFreshness({ ...summary, sourceSnapshot: createChapterSummarySourceSnapshot(copied) }, copied).status).toBe('current');
+    });
+
+    it('preserves imported source freshness and stops using import versions after an explicit review', () => {
+        const chapter = source();
+        const sourceId = generationMetadata.source.allowedSources[0].sourceId;
+        const summary = { ...summaryFor(chapter), generationMetadata,
+            sourceSnapshot: { ...createChapterSummarySourceSnapshot(chapter), copySourceVersions: [{ sourceId, version: 1, matchesBaseline: true }] },
+        };
+        expect(assessChapterSummaryFreshness(summary, chapter, new Map([[sourceId, 1]])).status).toBe('current');
+        expect(assessChapterSummaryFreshness(summary, chapter, new Map([[sourceId, 2]])).status).toBe('possibly-stale');
+        summary.sourceSnapshot.copySourceVersions[0].matchesBaseline = false;
+        expect(assessChapterSummaryFreshness(summary, chapter, new Map([[sourceId, 1]])).status).toBe('possibly-stale');
+        expect(assessChapterSummaryFreshness({ ...summary, freshnessAcknowledgement: {
+            acknowledgedSourceSnapshot: createChapterSummarySourceSnapshot(chapter), acknowledgedAt: 200, allowedSourceVersions: [2],
+        } }, chapter, new Map([[sourceId, 2]])).status).toBe('current');
+    });
+
+    it('rejects malformed copy comparison metadata', () => {
+        const snapshot = createChapterSummarySourceSnapshot(source());
+        expect(parseChapterSummarySourceSnapshot({ ...snapshot, copyReferences: { characters: 'bad', foreshadowings: [] } }, chapterId)).toBeUndefined();
+        expect(parseChapterSummarySourceSnapshot({ ...snapshot, copySourceVersions: [{ sourceId: 'x', version: 1, matchesBaseline: 'true' }] }, chapterId)).toBeUndefined();
+    });
     it('does not call formatting-only edits stale, but records that the database version advanced', () => {
         const original = source(document(paragraph('她推开门。')));
         const summary = summaryFor(original);

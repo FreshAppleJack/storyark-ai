@@ -115,6 +115,66 @@ fn import_request(work: Value, mode: &str, expected: Option<i64>) -> ImportWork 
 }
 
 #[test]
+fn copy_preserves_historical_fingerprint_ids_and_real_source_changes() {
+    for acknowledged in [false, true] {
+        let temp = TempDirectory::new();
+        let mut db = Database::open(&temp.0).unwrap();
+        let mut work = sample_work(&Uuid::new_v4().to_string(), "Copy baseline");
+        let character_id = work["characters"][0]["id"].clone();
+        let original_id = Uuid::new_v4().to_string();
+        let summary = &mut work["planning"]["chapterSummaries"][0];
+        // Model an export of an existing copy: aliases must compose, not accumulate.
+        for snapshot in ["sourceSnapshot", "freshnessAcknowledgement"] {
+            let snapshot = if snapshot == "sourceSnapshot" {
+                &mut summary["sourceSnapshot"]
+            } else {
+                &mut summary["freshnessAcknowledgement"]["acknowledgedSourceSnapshot"]
+            };
+            snapshot["copyReferences"] = json!({
+                "characters": [{"id": character_id, "fingerprintId": original_id}],
+                "foreshadowings": [{"id": "legacy-note", "fingerprintId": "original-note"}]
+            });
+        }
+        if !acknowledged {
+            summary
+                .as_object_mut()
+                .unwrap()
+                .remove("freshnessAcknowledgement");
+        }
+        // The character changed after the summary was captured. Copying must not dismiss it.
+        work["characters"][0]["databaseVersion"] = json!(3);
+        let imported = db.import_work(import_request(work, "copy", None)).unwrap();
+        let planning = db
+            .read_planning(imported["bookId"].as_str().unwrap())
+            .unwrap();
+        let summary = &planning["chapterSummaries"][0];
+        let snapshot = if acknowledged {
+            &summary["freshnessAcknowledgement"]["acknowledgedSourceSnapshot"]
+        } else {
+            &summary["sourceSnapshot"]
+        };
+        assert_eq!(
+            snapshot["copyReferences"]["characters"][0]["fingerprintId"],
+            original_id
+        );
+        assert_eq!(
+            snapshot["copyReferences"]["characters"][0]["id"],
+            snapshot["mentionedCharacterIds"][0]
+        );
+        assert_eq!(
+            snapshot["copyReferences"]["foreshadowings"][0]["fingerprintId"],
+            "original-note"
+        );
+        assert_eq!(snapshot["copySourceVersions"][0]["version"], 1);
+        assert_eq!(snapshot["copySourceVersions"][0]["matchesBaseline"], false);
+        assert_eq!(
+            summary["sourceSnapshot"]["blockFingerprints"][0],
+            "fedcba9876543210"
+        );
+    }
+}
+
+#[test]
 fn fresh_import_persists_the_complete_work_and_copy_rewrites_instance_ids() {
     let temp = TempDirectory::new();
     let mut db = Database::open(&temp.0).unwrap();
@@ -169,6 +229,19 @@ fn fresh_import_persists_the_complete_work_and_copy_rewrites_instance_ids() {
         1
     );
     let copied_summary = &copied_planning["chapterSummaries"][0];
+    assert_eq!(
+        copied_summary["sourceSnapshot"]["copyReferences"]["characters"][0]["fingerprintId"],
+        work["characters"][0]["id"]
+    );
+    assert_eq!(
+        copied_summary["sourceSnapshot"]["copySourceVersions"][0]["matchesBaseline"],
+        true
+    );
+    assert_eq!(
+        copied_summary["freshnessAcknowledgement"]["acknowledgedSourceSnapshot"]
+            ["copySourceVersions"][0]["matchesBaseline"],
+        true
+    );
     assert_eq!(copied_summary["provenance"], "ai-adopted");
     assert_eq!(
         copied_summary["sourceSnapshot"]["chapterId"],
@@ -193,7 +266,7 @@ fn fresh_import_persists_the_complete_work_and_copy_rewrites_instance_ids() {
     );
     assert_eq!(
         copied_summary["freshnessAcknowledgement"]["allowedSourceVersions"][0],
-        1
+        2
     );
     assert_eq!(
         copied_summary["generationMetadata"]["source"]["bookId"],

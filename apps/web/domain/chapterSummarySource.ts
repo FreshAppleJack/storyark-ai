@@ -18,6 +18,13 @@ export interface ChapterSummarySourceSnapshot {
     foreshadowingIds: string[];
     foreshadowingNoteFingerprints: Array<{ noteId: string; fingerprint: string }>;
     capturedAt: number;
+    /** Copy imports change identities, but retain the historical fingerprint namespace. */
+    copyReferences?: {
+        characters: Array<{ id: string; fingerprintId: string }>;
+        foreshadowings: Array<{ id: string; fingerprintId: string }>;
+    };
+    /** Preserve source freshness across the new copy's version counters. */
+    copySourceVersions?: Array<{ sourceId: string; version: number | null; matchesBaseline: boolean }>;
 }
 
 export interface ChapterSummaryFreshnessAcknowledgement {
@@ -163,6 +170,7 @@ export interface ChapterSummaryForFreshness {
 }
 
 interface CachedSnapshotEntry {
+    copyReferences?: ChapterSummarySourceSnapshot['copyReferences'];
     title: string;
     databaseVersion?: number;
     contentFormat?: ChapterSummaryContentFormat;
@@ -289,6 +297,7 @@ function contentFormat(content: string, parsed: unknown, declared?: ChapterSumma
 export function createChapterSummarySourceSnapshot(
     chapter: ChapterSummarySourceInput,
     capturedAt = Date.now(),
+    copyReferences?: ChapterSummarySourceSnapshot['copyReferences'],
 ): ChapterSummarySourceSnapshot {
     let parsed: unknown = null;
     try { parsed = JSON.parse(chapter.content); } catch { /* Legacy HTML or unrecognized source. */ }
@@ -297,7 +306,11 @@ export function createChapterSummarySourceSnapshot(
     const blocks = root && Array.isArray(root.content)
         ? root.content
         : bodyText(parsed || chapter.content).split(/\n+/).filter(Boolean).map(text => ({ type: 'legacyText', text }));
-    const blockFingerprints = blocks.map(block => fingerprint(JSON.stringify(normalizeNode(block))));
+    const characterIds = new Map(copyReferences?.characters.map(item => [item.id, item.fingerprintId]));
+    const noteIds = new Map(copyReferences?.foreshadowings.map(item => [item.id, item.fingerprintId]));
+    const blockFingerprints = blocks.map(block => fingerprint(JSON.stringify(normalizeNode(
+        copyReferences ? fingerprintReferences(block, characterIds, noteIds) : block,
+    ))));
     const mentions = new Set<string>();
     const markedNotes = new Set<string>();
     collectEntities(parsed, mentions, markedNotes);
@@ -332,9 +345,11 @@ export function createChapterSummarySourceSnapshot(
             contentFormat: format,
             documentAttributes: root?.attrs ? normalizeNode(root.attrs) : null,
             blockFingerprints,
-            mentionedCharacterIds: sorted(mentions),
-            foreshadowingIds,
-            foreshadowingNoteFingerprints: noteFingerprints,
+            mentionedCharacterIds: sorted([...mentions].map(id => characterIds.get(id) ?? id)),
+            foreshadowingIds: sorted(foreshadowingIds.map(id => noteIds.get(id) ?? id)),
+            foreshadowingNoteFingerprints: noteFingerprints
+                .map(note => ({ ...note, noteId: noteIds.get(note.noteId) ?? note.noteId }))
+                .sort((left, right) => left.noteId.localeCompare(right.noteId)),
         })),
         blockFingerprints,
         mentionedCharacterIds: sorted(mentions),
@@ -342,6 +357,17 @@ export function createChapterSummarySourceSnapshot(
         foreshadowingNoteFingerprints: noteFingerprints,
         capturedAt,
     };
+}
+
+function fingerprintReferences(value: unknown, characters: ReadonlyMap<string, string>, notes: ReadonlyMap<string, string>): unknown {
+    if (Array.isArray(value)) return value.map(item => fingerprintReferences(item, characters, notes));
+    if (!isRecord(value)) return value;
+    const result = Object.fromEntries(Object.entries(value).map(([key, child]) => [key, fingerprintReferences(child, characters, notes)]));
+    if (isRecord(result.attrs) && typeof result.attrs.id === 'string') {
+        const aliases = result.type === 'mention' ? characters : result.type === 'foreshadowing' ? notes : undefined;
+        result.attrs = { ...result.attrs, id: aliases?.get(result.attrs.id) ?? result.attrs.id };
+    }
+    return result;
 }
 
 function difference(previous: string[], current: string[]): { added: string[]; removed: string[] } {
@@ -357,10 +383,14 @@ function sourceVersionChanges(
     metadata: ChapterSummaryGenerationMetadata | undefined,
     currentVersions: ReadonlyMap<string, number> | undefined,
     acknowledgedVersions?: readonly (number | null)[],
+    copiedVersions?: ChapterSummarySourceSnapshot['copySourceVersions'],
 ): string[] {
     if (!metadata || !currentVersions) return [];
     const hasAcknowledgedVersions = acknowledgedVersions?.length === metadata.source.allowedSources.length;
     return metadata.source.allowedSources.flatMap((source, index) => {
+        const copied = copiedVersions?.find(item => item.sourceId === source.sourceId);
+        if (copied) return copied.matchesBaseline && (currentVersions.get(source.sourceId) ?? null) === copied.version
+            ? [] : [source.sourceId];
         const expectedVersion = hasAcknowledgedVersions ? acknowledgedVersions[index] : source.sourceVersion;
         return (currentVersions.get(source.sourceId) ?? null) === expectedVersion ? [] : [source.sourceId];
     });
@@ -399,7 +429,8 @@ export function assessChapterSummaryFreshness(
     let cached = freshnessSnapshotCache.get(chapter);
     if (!cached || cached.title !== chapter.title || cached.databaseVersion !== chapter.databaseVersion
         || cached.contentFormat !== chapter.contentFormat || cached.contentVersion !== chapter.contentVersion
-        || cached.content !== chapter.content || cached.foreshadowings !== chapter.foreshadowings) {
+        || cached.content !== chapter.content || cached.foreshadowings !== chapter.foreshadowings
+        || cached.copyReferences !== baseline.copyReferences) {
         cached = {
             title: chapter.title,
             databaseVersion: chapter.databaseVersion,
@@ -407,7 +438,8 @@ export function assessChapterSummaryFreshness(
             contentVersion: chapter.contentVersion,
             content: chapter.content,
             foreshadowings: chapter.foreshadowings,
-            snapshot: createChapterSummarySourceSnapshot(chapter, baseline.capturedAt),
+            copyReferences: baseline.copyReferences,
+            snapshot: createChapterSummarySourceSnapshot(chapter, baseline.capturedAt, baseline.copyReferences),
         };
         freshnessSnapshotCache.set(chapter, cached);
     }
@@ -437,6 +469,7 @@ export function assessChapterSummaryFreshness(
         summary.generationMetadata,
         currentAllowedSourceVersions,
         summary.freshnessAcknowledgement?.allowedSourceVersions,
+        baseline.copySourceVersions,
     );
     const sourceVersionChanged = baseline.chapterDatabaseVersion !== current.chapterDatabaseVersion;
     const reasons: string[] = [];
@@ -491,8 +524,29 @@ export function parseChapterSummarySourceSnapshot(value: unknown, chapterId: str
         || new Set(value.foreshadowingNoteFingerprints.filter(isRecord).map(note => note.noteId)).size !== value.foreshadowingNoteFingerprints.length
         || !(value.chapterDatabaseVersion === null || (Number.isSafeInteger(value.chapterDatabaseVersion) && Number(value.chapterDatabaseVersion) > 0))
         || !(value.contentVersion === null || (Number.isSafeInteger(value.contentVersion) && Number(value.contentVersion) >= 0))
-        || !Number.isSafeInteger(value.capturedAt) || Number(value.capturedAt) < 0) return undefined;
+        || !Number.isSafeInteger(value.capturedAt) || Number(value.capturedAt) < 0
+        || !validCopyMetadata(value)) return undefined;
     return value as unknown as ChapterSummarySourceSnapshot;
+}
+
+function validCopyMetadata(value: JsonRecord): boolean {
+    if (value.copyReferences !== undefined) {
+        if (!isRecord(value.copyReferences)) return false;
+        for (const [key, limit] of [['characters', 512], ['foreshadowings', 100_000]] as const) {
+            const entries = value.copyReferences[key];
+            if (!Array.isArray(entries) || entries.length > limit
+                || entries.some(item => !isRecord(item) || !nonEmptyText(item.id, 4096) || !nonEmptyText(item.fingerprintId, 4096))
+                || new Set(entries.map(item => (item as JsonRecord).id)).size !== entries.length) return false;
+        }
+    }
+    if (value.copySourceVersions !== undefined) {
+        const entries = value.copySourceVersions;
+        if (!Array.isArray(entries) || entries.length > 512
+            || entries.some(item => !isRecord(item) || !nonEmptyText(item.sourceId, 512)
+                || !(item.version === null || nonNegativeInteger(item.version)) || typeof item.matchesBaseline !== 'boolean')
+            || new Set(entries.map(item => (item as JsonRecord).sourceId)).size !== entries.length) return false;
+    }
+    return true;
 }
 
 export function parseChapterSummaryFreshnessAcknowledgement(

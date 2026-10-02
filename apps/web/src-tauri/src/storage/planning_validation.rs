@@ -53,6 +53,35 @@ fn unique_strings(value: &Value) -> bool {
 }
 
 fn validate_summary_snapshot(snapshot: &Value, chapter_id: &str) -> Result<()> {
+    if let Some(references) = snapshot.get("copyReferences") {
+        for (key, limit) in [("characters", 512), ("foreshadowings", 100_000)] {
+            let entries = references[key].as_array().ok_or_else(invalid)?;
+            let mut seen = HashSet::new();
+            if entries.len() > limit
+                || entries.iter().any(|entry| {
+                    !text_value(&entry["id"], 4096, false)
+                        || !text_value(&entry["fingerprintId"], 4096, false)
+                        || !seen.insert(entry["id"].as_str().unwrap_or_default())
+                })
+            {
+                return Err(invalid());
+            }
+        }
+    }
+    if let Some(versions) = snapshot.get("copySourceVersions") {
+        let entries = versions.as_array().ok_or_else(invalid)?;
+        let mut seen = HashSet::new();
+        if entries.len() > 512
+            || entries.iter().any(|entry| {
+                !text_value(&entry["sourceId"], 512, false)
+                    || !(entry["version"].is_null() || nonnegative(&entry["version"]))
+                    || !entry["matchesBaseline"].is_boolean()
+                    || !seen.insert(entry["sourceId"].as_str().unwrap_or_default())
+            })
+        {
+            return Err(invalid());
+        }
+    }
     let chapter_snapshot_id = snapshot["chapterId"].as_str().ok_or_else(invalid)?;
     if chapter_snapshot_id != chapter_id
         || !text_value(&snapshot["chapterTitle"], 4096, true)

@@ -1,4 +1,5 @@
 import type { CharacterRole, HandleConfig } from '../../../types';
+import type { ChapterSummarySourceSnapshot } from '../../../domain/chapterSummarySource';
 import {
     STORYARK_EXPORT_CONTENT_VERSION,
     STORYARK_EXPORT_SCHEMA_VERSION,
@@ -177,6 +178,8 @@ export interface ExchangeChapterSummarySourceSnapshot {
     foreshadowingIds: string[];
     foreshadowingNoteFingerprints: Array<{ noteId: string; fingerprint: string }>;
     capturedAt: Timestamp;
+    copyReferences?: ChapterSummarySourceSnapshot['copyReferences'];
+    copySourceVersions?: ChapterSummarySourceSnapshot['copySourceVersions'];
     extensions?: ExchangeExtensions;
 }
 

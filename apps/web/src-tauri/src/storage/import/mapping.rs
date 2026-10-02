@@ -57,11 +57,11 @@ pub(super) fn build_id_map(work: &Value) -> Result<IdMap> {
     Ok(map)
 }
 
-fn mapped(map: &HashMap<String, String>, value: &str) -> String {
+pub(super) fn mapped(map: &HashMap<String, String>, value: &str) -> String {
     map.get(value).cloned().unwrap_or_else(|| value.to_owned())
 }
 
-fn mapped_note(map: &IdMap, chapter_id: &str, note_id: &str) -> String {
+pub(super) fn mapped_note(map: &IdMap, chapter_id: &str, note_id: &str) -> String {
     map.notes
         .get(&(chapter_id.to_owned(), note_id.to_owned()))
         .cloned()
@@ -87,7 +87,7 @@ fn mapped_source_entity(map: &IdMap, kind: &str, entity_id: &str) -> String {
     }
 }
 
-fn mapped_source_id(map: &IdMap, source_id: &str) -> String {
+pub(super) fn mapped_source_id(map: &IdMap, source_id: &str) -> String {
     let Some((book_id, kind, entity_id)) = source_id.split_once(':').and_then(|(book_id, rest)| {
         rest.split_once(':')
             .map(|(kind, entity_id)| (book_id, kind, entity_id))
@@ -374,6 +374,7 @@ pub(super) fn copy_work(work: &Value, map: &IdMap, title: &str) -> Result<Value>
     } else {
         0
     });
+    super::summary_copy::preserve_summary_baselines(planning, work, map);
     rewrite_json_references(planning, map, None);
     if let Some(summaries) = planning
         .get_mut("chapterSummaries")
@@ -382,17 +383,6 @@ pub(super) fn copy_work(work: &Value, map: &IdMap, title: &str) -> Result<Value>
         for summary in summaries {
             if summary.get("sourceChapterVersion").is_some() {
                 summary["sourceChapterVersion"] = json!(1);
-            }
-            if let Some(versions) = summary
-                .get_mut("freshnessAcknowledgement")
-                .and_then(|acknowledgement| acknowledgement.get_mut("allowedSourceVersions"))
-                .and_then(Value::as_array_mut)
-            {
-                for version in versions {
-                    if !version.is_null() {
-                        *version = json!(1);
-                    }
-                }
             }
         }
     }

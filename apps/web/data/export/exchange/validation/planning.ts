@@ -1,4 +1,5 @@
 import { EXCHANGE_LIMITS } from '../limits';
+import { parseChapterSummarySourceSnapshot } from '../../../../domain/chapterSummarySource';
 import type {
     ExchangeChapterSummaryGenerationMetadata,
     ExchangeChapterSummaryGenerationSource,
@@ -48,6 +49,7 @@ function validateSummarySourceSnapshot(
         'chapterId', 'chapterDatabaseVersion', 'chapterTitle', 'contentFormat', 'contentVersion',
         'fingerprintAlgorithm', 'bodyFingerprint', 'structuredFingerprint', 'blockFingerprints',
         'mentionedCharacterIds', 'foreshadowingIds', 'foreshadowingNoteFingerprints', 'capturedAt', 'extensions',
+        'copyReferences', 'copySourceVersions',
     ]), path);
     const chapterId = context.requiredUuid(object, 'chapterId', path);
     const chapterDatabaseVersion = object.chapterDatabaseVersion === null
@@ -82,11 +84,19 @@ function validateSummarySourceSnapshot(
     blockFingerprints.forEach((fingerprint, index) => {
         if (!SUMMARY_FINGERPRINT.test(fingerprint)) context.add(`${path}.blockFingerprints[${index}]`, 'INVALID_VALUE', 'Expected a 64-bit lowercase hexadecimal fingerprint.');
     });
-    return {
+    const snapshot = {
         chapterId, chapterDatabaseVersion, chapterTitle, contentFormat, contentVersion,
-        fingerprintAlgorithm: 'fnv1a64-utf16-v1', bodyFingerprint, structuredFingerprint,
+        fingerprintAlgorithm: 'fnv1a64-utf16-v1' as const, bodyFingerprint, structuredFingerprint,
         blockFingerprints, mentionedCharacterIds, foreshadowingIds, foreshadowingNoteFingerprints, capturedAt,
+        ...(object.copyReferences === undefined ? {} : { copyReferences: object.copyReferences }),
+        ...(object.copySourceVersions === undefined ? {} : { copySourceVersions: object.copySourceVersions }),
     };
+    const parsed = parseChapterSummarySourceSnapshot(snapshot, chapterId);
+    if (!parsed) {
+        context.add(path, 'INVALID_VALUE', 'Invalid chapter summary comparison metadata.');
+        return undefined;
+    }
+    return parsed;
 }
 
 function validateSummaryNoteFingerprint(

@@ -8,6 +8,7 @@ use std::collections::HashMap;
 
 mod mapping;
 mod persistence;
+mod summary_copy;
 mod validation;
 
 use mapping::{build_id_map, copy_work};
