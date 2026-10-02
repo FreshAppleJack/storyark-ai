@@ -62,6 +62,9 @@ transparent outer corners. Its flat book-and-star design uses layered pages and
 a cover in muted teal, with an apricot star on a pale mint tile. The artwork was
 generated with the built-in image generation tool for StoryArk.
 
+The tile and book use a tight frame to reduce unused transparent space at small
+Windows taskbar sizes. Keep this framing when replacing the source artwork.
+
 From `apps/web`, regenerate platform assets with the
 [Tauri icon command](https://v2.tauri.app/develop/icons/):
 
