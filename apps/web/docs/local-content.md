@@ -1,15 +1,9 @@
-# Local work content contract (weeks 11–12)
+# Local work content contract
 
-> Status: contract defined and schema migrated (unit 1); characters (unit 2),
-> the relationship graph (unit 3), foreshadowing/planning (unit 4) and
-> preferences/brainstorm (unit 5) are fully local. This document is the
-> field-level source of truth; `local-storage.md` covers the weeks 9–10
-> foundation.
-
-Scope: characters, the relationship graph, cross-chapter foreshadowing,
-story planning, application preferences and the brainstorm workspace become
-local-first inside the same SQLite database. No model generation, no JSON
-interchange, no vector/AI tables.
+Characters, relationships, foreshadowing, planning, application preferences and
+brainstorm workspaces persist in the same local SQLite database. This document
+covers their fields, references and write boundaries; [local-storage.md](local-storage.md)
+covers library storage and [ai-contracts.md](ai-contracts.md) covers generation.
 
 ## Field inventory (persisted vs derived vs deferred)
 
@@ -146,22 +140,19 @@ CONTENT_INCOMPATIBLE, STORAGE_FAILURE).
 
 ## Schema upgrade strategy
 
-`user_version` is now 2. Upgrades are additive numbered migrations applied
+Schema versions follow the registered numbered migrations. Upgrades are additive
+and applied
 in one immediate transaction per version step (`0001` is frozen). Before any
 upgrade from an existing versioned database, a consistent online backup is
 written into `<app-data>/backups`; a failed backup stops the upgrade and the
 old database keeps its version and rows. A failed migration rolls the
 transaction back — the database is never dropped or rebuilt to recover.
-Regression evidence: a seeded v1 library upgrades with content, original
-recovery copies, IDs, unknown foreshadowing fields and lock states intact;
-a poisoned upgrade path leaves the v1 database fully readable; fresh
-databases initialize at version 2 with no pre-upgrade backup.
 
 Version spaces stay separate: SQLite `user_version` (schema), record
 `databaseVersion` (optimistic concurrency), chapter `contentVersion`
-(format), and the future interchange `schemaVersion` (exchange).
+(format), and interchange `schemaVersion` (exchange).
 
-## Unit 2 implementation: characters local with mention compatibility
+## Characters and mention compatibility
 
 Commands `local_list_characters`, `local_create_character` (returns the
 character plus the bumped book, like volume creation), `local_update_character`
@@ -178,8 +169,7 @@ not disabled for new matches). Extension options are only the initial
 fallback. The editor's `useEditor` no longer takes characters in its
 dependency list, so creating, renaming or archiving a character never
 rebuilds the Tiptap instance — caret, undo history, selection and drafts are
-untouched, verified in the desktop smoke (typing and undo continue right
-after a character save, and the fresh mention appears in place). Mentions
+untouched. Mentions
 reference the stable character ID; renaming never rewrites chapter text, and
 the reconcile pass updates only label/color drift. Archived characters keep
 their mentions and graph references, disappear from `@` suggestions and new
@@ -190,26 +180,9 @@ detail plus characters through the local queries; the editor's world-
 building button and mention clicks navigate there through the existing
 flush-protected navigation. Avatars stay audit-compliant with the contract:
 no upload UI exists, the built-in color swatches are the only visual
-identity, and stored avatar paths/URLs are never auto-fetched. Character
-reordering remains an explicit stub until its command lands (book-level
-management is tracked in unit 6).
+identity, and stored avatar paths/URLs are never auto-fetched. Character ordering uses the version-checked local reorder boundary.
 
-### Verification record (2026-09-12, unit 2)
-
-Real Windows desktop run via WebView2 CDP: character created through the
-settings page commits with a Rust UUID and bumped book version; returning to
-the editor auto-highlights the name in place without a rebuild; typing and
-undo continue across the refresh; archiving shows the badge, keeps the
-existing mention, and produces no new matches; a second book never matches
-the first book's character. Frontend: 259 tests (provider CRUD/archive,
-projection mapping, storage-driven highlight, archived mention preservation,
-cross-book isolation fixtures), zero-warning lint, production build. Rust:
-20 tests (character CRUD/archive concurrency, validation, locks), Clippy and
-`cargo fmt --check` clean. Secret scan clean. Not yet covered: character
-reorder persistence (stubbed by design) and unarchive UI (the command
-already accepts `isArchived: false`).
-
-## Unit 3 implementation: relationship graph local
+## Relationship graph persistence
 
 Commands `local_read_graph`, `local_initialize_graph` and `local_save_graph`
 implement the contract exactly: a missing graph row is `null` (distinct from
@@ -240,25 +213,7 @@ changes that would drop edges ask for confirmation first. Changing a
 character's default handles is validated against inheriting nodes so
 connections cannot silently break (and bumps the graph version).
 
-### Verification record (2026-09-12, unit 3)
-
-Real Windows desktop run via WebView2 CDP, no backend: character created
-through the settings UI; a mention inserted through the editor's real
-command pipeline and saved; the map initialized explicitly; the same
-character dropped twice as two instances with distinct positions; a
-right-source to top-target edge labeled "另一个自己" connected through real
-handle mouse events and saved. A normal window close reopened with both node
-positions, the edge and its label intact; a second reopen after another save
-confirmed the same. The chapter with its mention stayed intact throughout.
-Frontend: 264 tests (projection round-trips, pending-commit drains,
-conflict layout retention, port-change confirmation, missing-character edit
-block), zero-warning lint, production build. Rust: 25 tests (round-trip
-with archival and saved-empty graphs, validation rejections, transactional
-rollback with an injected trigger, stale-version and lock rejections,
-inherited-port protection, IPC registration), Clippy and `cargo fmt --check`
-clean. Secret scan clean.
-
-## Unit 4 implementation: foreshadowing and planning
+## Foreshadowing and planning
 
 The board uses `local_read_book`, not a second notes store. Its identity is
 `(bookId, chapterId, noteId)`; a missing body mark is shown as unlocated but
@@ -306,21 +261,7 @@ the P0-B boundary. P0-C preflight and P0-D conflict-aware import now consume
 the same envelope; restore remains a controlled backup operation after all
 running instances have stopped.
 
-### Verification record (2026-09-12, unit 4)
-
-Frontend: 269 tests pass, typecheck/build and lint pass. Rust: 29 tests pass,
-Clippy with warnings denied passes. Tests cover opaque note preservation,
-composite identities, stale versions, foreign chapter references, persistence
-across reopening, injected transaction failures and atomic deletion cleanup.
-A temporary `.mjs` CDP script exercised an isolated real Tauri/SQLite instance:
-board note edit/recovery preserved rich body and other chapter notes; orphan
-notes stayed visible; the editor reread committed notes. Planning form values,
-chapter summary source version and plot links persisted. An injected SQLite
-failure retained the visible draft and blocked route departure; retry worked.
-Closing the native window with an unsaved planning field flushed it, and a new
-process recovered all fields. No production user database was used.
-
-## Unit 5 implementation: application preferences and the brainstorm workspace
+## Application preferences and the brainstorm workspace
 
 `local_read_preferences` returns null only when the single row was never
 initialized; that alone authorizes the one-time import. The import reads this
@@ -344,13 +285,13 @@ announced, never shown as saved, and leave the visible choice for retry.
 Preferences are unaffected by book locks. The settings page is back at
 `/settings` without login/register/account sections.
 
-The brainstorm workspace splits the local repository from any future
-generation provider. `local_read_brainstorm` returns the empty aggregate with
+The brainstorm workspace keeps persistence separate from AI generation.
+`local_read_brainstorm` returns the empty aggregate with
 version 0 only when the row genuinely does not exist; `local_save_brainstorm`
 takes the whole workspace with sessionKey/revision acknowledgement and
 validates live selected chapter IDs against the book in-transaction.
-Generation is explicitly unavailable: both generate buttons are disabled with
-an honest note, and no legacy AI endpoint is touched. Chapter selection,
+Generation uses the configured native AI provider and temporary candidates;
+adoption and workspace saving remain separate actions. Chapter selection,
 context review, handwritten final content and previously saved options all
 work. The editable result area is always present so final content can be
 written by hand. The context snapshot is rebuilt at every save with chapter
@@ -360,22 +301,7 @@ pending; route departure and native close wait for the flush; a failed read
 can never be overwritten by an empty workspace. Saving the workspace never
 writes into chapter content.
 
-### Verification record (2026-09-12, unit 5)
-
-Frontend: 281 tests (+12), typecheck, zero-warning lint and production build
-pass. Rust: 37 tests (+8) covering NULL-field round-trips, stale-importer and
-version conflicts, invalid ranges, lock immunity for preferences and lock
-enforcement plus book-delete cascade for the workspace, and IPC registration;
-Clippy and `cargo fmt --check` clean. Secret scan clean. Real Windows desktop
-CDP smoke: first launch imported localStorage preferences into version 1;
-theme toggle persisted (version 2) with the launch cache updated; a real
-restart restored settings without re-importing. The brainstorm workspace
-opened from the outline with generation disabled, accepted a chapter
-selection and handwritten final content, saved and recovered after restart;
-the snapshot carried the chapter source version and a later chapter edit
-surfaced the stale hint.
-
-## Unit 6 implementation: bookshelf management and acceptance coverage
+## Bookshelf management
 
 Bookshelf management is fully wired: the context menu works in local mode,
 `local_update_book` renames and toggles lifecycle status in one
@@ -387,22 +313,9 @@ legacy palette (blue/emerald/rose/amber/purple 600), persisted in the
 `cover_color` column added by migration 0003 (additive, backup-first like
 0002). The editor's settings button is enabled again now that `/settings`
 exists. `local_list_characters` reports NOT_FOUND for deleted books, matching
-every other read. A real-desktop probe on an isolated data directory
-verified: same-named characters stay distinct across books; book B reads
-contain nothing of book A; wrong-book IDs are rejected for notes, brainstorm
-selections, graph nodes and planning references; deleting book A removes
-every attachment while book B stays intact. Legacy migration tooling is
-deliberately skipped (the legacy project holds no real data).
+every other read.
 
-### Verification record (2026-09-13, unit 6)
-
-Frontend: 284 tests (+3), typecheck, zero-warning lint and production build
-pass. Rust: 38 tests (+1), Clippy and `cargo fmt --check` clean. Secret scan
-clean. Full user-acceptance walkthroughs (long manual flows) are performed
-by the maintainer by decision; probe-level checks above ran on a throwaway
-`STORYARK_DATA_DIR`, never the real database.
-
-## Whole-book JSON interchange (P0-A contract and P0-B export)
+## Whole-book JSON interchange
 
 The v1 contract and local export path are implemented and verified separately
 from the SQL migration. P0-C preflight and P0-D conflict-aware import now use

@@ -1,4 +1,4 @@
-# P1-R0: retrieval freshness and automatic local indexing
+# Retrieval freshness and automatic local indexing
 
 ## Contract
 
@@ -15,7 +15,8 @@ can be used with explicit degradation even when its vector is stale.
 Background indexing reads committed SQLite sources only. This restriction does
 not remove the existing continuation context captured from the in-memory draft:
 that context must retain its own session, revision and anchor, and must never be
-labelled as a saved indexed source. RAG prompt integration remains P1-R1/R2/R3.
+labelled as a saved indexed source. See [retrieval-r1.md](retrieval-r1.md)
+for shared generation context.
 
 ## Scheduling
 
@@ -46,26 +47,3 @@ labelled as a saved indexed source. RAG prompt integration remains P1-R1/R2/R3.
   last completed task timestamp and last task failure. The timestamp is not a
   promise that every source is fresh; existing scoped index status remains the
   authority. Status polling no longer re-chunks books with registered sources.
-
-## Validation (Windows, 2026-09-22)
-
-- Rust regression tests cover debounce, maximum wait, failed-save rollback,
-  default-off, disable/late commit, restart recovery, no automatic failure retry,
-  source-specific queueing, book isolation, and explicit lexical fallback.
-  Existing cancellation, vector dimension, conflict and partial-write tests run
-  alongside them. Frontend tests cover preference commit and conflict feedback.
-- A temporary `.mjs` CDP probe controlled a real Tauri WebView with isolated
-  SQLite and WebView directories and the local multilingual-e5-small model.
-  The settings checkbox persisted its value. After a synthetic Chinese chapter
-  save, navigation to the dashboard did not stop indexing. No build button or
-  queue IPC was called: one source completed and a fresh search returned evidence
-  after 60,425 ms, including debounce and query time.
-- After restarting the same isolated desktop data directory, the preference
-  remained enabled, the completion timestamp survived, pending count was zero,
-  and a strict fresh semantic search returned one hit with `ready` status and
-  no lexical degradation.
-- One post-run process sample was 861,437,952 bytes working set and 2.86 seconds
-  cumulative CPU. This is a single process observation, not a peak, total WebView
-  memory measurement, utilization percentage, or performance guarantee.
-- No remote embedding or generation provider was called. Cross-platform and
-  packaged desktop acceptance are outside this change.

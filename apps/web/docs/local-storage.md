@@ -33,15 +33,10 @@ does not create extra connections or queues. Internal helpers are visible only
 within storage. New domains get their own module rather than expanding the
 facade or adding unused abstractions.
 
-> History: this document started in week 9–10 work unit 2 (2026-09-12) with
-> `data/local/contracts.ts` and `migrations/0001_library.sql` as the
-> specification. Weeks 9–10 delivered the library foundation (units below);
-> weeks 11–12 moved every remaining work surface — characters, the
-> relationship graph, foreshadowing/planning, preferences and the brainstorm
-> workspace — onto the same storage (see `local-content.md`). AI Continue now
-> uses the configured-model Tauri generation boundary; RAG and platform-specific
-> features remain future work. Whole-work JSON export and conflict-aware import
-> are local Tauri/SQLite flows described in `storyark-work-exchange.md`.
+Storage uses the same local database for library content, planning, preferences
+and AI configuration. See [local-content.md](local-content.md) for other work
+surfaces and [storyark-work-exchange.md](storyark-work-exchange.md) for portable
+import/export.
 
 ## Identity and schema
 
@@ -72,8 +67,8 @@ explicit lock prevents writes. Book/volume locks also protect descendants.
 
 ## Four independent versions
 
-- SQLite `PRAGMA user_version = 5`: migration/physical table structure version
-  currently installed by the numbered migrations. This is independent of the
+- SQLite `PRAGMA user_version`: the physical schema version installed by the
+  registered numbered migrations in `storage/database.rs`. This is independent of the
   exchange `schemaVersion` and per-record `databaseVersion`.
 - `databaseVersion`: per-record optimistic concurrency version, incremented by
   each successful mutation. It is returned to callers and survives restarts.
@@ -99,7 +94,7 @@ New chapters use `tiptap-json`, version 1, and an explicit empty document:
 `{"type":"doc","content":[{"type":"paragraph"}]}`. Empty string, JSON null,
 arrays, malformed JSON, and a missing/wrong root type are not empty documents.
 
-The future Rust save command must validate the full supported node/mark/attribute
+The Rust save command validates the full supported node/mark/attribute
 structure, not only the shallow SQL JSON constraint. The content contract includes
 the extensions configured by the existing editor (formatting, mentions,
 foreshadowing, and ignore-auto-highlight). Do not create a separate permissive
@@ -118,7 +113,7 @@ Before legacy conversion, save the exact source in `original_content` plus
 saves; clients cannot replace it. Legacy records require that source copy even
 before conversion. Do not normalize, trim, or stringify the source during intake.
 If compatibility cannot be proven, reject the write and keep both database source
-and frontend draft. Work unit 2 deliberately provides no automatic HTML converter;
+and frontend draft. There is no automatic HTML converter;
 legacy conversion remains disabled until validated in the implementation.
 
 Mentions keep id/label/color and unknown attributes without creating a local
@@ -176,304 +171,40 @@ revision still match the saved snapshot. Queue the newer draft using the returne
 database version. An old-session response must never update the active draft's
 version or clear its dirty state. Reuse the existing autosave session guards.
 
-## Migration runner handoff and verification
+## Runtime persistence and recovery
 
-Unit 3 uses rusqlite with bundled SQLite, one owned connection, foreign_keys
-enabled on every connection, and the platform app-data directory. Before SQL,
-reject a user_version newer than supported and unexpected pre-existing tables in
-a version-0 database. In a write transaction recheck version, execute 0001, set
-user_version to 1, then commit. Already-version-1 databases skip 0001. Any failure
-rolls back schema and version; never drop/recreate to recover. No production
-database is opened by the contract-only schema test. Application startup now opens
-the app-data database. Before later upgrades, use a consistent
-SQLite backup mechanism, not copying a live main file alone.
+The serialized storage worker owns the database connection. Writes use immediate
+transactions with optimistic versions; successful IPC responses describe committed
+state. SQLite uses foreign keys, WAL, a busy timeout and synchronous FULL.
+Initialization or migration failure preserves the existing database rather than
+recreating it. Numbered migrations are registered in `storage/database.rs`.
 
-Run the migration contract checks with Node 24 (built-in SQLite; test-only):
+The normal path is `<app-data>/storyark.sqlite3`. Controlled tests can override it
+with `STORYARK_DATA_DIR`; they must use disposable data. Before upgrading an
+existing versioned database, the application creates a verified SQLite online
+backup. `local_backup` also writes a consistent snapshot under
+`<app-data>/backups`, checking integrity and foreign keys before finalizing it.
+Do not copy a live main database alone or delete its WAL/SHM files. Restore only
+with every application instance stopped and after checking the backup separately.
 
-```powershell
-node --test scripts/local-storage-schema.test.mjs
-npm.cmd run typecheck
-```
+The local provider keeps committed data in the shared Query cache. Draft state
+tracks chapter identity, session, revision and acknowledged database version.
+Chapter switches flush pending edits; failed writes preserve the draft and retry
+path. Native close guards flush work or let the author retry, discard or cancel.
+Editor-normalized content establishes the clean baseline after loading, so schema
+defaults do not count as user edits. Character refreshes must not recreate the
+editor or reset caret/undo history.
 
-These Node tests exercise real SQLite SQL, not Rust command behavior. See the
-Rust tests below for bundled SQLite, disk reopen, command validation and IPC.
+Chapter Word/PDF export captures the current draft before asynchronous conversion.
+Desktop Save As grants access to the chosen destination; cancellation is normal,
+and conversion/write failures reach the caller. Whole-work export additionally
+flushes mounted work-surface drafts and reads a single validated SQLite snapshot.
+Neither operation should claim success before its write completes.
 
-## Work unit 3 implementation
+## Schema and regression checks
 
-`src-tauri/src/storage` owns a rusqlite 0.32.1 bundled connection behind a mutex.
-Each command runs its synchronous work on `spawn_blocking`; the mutex serializes
-access within the process. `BEGIN IMMEDIATE`, a five-second busy timeout and
-expected database versions also protect against a second process. This does not
-provide live multi-window synchronization or merge conflicting drafts.
-
-Startup initializes on a worker before application startup completes. Initialization
-failure aborts startup with a storage error; it never deletes the database. The
-normal application path comes only from Tauri `app_data_dir()`:
-
-```text
-<app_data_dir>/storyark.sqlite3
-<app_data_dir>/backups/storyark-<time>-<uuid>.sqlite3
-```
-
-On Windows the app data directory is normally
-`%APPDATA%/io.github.freshapplejack.storyark`. Tests instead create isolated UUID
-directories under the OS temp directory. WAL plus synchronous FULL are enabled;
-the WAL/SHM files are managed by SQLite and must not be deleted as a reset strategy.
-
-Registered IPC commands (only the local `main` window has permission):
-
-| Command | Arguments |
-| --- | --- |
-| local_list_books | none |
-| local_read_book | `{ bookId }` |
-| local_create_book | `{ input: { title, author } }` |
-| local_create_volume | `{ input: { bookId, title, expectedBookVersion } }` |
-| local_create_chapter | `{ input: { bookId, volumeId, title, expectedVolumeVersion } }` |
-| local_save_chapter | `{ input: SaveChapterRequest }` |
-| local_backup | none; returns `{ fileName }` inside the success envelope |
-
-Business results use `{ ok, value/error }` from the contract. Malformed IPC
-payloads rejected by serde and capability denials are transport rejections; the
-future frontend adapter must catch them without marking drafts saved. UI remains
-unconnected, so no current bookshelf action claims SQLite persistence. Rename,
-status, locking, reorder and delete remain specified but unregistered; subsequent
-units will implement them before exposing local UI actions.
-
-Current saves accept a conservative v1 node/mark/attribute subset matching the
-existing editor and store the submitted string unchanged. Unknown fields, invalid
-trees, HTML, or incompatible stored content block overwrites. Legacy conversion
-is still disabled. This validates structure and preservation at the database
-boundary, not a browser editor round-trip for every historical extension. Full
-editor compatibility fixtures are required when wiring the UI. No legacy records
-or users are automatically migrated from the server.
-
-`local_backup` uses the SQLite online backup API while holding the connection
-owner. It includes committed WAL data, validates the destination with
-`quick_check` and `foreign_key_check`, and renames a unique `.partial` file only
-on success. Replace imports use the same verified backup boundary before their
-transaction. Callers cannot supply paths. A backup is a consistent database
-snapshot, not a JSON export. There is no automatic live restore: stop all
-instances and validate a backup in a separate directory before a controlled
-restore. Tests demonstrate separate-directory backup reopening and import
-rollback behavior.
-
-```powershell
-cd apps/web/src-tauri
-cargo test --locked
-cargo fmt --check
-```
-
-Ten Rust tests cover rich-content disk reopen, stale writes across connections,
-ownership/locks/not-found errors, injected save and parent-update failures,
-unrecognized content, migration rollback, refusal of newer/corrupt/unversioned
-databases, consistent backup restore, serialized workers, and Tauri IPC with the
-actual handler registration and capabilities. The IPC test uses Tauri's mock window
-runtime with real on-disk SQLite, not a visual WebView or in-memory repository.
-Windows CI runs these independently of frontend CI. Windows test executables need
-the Common Controls v6 manifest, following the
-[Tauri example](https://github.com/tauri-apps/tauri/blob/dev/examples/api/src-tauri/build.rs).
-
-## Work unit 4 implementation: sign-in-free bookshelf and local reads
-
-The application now always mounts the local provider stack
-(`LocalSessionProvider` + `PreferencesProvider` + `LocalBooksProvider` via
-`AppProvider mode="local"`). Session state is a compatibility facade with a null
-user: preferences stay in localStorage and never issue HTTP calls. Login,
-register and every authenticated route redirect to the bookshelf; book-scoped
-routes other than the editor render an explicit unavailable page. The legacy
-`BooksProvider` remains in the tree for future migration reference only.
-
-`data/local/repository.ts` wraps every IPC call in a typed adapter. Without the
-desktop runtime it rejects with `DESKTOP_REQUIRED` and the bookshelf shows a
-retryable error — browser preview never pretends to persist. Query keys are
-`['local', 'default-workspace', ...]`. Mutations commit through IPC first and
-then patch the TanStack Query cache; nothing is copied into a second
-long-lived context state. Unimplemented actions (rename, delete, reorder,
-locks, characters, graph, planning) are explicit stubs that toast and return
-failure — they cannot reach HTTP or fake success. The save scheduler keeps its
-existing debounce/flush/retry contract; only its `saveChapter` target switches
-to `saveLocalSnapshot`, which pins the expected database version from the
-cached chapter record and verifies the echoed sessionKey/revision.
-
-### Editor crash found and fixed during this unit
-
-Opening a book, then creating a volume or saving a chapter crashed the whole
-editor route with `The editor view is not available. Cannot access view['dom']`.
-Root cause chain:
-
-1. `projectBook` returned a fresh `characters: []` array on every projection.
-2. After each committed mutation the provider patches the book detail cache, so
-   the editor page received a new book object with a new characters identity.
-3. `useEditor`'s dependency list `[characters, autoHighlightCharacters]`
-   therefore changed, destroying the old instance and creating a new one whose
-   view is not mounted yet.
-4. In the same effect flush the tooltip effect still held the destroyed
-   instance and read `editor.view.dom`, which throws on Tiptap v3's proxy stub.
-
-Fixes: `projectBook` now returns a module-level `NO_CHARACTERS` constant so the
-editor never rebuilds for storage updates (this also preserves caret and undo
-history across saves), and the tooltip effect checks `editor.isDestroyed` like
-every sibling effect. A regression test pins the stable characters reference.
-Legacy mode was unaffected because its optimistic book updates keep the
-characters array referentially stable.
-
-### Verification record (2026-09-12)
-
-Real Windows desktop run via WebView2 CDP against the app-data database:
-bookshelf renders without login; UI book creation commits and appears; opening
-a book, creating a volume and a chapter no longer crashes; typed Chinese text
-shows "Saved locally" after the debounce; `local_read_book` confirms the
-persisted content and advanced database version; a page reload restores the
-chapter text. Frontend: 241 tests, zero-warning lint, production build. Rust:
-10 storage tests and `cargo fmt --check` unchanged and passing. Secret scan
-clean. Not yet covered here: native window close protection (unit 5), stale
-multi-window writes, and UI actions for rename/delete/locks (still stubbed).
-
-## Work unit 5 implementation: writing loop, mutations and window close
-
-Registered commands (same envelope, ownership, lock and version semantics as
-the existing writes): `local_rename`, `local_set_read_only`, `local_reorder`,
-`local_delete`. Targets are flat `{ kind, ...ids, expectedDatabaseVersion }`
-(serde-flattened; `ExpectedTarget` in the contract now matches that shape).
-Deleting cascades through SQLite foreign keys and requires the parent version
-so the parent row advances for other sessions; a reorder never bumps the
-parent. Unlocking a record checks ancestor locks but never the record itself.
-Five more Rust tests cover rename/lock/reorder/delete outcomes and the IPC
-registration of the new commands.
-
-The local provider implements volume/chapter rename, chapter lock toggles,
-volume/chapter delete (volume deletion drains each known chapter write queue
-first) and drag reorder, all through the same chapter write queue. A chapter
-title change without an open draft goes through `local_rename`; any content
-divergence in that call is rejected instead of overwriting. Shelf-level book
-management stays an explicit unavailable stub. `useWindowCloseGuard` hooks the
-native `CloseRequested` event on the editor page: a dirty draft prevents the
-close, flushes through the existing scheduler, and only then destroys the
-window; a failed flush shows a retry/discard/cancel dialog. Permissions are
-limited to `core:event:allow-listen` plus window close/destroy.
-
-### Phantom dirty flag found and fixed during this unit
-
-Opening a chapter whose stored JSON predates schema defaults (e.g. the initial
-empty document created by `local_create_chapter`) falsely marked the draft
-dirty: after `setContent`, the editor's schema-normalized serialization
-(`textAlign` attrs) no longer matched the loaded string, so the next
-transaction looked like user input. On a locked chapter this made autosave
-fail with READ_ONLY and then blocked unlocking behind a flush that could
-never succeed. Fix: after a chapter switch the editor reports the normalized
-serialization (`onContentNormalized`) and the draft adopts it as the clean
-baseline via `adoptLoaded` — the baseline always equals what the editor
-actually displays, no revision bump and no dirty flag.
-
-### Verification record (2026-09-12, unit 5)
-
-Real Windows desktop run via WebView2 CDP: rename through the context menu
-commits; creating a chapter enters auto-rename and persists; lock toggle
-persists and correctly blocks deletion of a locked chapter (UI keeps the
-record and reports the failure); unlocking succeeds with no phantom dirty
-flag; deletion removes the chapter and advances the parent volume; dragging a
-chapter onto another persists the new order in both UI and database; closing
-the window with an unsaved edit flushes first — the typed text was found in
-the database after the process exited. Frontend: 253 tests, zero-warning
-lint, production build. Rust: 15 tests, Clippy and `cargo fmt --check` clean.
-Secret scan clean. Remaining boundaries: book-level management (shelf menu)
-still stubbed by design, force-quit still only guarantees the last committed
-transaction, and failure simulation uses unit tests rather than a damaged
-live database.
-
-## Work unit 6 implementation: recovery verification and handoff
-
-`STORYARK_DATA_DIR` redirects the database directory for controlled smoke
-tests (production always uses the platform app-data directory). Using a fresh
-temporary directory, a real Windows run covered: shelf book creation with no
-backend; Chinese text with bold and center formatting saved; chapter switch
-with flush protection; context-menu rename and drag reorder persisted;
-native window close; and a restart that restored the book, the chapter
-order, and the formatted content exactly ("Saved locally", no phantom dirty
-flag).
-
-Controlled failure drills against the temporary database (the user's real
-app-data directory was never touched): a poison trigger made chapter updates
-fail — the editor showed "Save failed", kept the full draft, offered Retry,
-failed again while the trigger existed, and persisted the same draft after
-the trigger was removed. A second session then advanced the chapter version
-externally: the open editor's save was rejected with a version conflict, the
-draft stayed in the editor, and the database kept the newer external write.
-
-A `local_backup` snapshot was restored into a separate directory and opened
-read-only: `user_version = 1`, integrity `ok`, and the book, volume order,
-chapter order and formatted content all matched. Version 1 is the only
-schema version, so no upgrade migration exists yet — this is recorded
-honestly, and any future upgrade must add a failing-migration rollback test
-alongside the existing initialization checks.
-
-## Remaining legacy-backend dependencies (checked 2026-09-14)
-
-Every work surface is local now. Model-backed editor and brainstorm generation
-use configured providers through Tauri IPC, and the app does not call the
-legacy HTTP API at runtime:
-
-| Area | Local status | Legacy dependency |
-| --- | --- | --- |
-| Bookshelf management (rename, status, delete, cover color) | Local transactions with locks and cascading deletes (weeks 11–12 unit 6) | No legacy calls |
-| Characters | Local SQLite CRUD and archival (weeks 11–12 unit 2) | No legacy calls |
-| Relationship graph | Local whole-snapshot writes (weeks 11–12 unit 3) | No legacy calls |
-| Foreshadowing board (cross-chapter) | Local SQLite aggregation and versioned note patches (weeks 11–12 unit 4) | No legacy calls |
-| Story planning / plot settings | Local SQLite aggregate, guarded drafts and source versions (weeks 11–12 unit 4) | No legacy calls |
-| Preferences remote sync | Local SQLite single row (weeks 11–12 unit 5); localStorage is only a launch cache | No legacy calls |
-| AI brainstorm workspace | Local SQLite aggregate with guarded drafts and session-only AI candidates (weeks 11–12 unit 5) | No legacy calls |
-| AI continue | Local configured-model generation through repository/IPC; candidate adoption uses the normal draft save queue | No legacy calls |
-| Brainstorm generation | Configured-model Tauri IPC; validated JSON candidates require explicit choice before workspace save | No legacy calls |
-| DOCX/PDF export | Works locally (pure frontend, input is the local chapter) | none |
-| Style library | Works locally (localStorage; not covered by SQLite backups) | none |
-| Auth pages (login/register) | Redirected to the shelf; source kept, never mounted | `AuthController` |
-| Settings page | Local at `/settings` (weeks 11–12 unit 5); account sections stay unmounted | none |
-
-## Legacy migration entry point and UUID mapping (types and structure)
-
-The legacy Spring Boot server is archived outside the active repository. It stores books with
-MySQL `Long` auto-increment IDs scoped by `userId`. Chapters carry a raw
-`content` string (HTML or early JSON), `orderIndex`, a `foreshadowings` JSON
-string and an `isEditable` flag. The local model replaces these with UUID
-text IDs, no user concept, `position`, `isReadOnly`, a typed `body`
-(`format`/`version`/`content` plus untouched `originalContent`/
-`originalFormat`), and optimistic `databaseVersion`s.
-
-A future one-shot migration (explicit user action, never automatic) reads a
-legacy book through the old API or a read-only database copy, converts it
-into the whole-book JSON interchange format, and imports it through the
-planned JSON pipeline (validate → allocate new UUIDs → rebuild references).
-The import must keep a per-run mapping table from every legacy `Long` ID to
-its new UUID so that all references stay consistent:
-
-- `chapter.volumeId`, `character.bookId`, graph edge endpoints;
-- mention `data-id` values inside chapter content (legacy character IDs);
-- foreshadowing note IDs referenced by foreshadowing marks;
-- graph node `data.id` (character ID) vs `nodeKey` (node instance ID) —
-  these are two different ID spaces and must not be merged.
-
-Legacy content is imported as `legacy-html`/`legacy-json` with the original
-string preserved in `originalContent`; it converts to editable `tiptap-json`
-only through a verified conversion, otherwise it stays read-only. This stage
-never connects to, deletes from, or overwrites the legacy database, and
-users are never required to run the old backend.
-
-## Desktop chapter export (2026-09-13)
-
-Word/PDF conversion remains frontend-only and captures the current chapter
-before asynchronous work. `createChapterExport` produces a Blob;
-`saveExport` uses Tauri's native Save As dialog and awaits `writeFile` on
- desktop. Cancellation is normal, and write/conversion errors reach the
-existing export error handler. Browser preview retains FileSaver downloads.
-The main window receives only `dialog:allow-save` and `fs:allow-write-file`;
-the dialog grants access to the selected file, without a blanket directory
-scope. Restart/rebuild the Rust shell when adding these plugins; Vite HMR
-alone cannot register native handlers.
-
-Verification: export unit tests cover cancellation, write rejection, Unicode
-filenames, captured snapshots and busy/retry behavior. A temporary CDP script
-ran real Word/PDF conversion in an isolated WebView2 process, in light and
-dark themes; generated DOCX ZIP/PDF signatures were checked and PDF rendering
-was visually inspected. The native Save As dialog was triggered. Its OS-level
-path selection and final interactive save were not automated through CDP;
-mocked destination tests do not substitute for that manual check.
+From `apps/web`, use `npm run schema:check` and `npm run schema:test`. These
+Node.js 24 tools reconstruct SQLite from registered migrations, without reading a
+personal database. From `src-tauri`, use `cargo test --locked` and
+`cargo fmt --check`. Keep fixtures, rollback tests and IPC capability checks in
+the repository; repeatable tests serve a different purpose from dated run reports.

@@ -1,8 +1,8 @@
-# AI configuration and generation contract (work unit 1)
+# AI configuration and generation contract
 
-Initial unit-1 scope: schema and Rust wire types only. Unit 2 implements settings and
-credential storage. Unit 3 implements provider transport and task ownership; prose
-adoption remains reserved for the next work unit.
+Configuration, credentials, provider transport and candidate adoption have separate
+boundaries. Generation produces temporary results; adoption reuses the writing or
+planning save lifecycle.
 
 ## Persistence
 
@@ -16,8 +16,8 @@ UUIDs before writes (the SQL length constraint is only defense in depth).
 Credential references are generated internally, never accepted in ConfigInput.
 Timestamps are UTC Unix milliseconds. Config versions start at 1 and increase
 on every successful configuration or credential-reference change. The default
-selection has its own databaseVersion. PRAGMA user_version is migration version
-4; future JSON schemaVersion and editor revision/session are unrelated values.
+selection has its own databaseVersion. SQLite migration versions, exchange
+schemaVersion and editor revision/session are independent values.
 
 All writes use the existing serialized worker and an IMMEDIATE transaction.
 Create generates the UUID in Rust. Update checks expectedConfigVersion in the
@@ -27,9 +27,9 @@ both config and default-selection versions; if selected, clear the default and
 advance its version in the same transaction before deletion. Never silently
 select another provider. Missing records and stale versions are distinct errors.
 Credential cleanup occurs after commit; failed cleanup must remain recoverable.
-Cross-store secret staging and compensation belong to work unit 2.
+Cross-store secret staging and compensation follow the credential lifecycle below.
 
-## Reserved IPC signatures
+## IPC signatures
 
 All commands return a typed success or AiError. Config reads omit credentials
 and credential references; saved keys must never be returned to the WebView.
@@ -76,6 +76,11 @@ handlers and reuse their existing save paths. Generation never writes prose.
 
 ## Validation and errors
 
+New configurations default to a 300,000 ms request timeout. OpenAI-compatible
+protocols can omit the output cap and use provider defaults; Anthropic Messages
+requires an explicit cap. Set a cap within the selected model's output limit;
+the application's numeric maximum is not a model capability guarantee.
+
 ConfigInput rejects unexpected fields, URL credentials/query/fragment, invalid
 protocol/host, control characters and out-of-range limits. HTTPS is supported;
 HTTP is restricted to loopback. Custom proxy paths are retained. Actual endpoint
@@ -92,7 +97,7 @@ Do not pass provider bodies, Rust debug errors, headers or keys through errors.
 Provider errors must be classified rather than echoed; automatic inference
 retries after output are not allowed.
 
-## Module boundaries and follow-up
+## Module boundaries
 
 `src/ai/config.rs`, `error.rs`, and `generation.rs` are public, serializable
 contracts. `credentials`, `providers`, `stream`, `tasks` and `context` keep
@@ -105,7 +110,7 @@ and dedicated Tauri commands delegate to it.
 It has no numeric migration prefix and must never enter the runtime registry.
 Run `schema:check` and `schema:test` after changing registered migrations.
 
-## Work unit 2 implementation
+## Configuration and credentials
 
 Configuration commands are now registered in `ai_commands.rs`. `ai_save_config`
 accepts `SaveSettings` (id/null, expectedConfigVersion, config, credential action).
@@ -113,8 +118,7 @@ The credential action is `keep` or `replace` with key and remember. A changed
 base URL or protocol requires replacement; a blank input never erases a key.
 Success acknowledges the committed ID/version; list reads return metadata and
 credential status only. No key or credential reference is returned to JavaScript.
-The generation/context commands above are implemented in the unit 3 transport
-layer; they do not save generated content.
+Generation/context commands use the transport layer and do not save generated content.
 
 Migration 0005 adds credential_mode and the metadata-only cleanup queue. A new
 reference's cleanup intent is committed first. An IMMEDIATE transaction then
@@ -137,25 +141,22 @@ system mode rather than falling through to keyring's mock backend; the UI offers
 session mode. There is no plaintext fallback and no secret-read IPC.
 
 Connection tests resolve a saved config/version and key on the storage worker,
-then send a bounded non-streaming synthetic request on a separate worker. The
-HTTP response is capped at 256 KiB; the test is capped at 60 seconds and 256
-output tokens (or the configured smaller limit). HTTPS validation stays enabled,
-redirects are refused and authorization headers are sensitive. Tests require
-completed, nonempty protocol-specific text; a 200 response alone is insufficient.
-Provider bodies and generated text never return through the test IPC. Model or
-endpoint 404 is displayed as such rather than claiming which one was missing.
+then use the same streaming adapter and configured limits as generation with a
+short synthetic prompt. They require completed, nonempty text. HTTPS validation
+stays enabled, redirects are refused and authorization headers are sensitive.
+Provider bodies and generated text never return through the test IPC.
 
 Each probe uses an immutable config/key snapshot. Editing/deleting that config
 invalidates the completion by version check. Changing the default does not
-retarget a running probe. This bounded probe may finish its network call after
+retarget a running probe. The probe may finish its network call after
 leaving Settings, but its late UI result is discarded. No automatic retries or
 background generation are introduced by the settings page.
 
-## Work unit 3 implementation
+## Provider transport and task ownership
 
 The three transport adapters are independent: OpenAI Responses uses `input`,
-`max_output_tokens`, `store: false` and `response.output_text.delta`; OpenAI-
-compatible Chat Completions uses `messages`, `max_tokens`, usage-enabled stream
+optional `max_output_tokens`, `store: false` and `response.output_text.delta`; OpenAI-
+compatible Chat Completions uses `messages`, optional `max_tokens`, usage-enabled stream
 options and `choices[0].delta.content`; Anthropic Messages uses its API-version
 and `content_block_delta` text events. Tool calls, reasoning/thinking deltas,
 unknown metadata events and provider heartbeats never enter the candidate text.
@@ -174,13 +175,7 @@ request/session pair and interrupts the actual response future. Terminal output
 is emitted once by the task owner, late provider events are ignored, and the
 window-targeted Tauri event uses the initiating WebviewWindow rather than a
 broadcast event. `aiGenerationRepository.ts` is only a typed IPC/event thin
-layer; no editor or brainstorming state is written by unit 3.
-
-Unit 3 validation covers all three adapter event formats, ignored tool/reasoning
-blocks, OpenAI usage aliases, fragmented UTF-8/multiline SSE, Unicode-safe
-context budgets, one-time snapshot consumption, and cancellation after a first
-delta. Live paid provider compatibility and frontend adoption are intentionally
-not claimed by these tests.
+layer; transport does not write editor or brainstorming state.
 
 Settings reuse SettingShell, Button and SaveStatusIndicator. Tests have separate
 feedback from local saves; no duplicate toast is emitted. Unsaved edits prevent
@@ -188,19 +183,7 @@ navigation/close until Save or Cancel. Credential-store failure leaves edits and
 previous configuration intact; the key must be re-entered after a failed submit.
 A list refresh failure after commit is not represented as a failed database save.
 
-Validation: Rust regression/compensation tests, Node schema reconstruction tests,
-frontend build, and a temporary CDP script against an isolated Tauri WebView.
-Native Windows vault verification uses an isolated synthetic credential in a
-separate child process and deletes it afterwards. macOS Keychain behavior and
-real paid OpenAI/Anthropic services remain unverified on this Windows machine.
-The local HTTP probe fixture is not evidence of live vendor compatibility.
-
-Windows desktop acceptance additionally verified normal application close/reopen:
-session credentials became unavailable, system credentials remained configured,
-and deleting both fixtures cleared the default and pending credential cleanup.
-The native fixture and the isolated test configuration were removed after testing.
-
-## Work unit 4 implementation: AI Continue adoption boundary
+## AI Continue adoption boundary
 
 The local editor now uses `aiGenerationRepository` and Tauri IPC directly. The
 local path no longer imports the legacy HTTP continuation service and does not
@@ -240,7 +223,7 @@ lifecycle, stale revisions/anchors, read-only adoption, terminal failure
 states, structured insertion and undo. Real provider and packaged desktop
 acceptance remain separate evidence items.
 
-## Work unit 5 implementation: brainstorm candidate boundary
+## Brainstorm candidate boundary
 
 The local brainstorm page reuses its chapter picker, character and relationship
 context, candidate cards and editable final-content area, but generation now
@@ -261,7 +244,7 @@ text and never triggers a hidden model call. Relationship edges retain their
 source and target node instance keys, so duplicate nodes for one character are
 not merged.
 
-## P1-SUM2: chapter summary suggestion boundary
+## Chapter summary suggestion boundary
 
 Story Outline keeps summary generation beside each chapter card. The local
 provider path captures the current chapter and planning versions, sends only

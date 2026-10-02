@@ -35,9 +35,10 @@ backups/
 *.bak
 *.dump
 
-# Security scan reports
+# Local reports and development records
 .reports/
 gitleaks-report.*
-/.codebuddy/rules
-/.codebuddy/memory
-/.codebuddy
+/.codebuddy/
+/.mimocode-project-id
+/docs/evidence/
+/docs/plans/
