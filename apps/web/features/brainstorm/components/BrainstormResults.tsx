@@ -36,12 +36,12 @@ export function BrainstormResults({ isGenerating, isSaving, handleGenerate, rege
                     )}
                     {isSnapshotStale && (
                         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
-                            The saved brainstorm snapshot uses older chapter versions or summaries. Select “Save Result” on this page to refresh it; saving a chapter or planning page alone does not refresh this snapshot.
+                            Some chapters or summaries have changed. Review your brainstorm, then choose Save Result to update it.
                         </div>
                     )}
                     {missingSummaryChapters.length > 0 && (
                         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200">
-                            Some selected chapters have missing or out-of-date summaries. The brainstorm will use a bounded excerpt of their current text instead; refresh summaries for fuller context.
+                            Some chapter summaries are missing or out of date. The AI will use parts of those chapters instead. Update their summaries for a fuller picture.
                         </div>
                     )}
                     {errorMessage && (!hasCandidate || candidate.status === 'invalid' || errorMessage !== candidate.errorMessage) && (
@@ -144,13 +144,13 @@ function CandidatePanel({
     toggleRetrievalHit: (hitId: string) => void;
 }) {
     const status = candidate.status === 'starting'
-        ? 'Preparing the frozen chapter, planning, and relationship context...'
+        ? 'Preparing your chapters, planning, and relationships...'
         : candidate.status === 'streaming'
             ? 'Generating three directions. Existing options and manual edits are unchanged.'
             : candidate.status === 'completed'
                 ? 'Candidate ready. Choose a direction to add it to the editable workspace.'
                 : candidate.status === 'adopted'
-                    ? 'Candidate directions were added to the editable workspace. Save to persist them.'
+                    ? 'These directions were added to your draft. Choose Save Result to save them.'
                     : candidate.status === 'invalid'
                         ? 'The model response was kept for review, but it is not a valid brainstorm candidate.'
                         : candidate.status === 'failed'
@@ -181,7 +181,7 @@ function CandidatePanel({
             </div>
             {candidate.rawText && ['invalid', 'failed', 'cancelled', 'stale'].includes(candidate.status) && (
                 <details className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-xs dark:border-amber-900/70 dark:bg-amber-950/30">
-                    <summary className="cursor-pointer font-semibold text-amber-800 dark:text-amber-200">Review raw generation text</summary>
+                    <summary className="cursor-pointer font-semibold text-amber-800 dark:text-amber-200">View AI response</summary>
                     <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-amber-200 bg-white px-3 py-2 leading-5 text-slate-700 dark:border-amber-900/70 dark:bg-slate-950 dark:text-slate-200">{candidate.rawText}</pre>
                 </details>
             )}
@@ -191,7 +191,7 @@ function CandidatePanel({
                     <p className="mt-1">{candidate.lastAttempt.errorMessage}</p>
                     {candidate.lastAttempt.rawText && (
                         <details className="mt-2">
-                            <summary className="cursor-pointer font-semibold">Review raw generation text</summary>
+                            <summary className="cursor-pointer font-semibold">View AI response</summary>
                             <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-amber-200 bg-white px-4 py-3 text-xs leading-5 text-slate-700 dark:border-amber-900/70 dark:bg-slate-950 dark:text-slate-200">{candidate.lastAttempt.rawText}</pre>
                         </details>
                     )}

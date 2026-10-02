@@ -125,7 +125,16 @@ fn tauri_ipc_creates_saves_and_reads_after_reopening_the_database() {
         json!({"bookId":book_id}),
     );
     assert_eq!(export["ok"], true);
-    assert_eq!(export["value"]["databaseVersion"], 12);
+    assert!(ipc(&window, "diagnostic_log_info", json!({}))
+        .get("path")
+        .is_some());
+    assert!(ipc(
+        &window,
+        "diagnostic_report_error",
+        json!({"operation":"test", "code":"TEST_ERROR", "message":"test diagnostic"})
+    )
+    .is_null());
+    assert_eq!(export["value"]["databaseVersion"], 13);
     assert_eq!(export["value"]["book"]["id"], book_id);
     assert_eq!(
         export["value"]["chapters"][0]["id"],
@@ -147,6 +156,23 @@ fn tauri_ipc_creates_saves_and_reads_after_reopening_the_database() {
         }
     )
     .is_err());
+    for command in ["diagnostic_log_info", "diagnostic_report_error"] {
+        assert!(tauri::test::get_ipc_response(
+            &other,
+            tauri::webview::InvokeRequest {
+                cmd: command.into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::Json(
+                    json!({"operation":"test", "code":"TEST_ERROR", "message":"test diagnostic"})
+                ),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.into(),
+            },
+        )
+        .is_err());
+    }
 }
 
 #[test]

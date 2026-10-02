@@ -99,7 +99,7 @@ it('keeps the draft and reports the error when a save fails, without clearing ne
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     act(() => result.current.updateFinalContent('Keep me'));
     await act(async () => { await result.current.handleSave(); });
-    expect(result.current.errorMessage).toContain('VERSION_CONFLICT');
+    expect(result.current.errorMessage).toBe('Save failed. Please try again.');
     expect(result.current.workspace.finalContent).toBe('Keep me');
     expect(result.current.isDirty).toBe(true);
     expect(save.mock.calls.every(([input]) => input.expectedDatabaseVersion === 4)).toBe(true);

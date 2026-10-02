@@ -38,22 +38,22 @@ export function generationRetrievalTrace(
 
 export function retrievalStatusNotice(response: RetrievalSearchResponse): string | null {
     if (response.context.evidence.length > 0 && response.degraded) {
-        return 'Retrieved evidence used the explicitly allowed lexical fallback; semantic status was recorded with this candidate.';
+        return 'Using keyword matches as reference material for this result.';
     }
     if (response.context.evidence.length > 0) return null;
     switch (response.status) {
         case 'embedding_unavailable':
-            return 'Local retrieval was unavailable. The explicit current draft or saved story context remains in use.';
+            return 'No extra reference material was available. The AI will use your selected story text.';
         case 'index_not_ready':
-            return 'The local retrieval index is not ready. The explicit current draft or saved story context remains in use.';
+            return 'Search is not ready yet. The AI will use your selected story text.';
         case 'stale_only':
-            return 'Only stale retrieval material was found, so it was excluded from this generation.';
+            return 'Out-of-date reference material was left out of this result.';
         case 'future_plan_only':
-            return 'Only future-plan material matched, so it was excluded from this generation.';
+            return 'Future plans were left out of the reference material for this result.';
         case 'no_results':
         case 'lexical_no_match':
-            return 'No retrieval evidence matched this request. The explicit story context remains in use.';
+            return 'No extra reference material matched. The AI will use your selected story text.';
         default:
-            return 'No retrieval evidence was attached. The explicit story context remains in use.';
+            return 'No extra reference material was added. The AI will use your selected story text.';
     }
 }

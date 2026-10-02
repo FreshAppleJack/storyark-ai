@@ -64,7 +64,7 @@ export function StorySearchFilters({
                 <fieldset>
                     <legend className="mb-1.5 w-full">
                         <span className="flex items-center justify-between gap-2">
-                            <span className="font-semibold text-slate-600 dark:text-slate-300">Evidence sources</span>
+                            <span className="font-semibold text-slate-600 dark:text-slate-300">Search in</span>
                             <button
                                 type="button"
                                 onClick={() => onChange(createDefaultStorySearchFilters())}

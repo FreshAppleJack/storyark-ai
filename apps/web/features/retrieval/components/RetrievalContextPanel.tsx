@@ -33,7 +33,7 @@ export function RetrievalContextPanel({
     const materials = context?.evidence ?? [];
     return (
         <section className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-950" aria-label="Retrieved context">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Retrieved context</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">Reference material</h3>
             <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
                 {materials.length > 0
                     ? `${materials.length} supporting source${materials.length === 1 ? '' : 's'}. Uncheck a source to exclude it from the next generation.`
@@ -61,7 +61,6 @@ export function RetrievalContextPanel({
                                     <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
                                         <span className="font-semibold text-brand-700 dark:text-brand-300">{sourceLabel(material.sourceKind)}</span>
                                         <span className="min-w-0 truncate">{location}</span>
-                                        <span className="ml-auto shrink-0">v{material.sourceVersion}</span>
                                     </span>
                                     {title && <span className="mt-1 block font-semibold text-slate-800 dark:text-slate-100">{title}</span>}
                                     {details && <span className="mt-1 line-clamp-3 whitespace-pre-wrap leading-5 text-slate-700 dark:text-slate-200">{details}</span>}

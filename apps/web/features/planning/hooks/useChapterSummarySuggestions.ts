@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../data/diagnostics';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { aiGenerationRepository, type GenerationEvent, type GenerationRequest } from '../../../data/local/aiGenerationRepository';
 import { aiErrorMessage, aiSettingsRepository, type AiConfigRecord } from '../../../data/local/aiSettingsRepository';
@@ -121,17 +122,17 @@ function noSuggestion(chapterId: string, previousSummary = ''): ChapterSummarySu
 
 function retrievalNotice(response: Awaited<ReturnType<typeof retrievalRepository.search>>): string | null {
     if (response.context.evidence.length > 0 && response.degraded) {
-        return 'Supporting material came from the explicitly allowed lexical fallback.';
+        return 'Using keyword matches as reference material.';
     }
     if (response.context.evidence.length > 0) return null;
     switch (response.status) {
-        case 'embedding_unavailable': return 'Local supporting retrieval is unavailable. The selected chapter text remains the only generation source.';
-        case 'index_not_ready': return 'The local index is not ready. The selected chapter text remains the only generation source.';
-        case 'stale_only': return 'Only stale supporting material matched and was excluded. The selected chapter text remains the source.';
-        case 'future_plan_only': return 'Only future-plan material matched and was excluded. The selected chapter text remains the source.';
+        case 'embedding_unavailable': return 'No extra reference material was available. The AI will use the selected chapter text.';
+        case 'index_not_ready': return 'Search is not ready yet. The AI will use the selected chapter text.';
+        case 'stale_only': return 'Out-of-date reference material was left out. The AI will use the selected chapter text.';
+        case 'future_plan_only': return 'Future plans were left out of the reference material. The AI will use the selected chapter text.';
         case 'no_results':
-        case 'lexical_no_match': return 'No supporting retrieval sources matched. The suggestion will use only the selected chapter text.';
-        default: return 'No supporting retrieval evidence was attached. The selected chapter text remains the source.';
+        case 'lexical_no_match': return 'No extra reference material matched. The AI will use the selected chapter text.';
+        default: return 'No extra reference material was added. The AI will use the selected chapter text.';
     }
 }
 
@@ -359,7 +360,7 @@ export function useChapterSummarySuggestions({
         try { source = getCurrentContext(chapterId); }
         catch (error) {
             const previousSummary = current.getPlanningSnapshot().chapterSummaries.find(item => item.chapterId === chapterId)?.summary ?? '';
-            updateSuggestion(chapterId, { ...noSuggestion(chapterId, previousSummary), errorMessage: error instanceof Error ? error.message : 'The chapter source is unavailable.' });
+            updateSuggestion(chapterId, { ...noSuggestion(chapterId, previousSummary), errorMessage: userErrorMessage(error, 'The chapter source is unavailable.', 'summary') });
             return;
         }
         const active: ActiveSummaryGeneration = {

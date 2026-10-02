@@ -7,6 +7,7 @@ import { WritingPreferences } from '../features/settings/components/WritingPrefe
 import { AiModels } from '../features/settings/components/AiModels';
 import { IndexScheduleControl } from '../features/retrieval/components/IndexScheduleControl';
 import { Button } from '../components/ui/Button';
+import { ErrorLogSettings } from '../features/settings/components/ErrorLogSettings';
 
 // Local mode: account/profile settings stay unmounted (no login, no account
 // page); appearance and writing preferences persist to local SQLite.
@@ -93,6 +94,7 @@ const UserSettings: React.FC = () => {
                     <WritingPreferences />
                     <AiModels />
                     <IndexScheduleControl />
+                    <ErrorLogSettings />
                 </div>
 
                 <div className="flex justify-end">

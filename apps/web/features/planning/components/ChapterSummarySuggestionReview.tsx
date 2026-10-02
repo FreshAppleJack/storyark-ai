@@ -27,15 +27,15 @@ interface Props {
 
 function statusText(suggestion: ChapterSummarySuggestion, isCurrent: boolean): string {
     switch (suggestion.status) {
-        case 'starting': return 'Preparing the chapter snapshot and local supporting sources…';
+        case 'starting': return 'Preparing the chapter and reference material…';
         case 'streaming': return 'Generating a summary. The current summary remains unchanged.';
         case 'candidate': return isCurrent
             ? 'Suggestion ready. Your current summary stays unchanged until you accept it.'
             : 'The source changed after generation. This suggestion is preserved for review but cannot be accepted.';
-        case 'invalid': return 'The response could not be used as a summary. Raw text is preserved below; the current summary is unchanged.';
+        case 'invalid': return 'The response could not be used as a summary. You can review the AI response below. Your current summary is unchanged.';
         case 'cancelled': return 'Generation stopped. The current summary is unchanged.';
         case 'stale': return 'The chapter, planning, or a supporting source changed. Review or regenerate; this suggestion was not adopted.';
-        case 'adopting': return 'Saving the accepted summary through the planning version check…';
+        case 'adopting': return 'Saving the accepted summary…';
         case 'save-failed': return 'The suggestion is present in the planning draft, but its save failed. Resolve the save conflict before retrying.';
         case 'failed': return 'Generation failed. The current summary is unchanged.';
         default: return 'Suggestion is waiting for review.';
@@ -102,7 +102,7 @@ export function ChapterSummarySuggestionReview({
             {suggestion && (
                 <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-800">
                     {suggestion.sourceSnapshot && <p className="mb-2 text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                        Primary source: {volumeTitle} / {chapterTitle} · chapter v{suggestion.sourceSnapshot.chapterDatabaseVersion ?? 'unversioned'}
+                        Chapter: {volumeTitle} / {chapterTitle}
                     </p>}
                     <p role="status" className={`text-xs leading-5 ${suggestion.status === 'invalid' || suggestion.status === 'failed' || suggestion.status === 'stale' || suggestion.status === 'save-failed'
                             ? 'text-amber-700 dark:text-amber-300' : 'text-slate-600 dark:text-slate-300'}`}>

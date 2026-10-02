@@ -64,7 +64,7 @@ describe('BrainstormResults', () => {
         render(<BrainstormResults {...props} />);
 
         expect(screen.getAllByText(errorMessage)).toHaveLength(1);
-        const rawDetails = screen.getByText('Review raw generation text').closest('details');
+        const rawDetails = screen.getByText('View AI response').closest('details');
         expect(rawDetails).not.toHaveAttribute('open');
         expect(rawDetails).toContainElement(screen.getByText('{invalid'));
     });

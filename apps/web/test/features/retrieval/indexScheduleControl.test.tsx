@@ -18,7 +18,8 @@ describe('IndexScheduleControl', () => {
         const toggle = screen.getByRole('button', { name: 'Automatically build local index' });
         await waitFor(() => expect(toggle).toBeEnabled());
         fireEvent.click(toggle);
-        await screen.findByText('Version conflict');
+        await screen.findByText('Search settings could not be saved. Try again.');
+        expect(screen.queryByText('Version conflict')).not.toBeInTheDocument();
         expect(indexScheduleRepository.save).toHaveBeenCalledWith(true, 1);
         expect(toggle).toHaveAttribute('aria-pressed', 'false');
         expect(screen.getByText(/2 sources waiting/)).toBeInTheDocument();

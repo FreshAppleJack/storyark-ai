@@ -25,6 +25,8 @@ Thumbs.db
 # Runtime data
 logs/
 *.log
+*.log.1
+*.log.2
 uploads/
 data/
 !/apps/web/data/

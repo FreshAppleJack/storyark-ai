@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../data/diagnostics';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
     aiGenerationRepository,
@@ -291,7 +292,7 @@ export function useLocalBrainstormGeneration({
         try {
             source = current.getContext();
         } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : 'The brainstorm context is unavailable.';
+            const errorMessage = userErrorMessage(error, 'The brainstorm context is unavailable.', 'brainstorm');
             const previous = candidateRef.current;
             if (previous.status !== 'idle') {
                 updateCandidate({

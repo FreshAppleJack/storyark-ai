@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { indexScheduleRepository, type IndexScheduleStatus } from '../../../data/local/indexScheduleRepository';
 import { SettingShell, ToggleControl } from '../../settings/components/SettingControls';
+import { reportError, userErrorMessage } from '../../../data/diagnostics';
 
 export function IndexScheduleControl({ bookId }: { bookId?: string }) {
     const [status, setStatus] = useState<IndexScheduleStatus | null>(null);
@@ -17,9 +18,10 @@ export function IndexScheduleControl({ bookId }: { bookId?: string }) {
             running = true;
             try {
                 const next = await indexScheduleRepository.read(bookId ?? null);
+                if (next.lastError) reportError('search.update', next.lastError, 'SEARCH_UPDATE_FAILED');
                 if (!disposed) { setStatus(next); setError(''); }
             } catch (reason) {
-                if (!disposed) setError(reason instanceof Error ? reason.message : 'Index status is unavailable.');
+                if (!disposed) setError(userErrorMessage(reason, 'Search status is unavailable. Try again later.', 'search.status'));
             } finally { running = false; }
         };
         void refresh();
@@ -35,12 +37,12 @@ export function IndexScheduleControl({ bookId }: { bookId?: string }) {
             setStatus(await indexScheduleRepository.read(bookId ?? null));
             setError('');
         } catch (reason) {
-            setError(reason instanceof Error ? reason.message : 'Index preference could not be saved.');
+            setError(userErrorMessage(reason, 'Search settings could not be saved. Try again.', 'search.settings'));
         } finally { setSaving(false); }
     };
     return <SettingShell
         title="Local story index"
-        description="Keep semantic and lexical story search materials available locally. Automatic indexing waits for a pause in saved changes and uses local CPU."
+        description="Keep story search up to date on this device. Updates run in the background after you save."
         icon={<RefreshCw size={22} />}
     >
         <div className="space-y-4">
@@ -62,7 +64,7 @@ export function IndexScheduleControl({ bookId }: { bookId?: string }) {
                     <span className="rounded-full bg-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">{status.pendingSources} sources waiting</span>
                 </div>
                 <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">Last completed: {status.lastCompletedAt ? new Date(status.lastCompletedAt).toLocaleString() : 'Not yet'}</p>
-                {status.lastError && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">Last task failure: {status.lastError}</p>}
+                {status.lastError && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">Search could not be updated. Try refreshing search from the editor.</p>}
             </div>}
             {error && <p role="alert" className="text-sm text-rose-600 dark:text-rose-300">{error}</p>}
         </div>

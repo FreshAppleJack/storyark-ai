@@ -283,7 +283,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
         const existingCandidate = candidateRef.current;
         if (existingCandidate.status !== 'idle' && existingCandidate.status !== 'adopted' && existingCandidate.text.trim()) return;
         if (!current.chapterId || !current.bookId || !current.databaseVersion) {
-            updateCandidate({ ...INITIAL_CANDIDATE, status: 'failed', errorMessage: 'The chapter identity is not ready. Reload the local book and try again.' });
+            updateCandidate({ ...INITIAL_CANDIDATE, status: 'failed', errorMessage: 'This chapter is not ready yet. Reopen the book and try again.' });
             return;
         }
 
@@ -297,7 +297,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
             || anchor.retrievalAnchor.paragraphOrdinal < 0
             || !Number.isInteger(anchor.retrievalAnchor.textOffset)
             || anchor.retrievalAnchor.textOffset < 0) {
-            updateCandidate({ ...INITIAL_CANDIDATE, status: 'failed', errorMessage: 'The editor could not map this position to a story paragraph. Place the cursor in the chapter and try again.' });
+            updateCandidate({ ...INITIAL_CANDIDATE, status: 'failed', errorMessage: 'Choose a position in the chapter text and try again.' });
             return;
         }
 
@@ -365,7 +365,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
                 });
                 retrievalNotice = retrievalStatusNotice(retrievalResponse);
             } catch {
-                retrievalNotice = 'Retrieval was unavailable. The current in-memory draft remains the generation context.';
+                retrievalNotice = 'No extra reference material was available. The AI will use your current draft.';
             }
             if (!isActive(active)) return;
             const retrievalContext = retrievalResponse?.context ?? null;
@@ -524,7 +524,7 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
             return;
         }
         if (!sourceMatchesCurrent(source, current)) {
-            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'The chapter, session, or draft revision changed. The candidate is preserved; regenerate before adopting.', source: { ...source, staleReason: 'draft' } });
+            updateCandidate({ ...snapshot, status: 'stale', errorMessage: 'Your draft changed. The AI text is still available for review; generate again before adding it.', source: { ...source, staleReason: 'draft' } });
             return;
         }
 
@@ -550,10 +550,10 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
                 : code === 'CONTEXT_CHANGED' || code === 'VERSION_CONFLICT' ? 'retrieval'
                     : 'verification';
             const message = code === 'READ_ONLY'
-                ? 'The chapter or one of its parent records is locked. The candidate is preserved.'
+                ? 'This chapter or its volume is locked. The AI text is still available for review.'
                 : code === 'CONTEXT_CHANGED' || code === 'VERSION_CONFLICT'
                     ? 'The manuscript or a retrieved source changed. The candidate is preserved; regenerate from current sources.'
-                    : 'The local source and lock check failed. The candidate is preserved and was not inserted.';
+                    : 'This text could not be added right now. It is still available for review. Try again.';
             updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: message, source: { ...source, staleReason } });
             return;
         }
@@ -565,12 +565,12 @@ export function useLocalAiContinue(options: UseLocalAiContinueOptions): UseLocal
             return;
         }
         if (!sourceMatchesCurrent(source, latest)) {
-            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: 'The draft changed during source validation. Regenerate before adopting.', source: { ...source, staleReason: 'draft' } });
+            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: 'Your draft changed. Generate again before adding this text.', source: { ...source, staleReason: 'draft' } });
             return;
         }
         const latestAnchor = latest.captureAnchor();
         if (!latestAnchor || !anchorsMatch(latestAnchor, source.anchor)) {
-            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: 'The insertion position changed during source validation. Choose the current insertion point explicitly, or regenerate.', source: { ...source, staleReason: 'anchor' } });
+            updateCandidate({ ...candidateRef.current, status: 'stale', errorMessage: 'The insertion position changed. Choose it again, or generate a new continuation.', source: { ...source, staleReason: 'anchor' } });
             return;
         }
 

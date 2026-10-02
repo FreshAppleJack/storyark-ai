@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../data/diagnostics';
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
     AlertTriangle, ArrowLeft, ChevronDown, ChevronRight, FileText, Folder,
@@ -481,7 +482,7 @@ export function ChapterNavigator({
 
         if (hit.sourceKind !== 'manuscript') {
             setSidebarSearchTarget({ type: 'chapter', id: chapterId });
-            setSidebarSearchMessage(`Opened the source chapter: "${hit.locator.chapterTitleSnapshot || chapterId}". This source has no precise manuscript paragraph location.`);
+            setSidebarSearchMessage(`Opened "${hit.locator.chapterTitleSnapshot || chapterId}". This result refers to the chapter as a whole.`);
             scrollSidebarItemIntoView('chapter', chapterId);
             return;
         }
@@ -502,7 +503,7 @@ export function ChapterNavigator({
             ]);
             const currentSource = sources.find(source => source.sourceId === hit.chunk.sourceId);
             if (!currentSource) {
-                setSidebarSearchMessage('The source changed or is no longer available. Keep the excerpt and refresh the local index.');
+                setSidebarSearchMessage('This passage changed or is no longer available. Refresh search and try again.');
                 return;
             }
             const currentChunks = chunks.filter(chunk => (
@@ -514,13 +515,11 @@ export function ChapterNavigator({
                 chunks: currentChunks.map(chunk => ({ textHash: chunk.textHash, locator: chunk.locator })),
             });
         } catch (error) {
-            setSidebarSearchMessage(error instanceof Error && error.message
-                ? error.message
-                : 'The source could not be verified. Keep the excerpt and retry after local storage is ready.');
+            setSidebarSearchMessage(userErrorMessage(error, 'This passage could not be opened. Refresh search and try again.', 'search.open'));
             return;
         }
         if (resolution.status === 'source-changed') {
-            setSidebarSearchMessage(`${resolution.message} The excerpt remains available above; refresh or rebuild the local index.`);
+            setSidebarSearchMessage(`${resolution.message} The excerpt is still available above. Refresh search and try again.`);
             return;
         }
         const focus = previewAnchor && hit.chunk.sourceText
@@ -532,7 +531,7 @@ export function ChapterNavigator({
             : null;
         onOpenRetrievalLocator?.(chapterId, resolution.locator, focus);
         setSidebarSearchTarget({ type: 'chapter', id: chapterId });
-        setSidebarSearchMessage(`Opened the source chapter: "${hit.locator.chapterTitleSnapshot || chapterId}". Located by ${resolution.matchedBy === 'version' ? 'source version' : 'unique text hash'}.`);
+        setSidebarSearchMessage(`Opened "${hit.locator.chapterTitleSnapshot || chapterId}" at the matching passage.`);
         scrollSidebarItemIntoView('chapter', chapterId);
     };
 
@@ -880,7 +879,7 @@ export function ChapterNavigator({
                         </div>
                         <p className="text-slate-600 dark:text-slate-300 mb-6 text-sm leading-relaxed">
                             Are you sure you want to delete this {itemToDelete.type}? <br/>
-                            {localMode && <span>Chapter summaries and live planning/brainstorm links will be removed. Plot text and historical snapshots will be retained with missing-source notices. </span>}
+                            {localMode && <span>Its summary and links in planning and brainstorms will be removed. Saved plot text and earlier brainstorms will be kept. </span>}
                             {itemToDelete.type === 'volume' ? <span className="font-semibold text-rose-600">All chapters inside will be lost.</span> : <span>This action cannot be undone.</span>}
                         </p>
                         <div className="flex justify-end gap-3">

@@ -2,6 +2,7 @@ import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { ExpectedTarget, LocalBook, LocalChapter, LocalCharacter, LocalRecord, LocalVolume, SaveChapterRequest, StorageResult } from './contracts';
 import { normalizeHandleConfig } from '../../domain/relationshipHandles';
 import type { Book, Character } from '../../types';
+import { reportError, storageErrorMessage } from '../diagnostics';
 
 export interface LocalBookDetail { book: LocalBook; volumes: LocalVolume[]; chapters: LocalChapter[] }
 export const localKeys = {
@@ -12,6 +13,7 @@ export const localKeys = {
 };
 export const localDerivedIndexKey = (bookId: string) => [...localKeys.all, 'derived-index', bookId] as const;
 export class LocalStorageError extends Error {
+    readonly userFacing = true;
     constructor(public readonly code: string, message: string) { super(message); }
 }
 
@@ -27,13 +29,17 @@ export async function call<T>(
     if (!isTauri()) throw new LocalStorageError('DESKTOP_REQUIRED', 'Open the StoryArk desktop app to access your local books. Browser preview cannot save books.');
     let result: StorageResult<T>;
     try { result = await invoke<StorageResult<T>>(command, args); }
-    catch {
+    catch (error) {
+        reportError(command, error, 'IPC_FAILURE');
         throw new LocalStorageError(
             'IPC_FAILURE',
-            options.failureMessage ?? 'The desktop storage request failed. Your draft has not been marked saved.',
+            options.failureMessage ?? 'StoryArk could not complete this action. Try again or restart the app.',
         );
     }
-    if (!result.ok) throw new LocalStorageError(result.error.code, result.error.message);
+    if (!result.ok) {
+        reportError(command, result.error.message, result.error.code);
+        throw new LocalStorageError(result.error.code, storageErrorMessage(result.error.code, command));
+    }
     return result.value;
 }
 export const localRepository = {

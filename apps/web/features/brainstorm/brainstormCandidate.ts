@@ -1,5 +1,6 @@
 import type { BrainstormGenerationMetadata, BrainstormOption } from '../../types';
 import type { RetrievalContext, RetrievalSearchStatus } from '../../domain/retrieval/contracts';
+import { reportError } from '../../data/diagnostics';
 
 export const BRAINSTORM_FIELD_LIMITS = {
     title: { min: 1, max: 240 },
@@ -103,20 +104,26 @@ export function parseBrainstormCandidate(rawText: string): { options: Brainstorm
     try {
         parsed = parseJsonText(rawText);
     } catch (error) {
-        return { errorMessage: error instanceof Error ? error.message : 'The model response is not valid JSON.' };
+        reportError('brainstorm.parse', error, 'INVALID_AI_RESPONSE');
+        return { errorMessage: 'The AI response could not be used. Try generating again.' };
     }
 
     const optionsValue = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
         ? (parsed as Record<string, unknown>).options
         : undefined;
-    if (!Array.isArray(optionsValue)) return { errorMessage: 'The JSON response must contain an options array.' };
+    if (!Array.isArray(optionsValue)) {
+        reportError('brainstorm.parse', 'The JSON response must contain an options array.', 'INVALID_AI_RESPONSE');
+        return { errorMessage: 'The AI did not return any usable directions. Try generating again.' };
+    }
     if (optionsValue.length !== BRAINSTORM_FIELD_LIMITS.maxOptions) {
-        return { errorMessage: `The response must contain exactly ${BRAINSTORM_FIELD_LIMITS.maxOptions} options.` };
+        reportError('brainstorm.parse', `Expected ${BRAINSTORM_FIELD_LIMITS.maxOptions} options; received ${optionsValue.length}.`, 'INVALID_AI_RESPONSE');
+        return { errorMessage: 'The AI did not return all three directions. Try generating again.' };
     }
     try {
         return { options: optionsValue.map(optionValue) };
     } catch (error) {
-        return { errorMessage: error instanceof Error ? error.message : 'The brainstorm option shape is invalid.' };
+        reportError('brainstorm.parse', error, 'INVALID_AI_RESPONSE');
+        return { errorMessage: 'Some AI directions are incomplete or too long. Try generating again.' };
     }
 }
 

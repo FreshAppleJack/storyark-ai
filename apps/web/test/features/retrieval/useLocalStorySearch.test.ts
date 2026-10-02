@@ -163,7 +163,7 @@ describe('useLocalStorySearch', () => {
 
         const { result } = renderHook(() => useLocalStorySearch('book-1', true));
 
-        await waitFor(() => expect(result.current.statusError).toContain('Writing and saved drafts are unaffected.'));
+        await waitFor(() => expect(result.current.statusError).toBe('Story search could not start. Try restarting StoryArk.'));
 
         expect(result.current.embeddingStatus).toBeNull();
         expect(result.current.indexStatus).toBeNull();
@@ -181,7 +181,7 @@ describe('useLocalStorySearch', () => {
 
         const { result } = renderHook(() => useLocalStorySearch('book-1', true));
 
-        await waitFor(() => expect(result.current.statusError).toContain('Writing and saved drafts are unaffected.'));
+        await waitFor(() => expect(result.current.statusError).toBe('Search status could not be loaded. Try reopening the book.'));
 
         expect(result.current.embeddingStatus?.available).toBe(true);
         expect(result.current.indexStatus).toBeNull();

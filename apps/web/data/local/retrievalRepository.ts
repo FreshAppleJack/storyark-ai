@@ -9,8 +9,8 @@ import type {
 } from '../../domain/retrieval/contracts';
 import { call, localKeys } from './repository';
 
-const RETRIEVAL_READ_FAILURE = 'The local retrieval request failed. Writing and saved drafts are unaffected.';
-const RETRIEVAL_WRITE_FAILURE = 'The local retrieval index operation failed. Writing and saved drafts are unaffected.';
+const RETRIEVAL_READ_FAILURE = 'Story search is unavailable right now. Try again later. You can keep writing.';
+const RETRIEVAL_WRITE_FAILURE = 'Search could not be updated. Try refreshing it again. You can keep writing.';
 
 export const retrievalKeys = {
     all: [...localKeys.all, 'retrieval'] as const,

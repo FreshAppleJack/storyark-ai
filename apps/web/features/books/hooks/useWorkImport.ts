@@ -18,6 +18,7 @@ import {
     type WorkImportResult,
 } from '../../../data/export/importRepository';
 import { LocalStorageError } from '../../../data/local/repository';
+import { reportError, userErrorMessage } from '../../../data/diagnostics';
 
 export type WorkImportPhase = 'idle' | 'preflight' | 'conflict' | 'executing' | 'result';
 
@@ -32,7 +33,7 @@ interface UseWorkImportOptions {
 
 function errorDetails(error: unknown): { message: string; code: string } {
     if (error instanceof LocalStorageError) return { message: error.message, code: error.code };
-    if (error instanceof Error) return { message: error.message, code: 'UNKNOWN' };
+    if (error instanceof Error) return { message: userErrorMessage(error, 'Import could not finish. Choose another export or try again.', 'work.import'), code: 'UNKNOWN' };
     return { message: 'The local import operation failed. The existing workspace was not changed.', code: 'UNKNOWN' };
 }
 
@@ -75,6 +76,10 @@ export function useWorkImport({ onImported }: UseWorkImportOptions = {}) {
         setImportErrorCode(null);
         setOutcome(null);
         setPhase('preflight');
+        if (nextReport.status === 'invalid') {
+            // Validation issues contain field paths and rules, never the imported story itself.
+            for (const issue of nextReport.errors.slice(0, 30)) reportError('work.import.check', `${issue.path}: ${issue.message}`, issue.code);
+        }
         if (nextReport.status !== 'valid' || !nativeFilePickerAvailable) return;
         try {
             const nextPreparation = await workImportRepository.prepare(nextReport.value);

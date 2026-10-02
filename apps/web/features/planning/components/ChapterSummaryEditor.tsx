@@ -14,11 +14,11 @@ const FRESHNESS_REASON_LABELS: Record<string, string> = {
     'foreshadowing-note-content-changed': 'Foreshadowing notes changed.',
     'chapter-title-changed': 'The chapter title changed.',
     'content-format-changed': 'The chapter content format changed.',
-    'content-format-version-changed': 'The chapter content format version changed.',
-    'structured-source-metadata-changed': 'Tracked source structure changed.',
+    'content-format-version-changed': 'The chapter format changed.',
+    'structured-source-metadata-changed': 'The chapter or its references changed.',
     'allowed-setting-or-character-source-changed': 'A setting or character source changed or is no longer available.',
-    'allowed-source-baseline-unavailable': 'The original setting or character source versions cannot be checked.',
-    'generation-metadata-unavailable': 'This summary is marked AI-adopted, but its generation record is missing or invalid.',
+    'allowed-source-baseline-unavailable': 'Check that the settings and characters in this summary are still up to date.',
+    'generation-metadata-unavailable': 'Check that this AI summary still matches your chapter.',
 };
 
 function summaryFreshnessMessage(chapter: ChapterOption): string | null {
@@ -28,13 +28,13 @@ function summaryFreshnessMessage(chapter: ChapterOption): string | null {
         if (freshness.reasons.includes('generation-metadata-unavailable')) {
             return FRESHNESS_REASON_LABELS['generation-metadata-unavailable'];
         }
-        return 'No verifiable source snapshot is recorded for this summary. Review it and edit it to establish a baseline.';
+        return 'Check that this summary still matches your chapter.';
     }
     if (freshness.status === 'current' && freshness.sourceVersionChanged) {
-        return 'The chapter database version differs from this snapshot, but no tracked text, structure, or reference change was detected.';
+        return null;
     }
     if (freshness.status !== 'possibly-stale') return null;
-    return freshness.reasons.map(reason => FRESHNESS_REASON_LABELS[reason] ?? 'A tracked source changed.').join(' ');
+    return freshness.reasons.map(reason => FRESHNESS_REASON_LABELS[reason] ?? 'The chapter or its references changed.').join(' ');
 }
 
 interface Props {
@@ -85,7 +85,7 @@ export function ChapterSummaryEditor({
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                     <label htmlFor={`outline-summary-${chapter.id}`} className="text-xs font-semibold text-slate-700 dark:text-slate-200">Current summary</label>
                     {chapter.summaryFreshness?.status === 'possibly-stale' && <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Possible changes — review</span>}
-                    {chapter.summaryFreshness?.status === 'needs-review' && <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Source snapshot unavailable</span>}
+                    {chapter.summaryFreshness?.status === 'needs-review' && <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Review summary</span>}
                 </div>
                 <textarea
                     id={`outline-summary-${chapter.id}`}

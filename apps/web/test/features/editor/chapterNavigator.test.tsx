@@ -219,7 +219,8 @@ describe('ChapterNavigator', () => {
         fireEvent.change(screen.getByPlaceholderText('Search the story'), { target: { value: '脆弱' } });
         fireEvent.click(screen.getByRole('button', { name: 'Go' }));
 
-        await waitFor(() => expect(screen.getAllByRole('alert').some(alert => alert.textContent?.includes('Search probe failure'))).toBe(true));
+        await waitFor(() => expect(screen.getAllByRole('alert').some(alert => alert.textContent?.includes('The story search could not be completed.'))).toBe(true));
+        expect(container.textContent).not.toContain('Search probe failure');
         expect(form.className).toBe(initialFormClass);
         expect(screen.getByText('Create Volume')).not.toBeVisible();
         expect(form).not.toHaveClass('overflow-hidden');

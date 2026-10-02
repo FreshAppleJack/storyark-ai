@@ -1,6 +1,7 @@
 import { isTauri } from '@tauri-apps/api/core';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { retrievalRepository } from '../../../data/local/retrievalRepository';
+import { reportError, userErrorMessage } from '../../../data/diagnostics';
 import type {
     EmbeddingStatus,
     RetrievalIndexStatus,
@@ -71,7 +72,7 @@ export interface LocalStorySearchState {
 }
 
 function errorMessage(error: unknown, fallback: string): string {
-    return error instanceof Error && error.message ? error.message : fallback;
+    return userErrorMessage(error, fallback, 'story-search');
 }
 
 function deriveIndexStatus(
@@ -229,16 +230,17 @@ export function useLocalStorySearch(
                 setEmbeddingStatus(null);
                 setIndexStatus(null);
                 setIndexProgress(null);
-                setStatusError(errorMessage(embeddingResult.reason, 'Local embedding status could not be loaded.'));
+                setStatusError(errorMessage(embeddingResult.reason, 'Story search could not start. Try restarting StoryArk.'));
                 return;
             }
 
             const nextEmbeddingStatus = embeddingResult.value;
+            if (nextEmbeddingStatus.errorMessage) reportError('search.model', nextEmbeddingStatus.errorMessage, 'SEARCH_MODEL_UNAVAILABLE');
             setEmbeddingStatus(nextEmbeddingStatus);
             if (sourcesResult.status === 'rejected') {
                 setIndexStatus(null);
                 setIndexProgress(null);
-                setStatusError(errorMessage(sourcesResult.reason, 'Local story index status could not be loaded.'));
+                setStatusError(errorMessage(sourcesResult.reason, 'Search status could not be loaded. Try reopening the book.'));
                 return;
             }
             const nextIndexState = deriveIndexStatus(nextEmbeddingStatus, sourcesResult.value);
@@ -246,7 +248,7 @@ export function useLocalStorySearch(
             setIndexProgress(nextIndexState.progress);
         } catch (error) {
             if (requestId !== statusRequestRef.current) return;
-            setStatusError(errorMessage(error, 'Local semantic search status could not be loaded.'));
+            setStatusError(errorMessage(error, 'Story search is unavailable right now. Try again later.'));
         } finally {
             if (requestId === statusRequestRef.current) {
                 statusLoadedRef.current = true;

@@ -6,6 +6,7 @@
     "main"
   ],
   "permissions": [
+    "allow-diagnostic-report-error", "allow-diagnostic-log-info",
     "allow-ai-list-configs", "allow-ai-save-config", "allow-ai-set-default",
     "allow-ai-delete-config", "allow-ai-test-connection",
     "allow-ai-prepare-context", "allow-ai-start-generation", "allow-ai-cancel-generation", "allow-ai-validate-adoption",

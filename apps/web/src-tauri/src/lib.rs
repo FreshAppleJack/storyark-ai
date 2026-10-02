@@ -1,9 +1,16 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    diagnostics::install_panic_hook();
     with_storage_commands(tauri::Builder::default())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
+            // The test override isolates logs as well as authored data.
+            let directory = match std::env::var_os("STORYARK_DATA_DIR") {
+                Some(custom) if !custom.is_empty() => std::path::PathBuf::from(custom),
+                _ => app.path().app_data_dir()?,
+            };
+            diagnostics::initialize(directory.join("logs"));
             app.manage(ai::tasks::AiRuntime::default());
             let bundled_model_dir = if cfg!(mobile) || !cfg!(debug_assertions) {
                 app.path()
@@ -19,12 +26,6 @@ pub fn run() {
                 bundled_model_dir,
             ));
             app.manage(rag::indexing::RetrievalIndexRuntime::default());
-            // STORYARK_DATA_DIR redirects the database directory for controlled
-            // smoke tests; production runs always use the platform app-data dir.
-            let directory = match std::env::var_os("STORYARK_DATA_DIR") {
-                Some(custom) if !custom.is_empty() => std::path::PathBuf::from(custom),
-                _ => app.path().app_data_dir()?,
-            };
             // Initialize on a worker before showing a usable application.
             let storage = std::thread::spawn(move || storage::Storage::open(&directory))
                 .join()
@@ -40,11 +41,16 @@ pub fn run() {
             Ok(())
         })
         .run(tauri::generate_context!())
-        .expect("error while running StoryArk");
+        .unwrap_or_else(|error| {
+            diagnostics::startup_failure(&error.to_string());
+            panic!("error while running StoryArk: {error}");
+        });
 }
 
 fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder.invoke_handler(tauri::generate_handler![
+        diagnostics::diagnostic_report_error,
+        diagnostics::diagnostic_log_info,
         ai_commands::ai_list_configs,
         ai_commands::ai_save_config,
         ai_commands::ai_set_default,
@@ -102,6 +108,7 @@ fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri
 }
 mod brainstorm_commands;
 mod commands;
+mod diagnostics;
 mod export;
 mod graph_commands;
 mod planning_commands;

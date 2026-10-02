@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../data/diagnostics';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Book, BrainstormOption, BrainstormWorkspace, StoryPlanning } from '../../../types';
 import { showSaveSuccessToast } from '../../../components/ui/saveToast';
@@ -290,7 +291,7 @@ export function useBrainstormWorkspace(bookId: string, book: Book | undefined, i
                 } while (savedRevision.current !== revision.current);
                 return true;
             } catch (error) {
-                if (mounted.current) setErrorMessage(error instanceof Error ? error.message : 'Save failed. Please try again.');
+                if (mounted.current) setErrorMessage(userErrorMessage(error, 'Save failed. Please try again.', 'brainstorm.save'));
                 return false;
             } finally {
                 pendingSave.current = null;

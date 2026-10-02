@@ -24,7 +24,7 @@ function statusLabel(status: AiContinueCandidateState['status']): string {
     switch (status) {
         case 'starting': return 'Preparing';
         case 'streaming': return 'Generating';
-        case 'validating': return 'Checking manuscript and source versions';
+        case 'validating': return 'Checking whether this text can be added';
         case 'completed': return 'Ready to review';
         case 'cancelled': return 'Stopped';
         case 'failed': return 'Generation failed';
@@ -74,13 +74,8 @@ export function AiContinueCandidate({
             <div className="flex shrink-0 items-center justify-between gap-3">
                 <div>
                     <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">AI Continue candidate</h2>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">{statusLabel(candidate.status)} · {candidate.status === 'adopted' ? persistenceMessage : 'The original draft is unchanged until adoption.'}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{statusLabel(candidate.status)} · {candidate.status === 'adopted' ? persistenceMessage : 'Your draft will not change until you choose Adopt.'}</p>
                 </div>
-                {candidate.source && (
-                    <span className="text-right text-[11px] text-slate-500 dark:text-slate-400">
-                        Source: current in-memory draft · revision {candidate.source.draftRevision}
-                    </span>
-                )}
             </div>
 
             <div className="mt-3 min-h-0 overflow-y-auto" role="region" aria-label="AI continuation review" tabIndex={0}>

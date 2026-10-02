@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../../../data/diagnostics';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'react-hot-toast';
 import { showSaveSuccessToast } from '../../../components/ui/saveToast';
@@ -209,7 +210,7 @@ export function useStoryPlanning(bookId: string, book: Book | undefined, persist
                 return true;
             } catch (error) {
                 if (mounted.current) {
-                    const message = error instanceof Error ? error.message : 'Planning save failed.';
+                    const message = userErrorMessage(error, 'Planning save failed.', 'planning.save');
                     setSaveError(message);
                     toast.error(message);
                 }

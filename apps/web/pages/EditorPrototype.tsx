@@ -1,3 +1,4 @@
+import { userErrorMessage } from '../data/diagnostics';
 import React, { useState, useEffect, useEffectEvent, useRef, useMemo } from 'react';
 import { useParams, useNavigate, useBlocker, NavigateOptions, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
@@ -115,7 +116,7 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
         currentDraftReadOnly: chapterDraft.isReadOnly,
         onError: (error) => {
             console.error('Work export failed:', error);
-            toast.error(error instanceof Error ? error.message : 'Work export failed. Your draft remains available.');
+            toast.error(userErrorMessage(error, 'Export could not be saved. Keep your draft and try again, or choose another folder.', 'work.export'));
         },
         onSaved: () => toast.success('StoryArk work export saved and verified.'),
     });

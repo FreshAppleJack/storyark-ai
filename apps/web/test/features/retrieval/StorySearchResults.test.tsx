@@ -61,6 +61,7 @@ describe('StorySearchResults', () => {
         );
 
         const excerpt = container.querySelector('article p');
+        expect(container.querySelector('article')?.textContent).not.toMatch(/Source v|Indexed |Evidence object/);
         expect(excerpt).not.toBeNull();
         expect(screen.getByLabelText('Story search results')).toContainElement(excerpt);
         expect(excerpt!.closest('article')).not.toHaveClass('overflow-y-auto');

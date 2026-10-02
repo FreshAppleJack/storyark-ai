@@ -15,6 +15,8 @@ fn main() {
     };
     tauri_build::try_build(
         attributes.app_manifest(tauri_build::AppManifest::new().commands(&[
+            "diagnostic_report_error",
+            "diagnostic_log_info",
             "ai_list_configs",
             "ai_save_config",
             "ai_set_default",

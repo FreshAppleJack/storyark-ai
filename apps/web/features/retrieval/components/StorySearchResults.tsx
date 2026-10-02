@@ -47,49 +47,49 @@ const SOURCE_LABELS: Record<RetrievalSearchHit['sourceKind'], string> = {
 
 function statusLabel(status: RetrievalIndexStatus | null): string {
     switch (status) {
-        case 'ready': return 'Local story index ready';
-        case 'queued': return 'Local story index queued';
-        case 'indexing': return 'Building local story index';
-        case 'stale': return 'Local story index needs rebuilding';
-        case 'partial': return 'Local story index is incomplete';
-        case 'failed': return 'Local story index failed';
-        case 'not_configured': return 'Local embedding is not ready';
-        default: return 'Local semantic search status unavailable';
+        case 'ready': return 'Story search is ready';
+        case 'queued': return 'Search update is waiting';
+        case 'indexing': return 'Preparing story search';
+        case 'stale': return 'Story search needs updating';
+        case 'partial': return 'Some search material is not ready yet';
+        case 'failed': return 'Search could not be updated';
+        case 'not_configured': return 'Story search is not ready yet';
+        default: return 'Story search is unavailable right now';
     }
 }
 
 function resultStatusMessage(response: RetrievalSearchResponse): string {
     if (response.status === 'embedding_unavailable') {
-        return 'Local embedding is unavailable. Showing lexical matches from this book.';
+        return 'Meaning-based search is unavailable. Showing keyword matches instead.';
     }
     if (response.status === 'index_not_ready') {
-        return 'The local semantic index is not ready for the selected scope. Showing the available lexical matches.';
+        return 'Story search is still being prepared. Showing keyword matches for now.';
     }
     if (response.status === 'degraded_lexical') {
-        return 'The local embedding query was unavailable. Showing lexical matches from this book.';
+        return 'Meaning-based search could not finish. Showing keyword matches instead.';
     }
     if (response.degraded) {
-        return 'Semantic retrieval was unavailable for the selected scope. Showing lexical matches from this book.';
+        return 'Meaning-based search is unavailable. Showing keyword matches instead.';
     }
     if (response.status === 'budget_exhausted') {
-        return 'Matches were found, but the context budget was too small to include their excerpts.';
+        return 'Matches were found, but their excerpts could not be shown. Try a more specific search.';
     }
     if (response.status === 'stale_only') {
-        return 'Only stale sources matched. Refresh the local index before treating these as current evidence.';
+        return 'These matches may be out of date. Refresh search and try again.';
     }
     if (response.status === 'future_plan_only') {
-        return 'Only future-plan material matched, and it is excluded from story search.';
+        return 'Only future plans matched. They are not included in story search.';
     }
     if (response.status === 'lexical_no_match' || response.status === 'no_results') {
         return 'No story matches were found in this book.';
     }
     if (response.effectiveMode === 'semantic') {
-        return 'Semantic matches are ready for this scope. Scores are ranking signals, not probabilities.';
+        return 'Found passages related to your search.';
     }
     if (response.effectiveMode === 'lexical') {
-        return 'Lexical matches are ready for this scope. Scores are ranking signals, not probabilities.';
+        return 'Found passages matching your keywords.';
     }
-    return 'Semantic and lexical matches are ranked together. Scores are ranking signals, not probabilities.';
+    return 'Showing the closest matches first.';
 }
 
 function hitTitle(hit: RetrievalSearchHit): string {
@@ -102,11 +102,6 @@ function hitExcerpt(hit: RetrievalSearchHit): string {
     return hit.chunk.sourceText || hit.quote || hit.locator.shortQuote || hit.chunk.shortQuote || 'No excerpt available.';
 }
 
-function formatTimestamp(timestamp: number | null): string {
-    if (timestamp === null) return 'Not indexed';
-    return new Date(timestamp).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
-}
-
 function renderIndexProgress(progress: RetrievalIndexProgress | null): ReactElement | null {
     if (!progress) return null;
     const percent = Math.min(100, Math.max(0, progress.percent));
@@ -114,22 +109,19 @@ function renderIndexProgress(progress: RetrievalIndexProgress | null): ReactElem
         <div className="mt-2 rounded-md bg-slate-100 px-2 py-2 dark:bg-slate-950">
             <div className="text-center text-[10px] text-slate-500 dark:text-slate-400">
                 <span>{progress.totalSources === 0
-                    ? 'No indexable sources'
+                    ? 'No search material yet'
                     : <>{progress.completedSources}/{progress.totalSources} sources · <strong className="font-semibold">{percent}%</strong></>}</span>
             </div>
             <div
                 className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800"
                 role="progressbar"
-                aria-label="Approximate local embedding index progress"
+                aria-label="Search preparation progress"
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={percent}
             >
                 <div className="h-full rounded-full bg-brand-500 transition-[width]" style={{ width: `${percent}%` }} />
             </div>
-            <p className="mt-1 text-[10px] leading-4 text-slate-400 dark:text-slate-500">
-                One source can contain many chunks, so this is a progress estimate rather than a token counter.
-            </p>
         </div>
     );
 }
@@ -153,7 +145,7 @@ function renderIndexAction(
                 className="inline-flex items-center gap-1.5 rounded-md border border-brand-200 px-2 py-1 text-[11px] font-semibold text-brand-700 transition hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-brand-800 dark:text-brand-300 dark:hover:bg-brand-950/40"
             >
                 {isBusy ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                {isBusy ? 'Indexing…' : indexStatus === 'failed' ? 'Retry index' : indexStatus === 'ready' ? 'Rebuild local index' : 'Build local index'}
+                {isBusy ? 'Preparing search…' : indexStatus === 'failed' ? 'Retry search update' : indexStatus === 'ready' ? 'Refresh search' : 'Prepare search'}
             </button>
         </div>
     );
@@ -197,11 +189,7 @@ function SearchHitCard({
                 <span className="min-w-0 flex-1 truncate" title={location}>{location}</span>
                 <span className="flex-shrink-0 font-normal text-slate-400">{SOURCE_LABELS[hit.sourceKind]}</span>
             </div>
-            <div className="mt-1 flex flex-wrap gap-x-2 gap-y-0.5 text-[10px] text-slate-400">
-                <span>Source v{hit.sourceVersion}</span>
-                <span>Indexed {formatTimestamp(hit.indexUpdatedAt)}</span>
-                <span>{hit.freshness}</span>
-            </div>
+            {hit.freshness !== 'fresh' && <p className="mt-1 text-[10px] text-amber-600 dark:text-amber-300">This match may be out of date. Refresh search to check it.</p>}
             <p className={`mt-1 text-xs leading-5 text-slate-700 dark:text-slate-300 ${expanded ? '' : 'line-clamp-3'}`}>
                 {expanded ? excerpt : highlightedPreview ? <>
                     {highlightedPreview.before}
@@ -222,9 +210,6 @@ function SearchHitCard({
                 </button>
             )}
             <div className="mt-1 flex items-center gap-2 text-[10px] text-slate-400">
-                <span>{hit.recallMethods.join(' + ')}</span>
-                <span>•</span>
-                <span>Evidence object</span>
                 {chapterId ? (
                     <button
                         type="button"
@@ -242,7 +227,7 @@ function SearchHitCard({
                         {actionLabel}
                     </button>
                 ) : (
-                    <span className="ml-auto">Book-level source</span>
+                    <span className="ml-auto">Whole book</span>
                 )}
             </div>
         </article>
@@ -308,20 +293,19 @@ export function StorySearchResults({
                 <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs leading-5 text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
                     <div className="flex items-center gap-2 font-semibold text-slate-700 dark:text-slate-200">
                         <Sparkles size={13} className="text-brand-500" />
-                        <span>{isStatusLoading ? 'Checking local semantic search…' : statusLabel(indexStatus)}</span>
+                        <span>{isStatusLoading ? 'Checking story search…' : statusLabel(indexStatus)}</span>
                     </div>
                     {statusError && <p role="alert" className="mt-1 text-amber-600 dark:text-amber-300">{statusError}</p>}
                     {!embeddingStatus ? (
-                        <p className="mt-1">Semantic search status is unavailable. Title / Chapter search remains available; retry when the desktop storage is ready.</p>
+                        <p className="mt-1">Story search is unavailable right now. You can still use Title / Chapter search.</p>
                     ) : !embeddingStatus.available ? (
                         <>
-                            <p className="mt-1">Semantic search needs the local embedding model before it can build or query the semantic index. Title / Chapter search remains available.</p>
-                            {embeddingStatus.errorMessage && <p className="mt-1 text-amber-600 dark:text-amber-300">{embeddingStatus.errorMessage}</p>}
+                            <p className="mt-1">Story search could not start. Try restarting StoryArk. You can still use Title / Chapter search.</p>
                         </>
                     ) : indexStatus !== 'ready' ? (
-                        <p className="mt-1">Semantic search needs a ready local index. You can build it here without affecting writing or title search.</p>
+                        <p className="mt-1">Prepare search to find passages in this book. You can keep writing while it runs.</p>
                     ) : (
-                        <p className="mt-1">Searches the current book using local semantic and lexical evidence.</p>
+                        <p className="mt-1">Find passages by meaning or keywords in this book.</p>
                     )}
                 </div>
             )}
