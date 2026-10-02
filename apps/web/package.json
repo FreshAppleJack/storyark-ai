@@ -8,6 +8,7 @@
     "node": "^20.19.0 || >=22.12.0"
   },
   "scripts": {
+    "icons:generate": "node scripts/generate-app-icons.mjs",
     "schema:sync": "node scripts/sync-schema.mjs",
     "schema:check": "node scripts/sync-schema.mjs --check",
     "schema:test": "node --test scripts/schema-sync.node-test.mjs",

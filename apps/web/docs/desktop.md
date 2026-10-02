@@ -62,24 +62,43 @@ transparent outer corners. Its flat book-and-star design uses layered pages and
 a cover in muted teal, with an apricot star on a pale mint tile. The artwork was
 generated with the built-in image generation tool for StoryArk.
 
-The tile and book use a tight frame to reduce unused transparent space at small
-Windows taskbar sizes. Keep this framing when replacing the source artwork.
-
-From `apps/web`, regenerate platform assets with the
-[Tauri icon command](https://v2.tauri.app/develop/icons/):
+From `apps/web`, regenerate both platform variants:
 
 ```sh
-npm run tauri -- icon app-icon.png
+npm run icons:generate
 ```
 
-The command updates `src-tauri/icons`, including Windows `icon.ico`, macOS
-`icon.icns`, and PNG sizes. It also generates mobile directories; the desktop
-project only needs the files directly inside `icons`. `bundle.icon` in
-`tauri.conf.json` already points to the desktop assets.
+The script uses the installed [Tauri icon command](https://v2.tauri.app/develop/icons/)
+and does not require an additional image library. It crops the master's small
+outer margin, clips border speckles to a smooth rounded contour, and adds an
+opaque underlay to prevent internal transparency artifacts. It then exports:
+
+| Platform | Prepared source | Visual framing | Runtime assets |
+| --- | --- | --- | --- |
+| Windows | `app-icon.windows.png` | Compact tile filling the 1024px canvas | `icons/icon.ico` and PNGs directly in `icons` |
+| macOS | `app-icon.macos.png` | Centered 824px tile on a transparent 1024px canvas | `icons/icon.icns` and `icons/macos/*.png` |
+
+The macOS tile occupies about 80.5% of the canvas width. This is StoryArk's
+starting point for visual balance with nearby Dock icons, not a universal Apple
+size requirement. The Windows variant gives the book more visual weight by
+removing outer padding. Verify its fine page gaps at 16px, 24px and 32px.
+
+The base Tauri configuration uses the Windows PNGs and ICO and the macOS ICNS.
+`tauri.macos.conf.json`, loaded automatically for macOS builds, overrides the PNG
+paths as well so the Mac window and app use the same framing. Keep the generated
+platform sources and desktop assets in version control. Mobile outputs are discarded.
+Avoid running `tauri icon app-icon.png` directly into `src-tauri/icons`: it would
+overwrite the platform-specific sizing. Edit the master or the framing profiles
+in `scripts/generate-app-icons.mjs`, then run `icons:generate` again.
 
 Rebuild and restart the native application after replacing icons. Frontend hot
 reload does not update the executable icon. Rebuild installers before distributing
 the new artwork; Windows shortcuts may retain a cached icon until refreshed.
+
+Compare the installed Windows app alongside other taskbar icons in light and
+dark themes. On a Mac, rebuild the `.app`/DMG and compare its Dock icon with
+Finder and Safari. This Windows development environment can validate PNG/ICO/
+ICNS contents, but cannot establish the final appearance in a real macOS Dock.
 
 ## Local data and recovery
 

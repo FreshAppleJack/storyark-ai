@@ -1,6 +1,12 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "bundle": {
+    "icon": [
+      "icons/macos/32x32.png",
+      "icons/macos/128x128.png",
+      "icons/macos/128x128@2x.png",
+      "icons/icon.icns"
+    ],
     "resources": ["resources/embedding/multilingual-e5-small/"]
   }
 }
