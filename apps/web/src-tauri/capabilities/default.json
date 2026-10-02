@@ -14,7 +14,7 @@
     "allow-local-reorder-characters",
     "dialog:allow-open", "dialog:allow-save",
     "fs:allow-read-file", "fs:allow-stat", "fs:allow-remove", "fs:allow-rename", "fs:allow-write-file",
-    "allow-local-list-books", "allow-local-read-book", "allow-local-read-work-export-snapshot", "allow-local-prepare-work-import", "allow-local-import-work", "allow-local-create-book",
+    "allow-local-list-books", "allow-local-read-book", "allow-local-read-book-directory", "allow-local-read-chapter", "allow-local-read-work-export-snapshot", "allow-local-prepare-work-import", "allow-local-import-work", "allow-local-create-book",
     "allow-local-create-volume", "allow-local-create-chapter", "allow-local-save-chapter",
     "allow-local-rename", "allow-local-update-book", "allow-local-set-read-only", "allow-local-reorder", "allow-local-delete",
     "allow-local-list-characters", "allow-local-create-character", "allow-local-update-character",

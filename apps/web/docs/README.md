@@ -10,6 +10,7 @@ not dated acceptance reports.
 1. [Architecture and code map](architecture.md): runtime boundaries and code entry points.
 2. [Desktop development and recovery](desktop.md): prerequisites, Git LFS, builds and local data.
 3. [Engineering checks](engineering.md): verification and legacy browser settings.
+   [Large books and working memory](large-books.md) covers directory reads, body caching and virtual navigation.
 4. [Contributing](../../../CONTRIBUTING.md): change boundaries and PR evidence.
 
 ## Contracts

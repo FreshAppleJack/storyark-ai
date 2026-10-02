@@ -13,6 +13,7 @@ import { retrievalRepository } from '../../../data/local/retrievalRepository';
 import { mapRetrievalChunkOffset, resolveRetrievalChunkLocator } from '../../../domain/retrieval/locator';
 import type { RetrievalChunkLocator, RetrievalSearchHit, RetrievalTextFocus } from '../../../domain/retrieval/contracts';
 import type { SearchHitFocusAnchor } from '../../../domain/retrieval/searchPreview';
+import { VirtualChapterList, type VirtualChapterListHandle } from './VirtualChapterList';
 import { BrainstormShortcut } from '../../brainstorm/components/BrainstormShortcut';
 
 export type NavigatorItemType = 'volume' | 'chapter';
@@ -160,11 +161,13 @@ export function ChapterNavigator({
     const [itemToDelete, setItemToDelete] = useState<NavigatorDeleteTarget | null>(null);
     const [renamingState, setRenamingState] = useState<RenamingState | null>(null);
 
+    const treeRef = useRef<VirtualChapterListHandle>(null);
     const renameInputRef = useRef<HTMLInputElement>(null);
     const contextMenuRef = useRef<HTMLDivElement>(null);
     const submittedRenameRef = useRef<RenamingState | null>(null);
     const dragItemRef = useRef<DragItemState | null>(null);
     const [dragTarget, setDragTarget] = useState<DragItemState | null>(null);
+    const [draggingItem, setDraggingItem] = useState<DragItemState | null>(null);
     const storySearchChapters = useMemo(() => book.volumes.flatMap(volume => volume.chapters.map(chapter => ({
         id: chapter.id,
         title: chapter.title,
@@ -276,6 +279,7 @@ export function ChapterNavigator({
             e.preventDefault(); return;
         }
         dragItemRef.current = { id, type, parentId };
+        setDraggingItem({ id, type, parentId });
         e.dataTransfer?.setData('text/plain', id);
         if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
         (e.currentTarget as HTMLDivElement).style.opacity = '0.5';
@@ -321,6 +325,7 @@ export function ChapterNavigator({
     const handleDragEnd = (e: React.DragEvent) => {
         (e.currentTarget as HTMLDivElement).style.opacity = '1';
         dragItemRef.current = null;
+        setDraggingItem(null);
         setDragTarget(null);
     };
 
@@ -412,6 +417,7 @@ export function ChapterNavigator({
 
     const scrollSidebarItemIntoView = (type: SidebarSearchMode, id: string) => {
         window.setTimeout(() => {
+            treeRef.current?.scrollToItem(`${type}-${id}`);
             const element = document.getElementById(`sidebar-${type}-${id}`);
             element?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
         }, 80);
@@ -556,6 +562,127 @@ export function ChapterNavigator({
             await onDeleteItem(itemToDelete);
         }
         setShowDeleteModal(false); setItemToDelete(null);
+    };
+
+    type NavigatorRow = { id: string; height: number; kind: 'volume' | 'chapter' | 'empty' | 'add'; volume?: Volume; chapter?: Chapter };
+    const treeRows = useMemo<NavigatorRow[]>(() => {
+        const rows: NavigatorRow[] = [];
+        for (const volume of book.volumes) {
+            rows.push({ id: `volume-${volume.id}`, kind: 'volume', height: 40, volume });
+            if (expandedVolumes.has(volume.id)) {
+                for (const chapter of volume.chapters) rows.push({ id: `chapter-${chapter.id}`, kind: 'chapter', height: 38, volume, chapter });
+                if (!volume.chapters.length) rows.push({ id: `empty-${volume.id}`, kind: 'empty', height: 34, volume });
+            }
+        }
+        rows.push({ id: 'create-volume', kind: 'add', height: 64 });
+        return rows;
+    }, [book.volumes, expandedVolumes]);
+    const renderVolumeRow = (vol: Volume) => {
+        const isVolDraggable = !expandedVolumes.has(vol.id) && renamingState?.id !== vol.id;
+        const isRenamingVol = renamingState?.id === vol.id && renamingState?.type === 'volume';
+
+        return (
+            <div
+                id={`sidebar-volume-${vol.id}`}
+                key={vol.id}
+                className="h-9"
+                draggable={isVolDraggable}
+                onDragStart={(e) => handleDragStart(e, 'volume', vol.id)}
+                onDragEnter={(e) => handleDragEnter(e, 'volume', vol.id)}
+                onDragEnd={handleDragEnd}
+                onDragOver={(e) => handleDragOver(e, 'volume', vol.id)}
+                onDrop={(e) => handleDrop(e, 'volume', vol.id)}
+            >
+                <div className={`flex items-center justify-between group/vol rounded-md pr-2 ${dragTarget?.type === 'volume' && dragTarget.id === vol.id ? 'ring-2 ring-brand-400' : ''}`}>
+                    <button
+                        onClick={() => toggleVolume(vol.id)}
+                        onContextMenu={(e) => handleContextMenu(e, 'volume', vol.id)}
+                        className={`
+                        flex-1 flex items-center gap-1 p-2 text-xs font-semibold text-slate-500 dark:text-slate-400
+                        hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors
+                        ${sidebarSearchTarget?.type === 'volume' && sidebarSearchTarget.id === vol.id ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-200 dark:bg-brand-950/40 dark:text-brand-300 dark:ring-brand-800' : ''}
+                        ${isVolDraggable ? 'cursor-grab active:cursor-grabbing' : ''}
+                    `}
+                    >
+                        {isVolDraggable && <GripVertical size={12} className="opacity-0 group-hover/vol:opacity-50 mr-1" />}
+                        {expandedVolumes.has(vol.id) ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
+                        <Folder size={14} />
+
+                        {isRenamingVol ? (
+                            <input
+                                ref={renameInputRef}
+                                type="text"
+                                value={renamingState.value}
+                                onChange={(e) => setRenamingState({...renamingState, value: e.target.value})}
+                                onKeyDown={handleRenameKeyDown}
+                                onBlur={submitRename}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex-1 min-w-0 bg-white dark:bg-slate-900 border border-brand-300 dark:border-brand-800 rounded px-1 py-0.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-900"
+                            />
+                        ) : (
+                            <span className="truncate">{vol.title}</span>
+                        )}
+                    </button>
+                    <button onClick={() => handleAddChapter(vol.id)} title="Add Chapter" className="opacity-0 group-hover/vol:opacity-100 p-1 hover:bg-brand-100 dark:hover:bg-brand-950/40 text-brand-600 dark:text-brand-300 rounded">
+                        <Plus size={12} />
+                    </button>
+                </div>
+
+            </div>
+        );
+    };
+
+    const renderChapterRow = (vol: Volume, chapter: Chapter) => {
+        const isRenamingChap = renamingState?.id === chapter.id && renamingState?.type === 'chapter';
+
+        return (<div className="ml-4 border-l border-slate-200 dark:border-slate-800 pl-2 h-full">
+            <div
+                id={`sidebar-chapter-${chapter.id}`}
+                key={chapter.id}
+                onContextMenu={(e) => handleContextMenu(e, 'chapter', chapter.id, vol.id)}
+                draggable={!isRenamingChap}
+                onDragStart={(e) => handleDragStart(e, 'chapter', chapter.id, vol.id)}
+                onDragEnter={(e) => handleDragEnter(e, 'chapter', chapter.id, vol.id)}
+                onDragEnd={handleDragEnd}
+                onDragOver={(e) => handleDragOver(e, 'chapter', chapter.id, vol.id)}
+                onDrop={(e) => handleDrop(e, 'chapter', chapter.id, vol.id)}
+                onClick={() => {
+                    if (isRenamingChap) return;
+                    setSidebarSearchTarget(null);
+                    void onSelectChapter(chapter.id);
+                }}
+                className={`
+                    w-full flex items-center justify-between p-2 text-sm rounded-md transition-colors text-left group cursor-grab active:cursor-grabbing
+                    ${activeChapterId === chapter.id
+                    ? 'bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300 font-medium'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
+                }
+                    ${sidebarSearchTarget?.type === 'chapter' && sidebarSearchTarget.id === chapter.id && activeChapterId === chapter.id ? 'ring-1 ring-brand-200 dark:ring-brand-800' : ''}
+                    ${dragTarget?.type === 'chapter' && dragTarget.id === chapter.id && dragTarget.parentId === vol.id ? 'ring-2 ring-brand-400' : ''}
+                `}
+            >
+                <div className="flex items-center gap-2 overflow-hidden flex-1">
+                    <GripVertical size={12} className="opacity-0 group-hover:opacity-30 text-slate-400 flex-shrink-0" />
+                    <FileText size={14} className={`flex-shrink-0 ${activeChapterId === chapter.id ? 'text-brand-500' : 'text-slate-400'}`} />
+                    {chapter.isEditable === false && <Lock size={14} className="text-rose-500 flex-shrink-0" />}
+
+                    {isRenamingChap ? (
+                        <input
+                            ref={renameInputRef}
+                            type="text"
+                            value={renamingState.value}
+                            onChange={(e) => setRenamingState({...renamingState, value: e.target.value})}
+                            onKeyDown={handleRenameKeyDown}
+                            onBlur={submitRename}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex-1 min-w-0 bg-white dark:bg-slate-900 border border-brand-300 dark:border-brand-800 rounded px-1 py-0.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-900"
+                        />
+                    ) : (
+                        <span className="truncate">{chapter.title}</span>
+                    )}
+                </div>
+            </div>
+        </div>);
     };
 
     return (
@@ -718,137 +845,27 @@ export function ChapterNavigator({
                 )}
 
                 {/* Sidebar List */}
-                <div hidden={hideChapterTree} className="min-h-0 flex-1 overflow-y-auto py-2 relative">
-                    {sidebarExpanded ? (
-                        <div className="px-2 space-y-1">
-                            {book.volumes.length === 0 && (
-                                <div className="text-center py-4 text-xs text-slate-400">
-                                    No volumes yet.<br/>Create one to start writing.
-                                </div>
-                            )}
-
-                            {book.volumes.map((vol) => {
-                                const isVolDraggable = !expandedVolumes.has(vol.id) && renamingState?.id !== vol.id;
-                                const isRenamingVol = renamingState?.id === vol.id && renamingState?.type === 'volume';
-
-                                return (
-                                    <div
-                                        id={`sidebar-volume-${vol.id}`}
-                                        key={vol.id}
-                                        className="mb-2"
-                                        draggable={isVolDraggable}
-                                        onDragStart={(e) => handleDragStart(e, 'volume', vol.id)}
-                                        onDragEnter={(e) => handleDragEnter(e, 'volume', vol.id)}
-                                        onDragEnd={handleDragEnd}
-                                        onDragOver={(e) => handleDragOver(e, 'volume', vol.id)}
-                                        onDrop={(e) => handleDrop(e, 'volume', vol.id)}
-                                    >
-                                        <div className={`flex items-center justify-between group/vol rounded-md pr-2 ${dragTarget?.type === 'volume' && dragTarget.id === vol.id ? 'ring-2 ring-brand-400' : ''}`}>
-                                            <button
-                                                onClick={() => toggleVolume(vol.id)}
-                                                onContextMenu={(e) => handleContextMenu(e, 'volume', vol.id)}
-                                                className={`
-                                                flex-1 flex items-center gap-1 p-2 text-xs font-semibold text-slate-500 dark:text-slate-400
-                                                hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors
-                                                ${sidebarSearchTarget?.type === 'volume' && sidebarSearchTarget.id === vol.id ? 'bg-brand-50 text-brand-700 ring-1 ring-brand-200 dark:bg-brand-950/40 dark:text-brand-300 dark:ring-brand-800' : ''}
-                                                ${isVolDraggable ? 'cursor-grab active:cursor-grabbing' : ''}
-                                            `}
-                                            >
-                                                {isVolDraggable && <GripVertical size={12} className="opacity-0 group-hover/vol:opacity-50 mr-1" />}
-                                                {expandedVolumes.has(vol.id) ? <ChevronDown size={14}/> : <ChevronRight size={14}/>}
-                                                <Folder size={14} />
-
-                                                {isRenamingVol ? (
-                                                    <input
-                                                        ref={renameInputRef}
-                                                        type="text"
-                                                        value={renamingState.value}
-                                                        onChange={(e) => setRenamingState({...renamingState, value: e.target.value})}
-                                                        onKeyDown={handleRenameKeyDown}
-                                                        onBlur={submitRename}
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        className="flex-1 min-w-0 bg-white dark:bg-slate-900 border border-brand-300 dark:border-brand-800 rounded px-1 py-0.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-900"
-                                                    />
-                                                ) : (
-                                                    <span className="truncate">{vol.title}</span>
-                                                )}
-                                            </button>
-                                            <button onClick={() => handleAddChapter(vol.id)} title="Add Chapter" className="opacity-0 group-hover/vol:opacity-100 p-1 hover:bg-brand-100 dark:hover:bg-brand-950/40 text-brand-600 dark:text-brand-300 rounded">
-                                                <Plus size={12} />
-                                            </button>
-                                        </div>
-
-                                        {expandedVolumes.has(vol.id) && (
-                                            <div className="ml-4 mt-1 space-y-0.5 border-l border-slate-200 dark:border-slate-800 pl-2">
-                                                {vol.chapters.map((chapter) => {
-                                                    const isRenamingChap = renamingState?.id === chapter.id && renamingState?.type === 'chapter';
-
-                                                    return (
-                                                        <div
-                                                            id={`sidebar-chapter-${chapter.id}`}
-                                                            key={chapter.id}
-                                                            onContextMenu={(e) => handleContextMenu(e, 'chapter', chapter.id, vol.id)}
-                                                            draggable={!isRenamingChap}
-                                                            onDragStart={(e) => handleDragStart(e, 'chapter', chapter.id, vol.id)}
-                                                            onDragEnter={(e) => handleDragEnter(e, 'chapter', chapter.id, vol.id)}
-                                                            onDragEnd={handleDragEnd}
-                                                            onDragOver={(e) => handleDragOver(e, 'chapter', chapter.id, vol.id)}
-                                                            onDrop={(e) => handleDrop(e, 'chapter', chapter.id, vol.id)}
-                                                            onClick={() => {
-                                                                if (isRenamingChap) return;
-                                                                setSidebarSearchTarget(null);
-                                                                void onSelectChapter(chapter.id);
-                                                            }}
-                                                            className={`
-                                                                w-full flex items-center justify-between p-2 text-sm rounded-md transition-colors text-left group cursor-grab active:cursor-grabbing
-                                                                ${activeChapterId === chapter.id
-                                                                ? 'bg-brand-50 dark:bg-brand-950/40 text-brand-700 dark:text-brand-300 font-medium'
-                                                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-100'
-                                                            }
-                                                                ${sidebarSearchTarget?.type === 'chapter' && sidebarSearchTarget.id === chapter.id && activeChapterId === chapter.id ? 'ring-1 ring-brand-200 dark:ring-brand-800' : ''}
-                                                                ${dragTarget?.type === 'chapter' && dragTarget.id === chapter.id && dragTarget.parentId === vol.id ? 'ring-2 ring-brand-400' : ''}
-                                                            `}
-                                                        >
-                                                            <div className="flex items-center gap-2 overflow-hidden flex-1">
-                                                                <GripVertical size={12} className="opacity-0 group-hover:opacity-30 text-slate-400 flex-shrink-0" />
-                                                                <FileText size={14} className={`flex-shrink-0 ${activeChapterId === chapter.id ? 'text-brand-500' : 'text-slate-400'}`} />
-                                                                {chapter.isEditable === false && <Lock size={14} className="text-rose-500 flex-shrink-0" />}
-
-                                                                {isRenamingChap ? (
-                                                                    <input
-                                                                        ref={renameInputRef}
-                                                                        type="text"
-                                                                        value={renamingState.value}
-                                                                        onChange={(e) => setRenamingState({...renamingState, value: e.target.value})}
-                                                                        onKeyDown={handleRenameKeyDown}
-                                                                        onBlur={submitRename}
-                                                                        onClick={(e) => e.stopPropagation()}
-                                                                        className="flex-1 min-w-0 bg-white dark:bg-slate-900 border border-brand-300 dark:border-brand-800 rounded px-1 py-0.5 text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-200 dark:focus:ring-brand-900"
-                                                                    />
-                                                                ) : (
-                                                                    <span className="truncate">{chapter.title}</span>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                                {vol.chapters.length === 0 && <div className="text-xs text-slate-300 dark:text-slate-600 italic p-2">No chapters</div>}
-                                            </div>
-                                        )}
-                                    </div>
-                                )})}
+                {sidebarExpanded ? <VirtualChapterList ref={treeRef} rows={treeRows} hidden={hideChapterTree}
+                    activeId={`chapter-${activeChapterId}`}
+                    pinnedIds={[...(renamingState ? [`${renamingState.type}-${renamingState.id}`] : []),
+                        ...(draggingItem ? [`${draggingItem.type}-${draggingItem.id}`] : [])]}
+                    renderRow={row => {
+                        if (row.kind === 'volume') return renderVolumeRow(row.volume!);
+                        if (row.kind === 'chapter') return renderChapterRow(row.volume!, row.chapter!);
+                        if (row.kind === 'empty') return <div className="ml-4 border-l border-slate-200 dark:border-slate-800 pl-4 py-2 text-xs text-slate-400 dark:text-slate-600 italic">No chapters</div>;
+                        return <>
+                            {!book.volumes.length && <div className="text-center text-xs text-slate-400">No volumes yet. Create one to start writing.</div>}
                             <button onClick={handleAddVolume} className="w-full flex items-center gap-2 p-2 mt-4 text-xs font-medium text-slate-500 dark:text-slate-400 border border-dashed border-slate-300 dark:border-slate-700 rounded-md hover:border-brand-400 hover:text-brand-600 dark:hover:text-brand-300 justify-center">
                                 <Plus size={14} /> Create Volume
                             </button>
-                        </div>
-                    ) : (
+                        </>;
+                    }} /> : <div className="min-h-0 flex-1 overflow-y-auto py-2 relative">
                         <div className="flex flex-col items-center gap-4 py-4">
                             <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300"><Folder size={20}/></div>
                             <div className="w-4 h-px bg-slate-200 dark:bg-slate-800"></div>
                             <div className="p-2 rounded-lg bg-brand-50 dark:bg-brand-950/40 text-brand-600 dark:text-brand-300"><FileText size={20}/></div>
                         </div>
-                    )}
-                </div>
+                    </div>}
             </aside>
 
             {/* Navigator context menu */}

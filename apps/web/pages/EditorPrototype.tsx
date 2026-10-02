@@ -23,6 +23,7 @@ import { getEditorPlainText, getForeshadowingExcerptMap } from '../domain/chapte
 import { calculateCharacterCount } from '../utils/textUtils';
 import { useTypingSpeed } from '../features/editor/hooks/useTypingSpeed';
 import { useChapterDraft } from '../features/editor/hooks/useChapterDraft';
+import { useLoadedChapter } from '../features/editor/hooks/useLoadedChapter';
 import { useChapterLock } from '../features/editor/hooks/useChapterLock';
 import { useChapterAutosave } from '../features/editor/hooks/useChapterAutosave';
 import { useWindowCloseGuard } from '../features/editor/hooks/useWindowCloseGuard';
@@ -56,11 +57,20 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
     const [activeChapterId, setActiveChapterId] = useState<string>('');
 
     // 2. Find current active volume and chapter
-    const activeVolume = book?.volumes.find(v => v.chapters.some(c => c.id === activeChapterId));
-    const activeChapter = activeVolume?.chapters.find(c => c.id === activeChapterId);
-    const activeChapterOrder = book
-        ? book.volumes.flatMap(volume => volume.chapters).findIndex(chapter => chapter.id === activeChapterId)
-        : -1;
+    const chapterDirectory = useMemo(() => {
+        const entries = new Map<string, { volume: Volume; chapter: Chapter; order: number }>();
+        let order = 0;
+        for (const volume of book?.volumes ?? []) for (const chapter of volume.chapters) {
+            entries.set(chapter.id, { volume, chapter, order: order++ });
+        }
+        return entries;
+    }, [book?.volumes]);
+    const activeEntry = chapterDirectory.get(activeChapterId);
+    const activeVolume = activeEntry?.volume;
+    const chapterMetadata = activeEntry?.chapter;
+    const chapterLoad = useLoadedChapter(bookId ?? '', chapterMetadata);
+    const activeChapter = chapterLoad.chapter;
+    const activeChapterOrder = activeEntry?.order ?? -1;
 
     // 3. State Management
     // The chapter draft (values + revision + dirty tracking) lives in a hook;
@@ -607,7 +617,11 @@ function Editor({ localBook, localPlanning }: { localBook?: Book; localPlanning?
                                 </>
                             ) : (
                                 <div className="flex items-center justify-center h-full text-slate-400 dark:text-slate-500 p-20">
-                                    {book.volumes.length === 0 ? "Create a volume to start" : "Select or create a chapter from the sidebar"}
+                                    {chapterLoad.error ? <div role="alert">
+                                        <p>This chapter could not be loaded. Try again.</p>
+                                        <Button onClick={() => void chapterLoad.retry()}>Retry</Button>
+                                    </div> : chapterLoad.isLoading ? <p role="status">Loading chapter...</p>
+                                        : book.volumes.length === 0 ? "Create a volume to start" : "Select or create a chapter from the sidebar"}
                                 </div>
                             )}
                         </div>

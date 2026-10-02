@@ -28,6 +28,8 @@ fn main() {
             "ai_validate_adoption",
             "local_list_books",
             "local_read_book",
+            "local_read_book_directory",
+            "local_read_chapter",
             "local_read_work_export_snapshot",
             "local_prepare_work_import",
             "local_import_work",

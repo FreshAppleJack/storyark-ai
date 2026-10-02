@@ -1,4 +1,4 @@
-use super::records::{bump, record, rows};
+use super::records::{bump, record, rows, CHAPTER_DIRECTORY_COLUMNS};
 use super::requests::{CreateBook, CreateChapter, CreateVolume, SaveChapter};
 use super::validation::{
     cover_color, expected, invalid, now, ownership, title, unlocked, valid_id, MAX_INTEGER,
@@ -32,6 +32,40 @@ impl Database {
         )?;
         tx.commit()?;
         Ok(json!({"book":book,"volumes":volumes,"chapters":chapters}))
+    }
+    pub fn read_book_directory(&mut self, book_id: &str) -> Result<Value> {
+        valid_id(book_id)?;
+        let tx = self.connection.transaction()?;
+        let book = record(&tx, "books", book_id)?;
+        let volumes = rows(
+            &tx,
+            "SELECT * FROM volumes WHERE book_id=? ORDER BY position,id",
+            &[&book_id],
+        )?;
+        // Compatibility shells contain format/lock metadata, never authored bodies or notes.
+        let chapters = rows(
+            &tx,
+            &format!(
+                "SELECT {CHAPTER_DIRECTORY_COLUMNS}
+             FROM chapters c JOIN volumes v ON v.id=c.volume_id
+             WHERE c.book_id=? ORDER BY v.position,v.id,c.position,c.id"
+            ),
+            &[&book_id],
+        )?;
+        tx.commit()?;
+        Ok(json!({"book":book,"volumes":volumes,"chapters":chapters,"bodyMode":"directory"}))
+    }
+    pub fn read_chapter(&self, book_id: &str, chapter_id: &str) -> Result<Value> {
+        valid_id(book_id)?;
+        valid_id(chapter_id)?;
+        let chapter = record(&self.connection, "chapters", chapter_id)?;
+        if chapter["bookId"].as_str() != Some(book_id) {
+            return Err(super::StorageError::new(
+                "OWNERSHIP_MISMATCH",
+                "Chapter belongs to another book",
+            ));
+        }
+        Ok(chapter)
     }
     pub fn create_book(&mut self, input: CreateBook) -> Result<Value> {
         title(&input.title)?;

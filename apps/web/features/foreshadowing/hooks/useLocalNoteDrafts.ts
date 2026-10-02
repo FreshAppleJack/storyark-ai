@@ -1,7 +1,8 @@
 import { useCallback, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { planningRepository } from '../../../data/local/planningRepository';
-import { localKeys, type LocalBookDetail } from '../../../data/local/repository';
+import { directoryChapter, localKeys, type LocalBookDetail } from '../../../data/local/repository';
+import { rememberChapter } from '../../../data/local/chapterBodyCache';
 import { foreshadowingCardKey, type ForeshadowingCardData } from '../foreshadowingSelectors';
 import type { ForeshadowingRecovery } from './useForeshadowingRecovery';
 
@@ -34,7 +35,10 @@ export function useLocalNoteDrafts(initial: LocalBookDetail) {
                     const chapter = await planningRepository.updateNote({ bookId, chapterId: draft.card.chapterId,
                         noteId: draft.card.id, expectedDatabaseVersion: version, note: draft.note, isRecovered: draft.isRecovered });
                     versions.current.set(chapter.id, chapter.databaseVersion);
+                    rememberChapter(client, chapter);
                     client.setQueryData<LocalBookDetail>(localKeys.book(bookId), old => old && ({ ...old,
+                        chapters: old.chapters.map(item => item.id === chapter.id ? directoryChapter(chapter) : item) }));
+                    client.setQueryData<LocalBookDetail>(localKeys.fullBook(bookId), old => old && ({ ...old,
                         chapters: old.chapters.map(item => item.id === chapter.id ? chapter : item) }));
                     if (latest.current[key]?.revision === draft.revision) {
                         const remaining = { ...latest.current };

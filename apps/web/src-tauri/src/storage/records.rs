@@ -3,6 +3,20 @@ use super::{Result, StorageError};
 use rusqlite::{params, Connection};
 use serde_json::{json, Value};
 
+pub(super) const CHAPTER_DIRECTORY_COLUMNS: &str = "c.id,c.book_id,c.volume_id,c.title,c.position,c.status,c.is_read_only,
+ c.database_version,c.created_at,c.updated_at,c.word_count,c.content_format,c.content_version,c.content_state,
+ '' AS content,NULL AS original_content,NULL AS original_format,'[]' AS foreshadowings_json";
+
+pub(super) fn chapter_directory_record(db: &Connection, id: &str) -> Result<Value> {
+    rows(
+        db,
+        &format!("SELECT {CHAPTER_DIRECTORY_COLUMNS} FROM chapters c WHERE c.id=?"),
+        &[&id],
+    )?
+    .pop()
+    .ok_or_else(|| StorageError::new("NOT_FOUND", "Chapter not found"))
+}
+
 pub(super) fn bump(db: &Connection, table: &str, id: &str, version: i64, time: i64) -> Result<()> {
     // Table names are internal constants, never IPC input.
     if db.execute(&format!("UPDATE {table} SET database_version=database_version+1,updated_at=max(updated_at,?) WHERE id=? AND database_version=?"),params![time,id,version])? != 1 { return Err(StorageError::new("VERSION_CONFLICT","Parent changed")); }

@@ -20,7 +20,8 @@ use crate::rag::search::{
 use crate::rag::sources::normalize_index_text;
 use rusqlite::{params, Connection, TransactionBehavior};
 use serde_json::{json, Value};
-use std::collections::{HashMap, HashSet};
+use std::cmp::{Ordering, Reverse};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use uuid::Uuid;
 
 const MAX_SEARCH_LIMIT: usize = 50;
@@ -31,6 +32,42 @@ struct RankedRecall {
     chunk_id: String,
     score: f32,
     rank: usize,
+}
+
+// Higher scores win; equal scores prefer the lexicographically smaller ID.
+// Reverse keeps the weakest retained candidate at the heap root.
+impl PartialEq for RankedRecall {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other) == Ordering::Equal
+    }
+}
+impl Eq for RankedRecall {}
+impl PartialOrd for RankedRecall {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for RankedRecall {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.score
+            .total_cmp(&other.score)
+            .then_with(|| other.chunk_id.cmp(&self.chunk_id))
+    }
+}
+
+fn retain_top_recall(
+    heap: &mut BinaryHeap<Reverse<RankedRecall>>,
+    recall: RankedRecall,
+    limit: usize,
+) {
+    if limit == 0 || recall.score < MIN_SEMANTIC_SCORE || recall.score.is_nan() {
+        return;
+    }
+    if heap.len() < limit {
+        heap.push(Reverse(recall));
+    } else if heap.peek().is_some_and(|worst| recall > worst.0) {
+        *heap.peek_mut().expect("nonempty bounded recall heap") = Reverse(recall);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -193,7 +230,7 @@ fn semantic_recall(
     let rows = statement.query_map(params![book_id, CHUNK_INDEX_VERSION, fingerprint], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
     })?;
-    let mut recalls = Vec::new();
+    let mut recalls = BinaryHeap::with_capacity(limit);
     for row in rows {
         let (chunk_id, blob) = row?;
         if !chunks.contains_key(&chunk_id) {
@@ -201,20 +238,18 @@ fn semantic_recall(
         }
         let vector =
             decode_vector(&blob).map_err(|_| search_error("Stored embedding vector is invalid"))?;
-        recalls.push(RankedRecall {
-            chunk_id,
-            score: dot(query, &vector),
-            rank: 0,
-        });
+        retain_top_recall(
+            &mut recalls,
+            RankedRecall {
+                chunk_id,
+                score: dot(query, &vector),
+                rank: 0,
+            },
+            limit,
+        );
     }
-    recalls.sort_by(|left, right| {
-        right
-            .score
-            .total_cmp(&left.score)
-            .then_with(|| left.chunk_id.cmp(&right.chunk_id))
-    });
-    recalls.retain(|recall| recall.score >= MIN_SEMANTIC_SCORE);
-    recalls.truncate(limit);
+    let mut recalls = recalls.into_iter().map(|entry| entry.0).collect::<Vec<_>>();
+    recalls.sort_by(|left, right| right.cmp(left));
     for (index, recall) in recalls.iter_mut().enumerate() {
         recall.rank = index + 1;
     }
@@ -727,8 +762,7 @@ impl Database {
         sync_sources_in_transaction(&tx, &scope.book_id)?;
         let chunks = read_chunks(&tx, &scope)?;
         let chunk_by_id = chunks
-            .iter()
-            .cloned()
+            .into_iter()
             .map(|chunk| (chunk.chunk_id.clone(), chunk))
             .collect::<HashMap<_, _>>();
         let sources = read_sources(&tx, &scope.book_id)?
@@ -904,5 +938,43 @@ impl Database {
             context,
             hits,
         }))
+    }
+}
+
+#[cfg(test)]
+mod bounded_recall_tests {
+    use super::*;
+    #[test]
+    fn bounded_scan_matches_full_sort_with_ties_and_thresholds() {
+        for limit in [0, 1, 17, 200] {
+            let mut heap = BinaryHeap::new();
+            let mut baseline = Vec::new();
+            for index in (0..10000).rev() {
+                let recall = RankedRecall {
+                    chunk_id: format!("chunk-{index:05}"),
+                    score: [
+                        0.0,
+                        MIN_SEMANTIC_SCORE - 0.01,
+                        MIN_SEMANTIC_SCORE,
+                        0.95,
+                        1.0,
+                    ][index % 5],
+                    rank: 0,
+                };
+                baseline.push(recall.clone());
+                retain_top_recall(&mut heap, recall, limit);
+                assert!(heap.len() <= limit);
+            }
+            baseline.retain(|recall| recall.score >= MIN_SEMANTIC_SCORE);
+            baseline.sort_by(|a, b| {
+                b.score
+                    .total_cmp(&a.score)
+                    .then_with(|| a.chunk_id.cmp(&b.chunk_id))
+            });
+            baseline.truncate(limit);
+            let mut actual = heap.into_iter().map(|value| value.0).collect::<Vec<_>>();
+            actual.sort_by(|a, b| b.cmp(a));
+            assert_eq!(actual, baseline);
+        }
     }
 }

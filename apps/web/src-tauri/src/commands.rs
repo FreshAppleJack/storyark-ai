@@ -32,6 +32,27 @@ pub async fn local_read_book(
     Ok(storage.run(move |db| db.read_book(&book_id)).await.into())
 }
 #[tauri::command]
+pub async fn local_read_book_directory(
+    storage: tauri::State<'_, Storage>,
+    book_id: String,
+) -> Result<Reply, ()> {
+    Ok(storage
+        .run(move |db| db.read_book_directory(&book_id))
+        .await
+        .into())
+}
+#[tauri::command]
+pub async fn local_read_chapter(
+    storage: tauri::State<'_, Storage>,
+    book_id: String,
+    chapter_id: String,
+) -> Result<Reply, ()> {
+    Ok(storage
+        .run(move |db| db.read_chapter(&book_id, &chapter_id))
+        .await
+        .into())
+}
+#[tauri::command]
 pub async fn local_read_work_export_snapshot(
     storage: tauri::State<'_, Storage>,
     book_id: String,
@@ -133,8 +154,18 @@ pub async fn local_set_read_only(
 pub async fn local_reorder(
     storage: tauri::State<'_, Storage>,
     input: Reorder,
+    directory_only: Option<bool>,
 ) -> Result<Reply, ()> {
-    Ok(storage.run(move |db| db.reorder(input)).await.into())
+    Ok(storage
+        .run(move |db| {
+            if directory_only.unwrap_or(false) {
+                db.reorder_directory(input)
+            } else {
+                db.reorder(input)
+            }
+        })
+        .await
+        .into())
 }
 #[tauri::command]
 pub async fn local_delete(storage: tauri::State<'_, Storage>, input: Delete) -> Result<Reply, ()> {

@@ -89,6 +89,12 @@ impl Database {
         Ok(result)
     }
     pub fn reorder(&mut self, input: Reorder) -> Result<Value> {
+        self.reorder_records(input, false)
+    }
+    pub fn reorder_directory(&mut self, input: Reorder) -> Result<Value> {
+        self.reorder_records(input, true)
+    }
+    fn reorder_records(&mut self, input: Reorder, directory_only: bool) -> Result<Value> {
         let tx = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -126,7 +132,7 @@ impl Database {
                 }
                 Target::Volume { volume_id, .. } => rows(
                     &tx,
-                    "SELECT * FROM chapters WHERE volume_id=?",
+                    "SELECT id FROM chapters WHERE volume_id=?",
                     &[volume_id],
                 )?,
                 Target::Chapter { .. } => return Err(invalid()),
@@ -184,7 +190,11 @@ impl Database {
                     ));
                 }
             }
-            ordered.push(record(&tx, child_table, &located.id)?);
+            ordered.push(if directory_only && child_table == "chapters" {
+                super::records::chapter_directory_record(&tx, &located.id)?
+            } else {
+                record(&tx, child_table, &located.id)?
+            });
         }
         if siblings
             .iter()

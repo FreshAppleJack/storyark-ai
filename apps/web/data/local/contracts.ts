@@ -86,6 +86,8 @@ export type StorageResult<T> =
 export interface LocalStorageCommands {
     listBooks(): Promise<StorageResult<LocalBook[]>>;
     readBook(input: { bookId: UUID }): Promise<StorageResult<{ book: LocalBook; volumes: LocalVolume[]; chapters: LocalChapter[] }>>;
+    readDirectory(input: { bookId: UUID }): Promise<StorageResult<{ book: LocalBook; volumes: LocalVolume[]; chapters: LocalChapter[]; bodyMode: 'directory' }>>;
+    readChapter(input: { bookId: UUID; chapterId: UUID }): Promise<StorageResult<LocalChapter>>;
     createBook(input: { title: string; author: string; coverColor: string }): Promise<StorageResult<LocalBook>>;
     createVolume(input: { bookId: UUID; title: string; expectedBookVersion: DatabaseVersion }): Promise<StorageResult<{ volume: LocalVolume; book: LocalBook }>>;
     createChapter(input: { bookId: UUID; volumeId: UUID; title: string; expectedVolumeVersion: DatabaseVersion }): Promise<StorageResult<{ chapter: LocalChapter; volume: LocalVolume }>>;

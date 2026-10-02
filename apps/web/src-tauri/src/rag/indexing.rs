@@ -111,8 +111,9 @@ impl RetrievalIndexRuntime {
 
 async fn run_one(storage: &Storage, embedding: &EmbeddingRuntime, work: IndexWork) {
     let mut vectors = Vec::new();
+    let identity = work.validation_snapshot();
     for batch in work.chunks.chunks(8) {
-        let snapshot = work.clone();
+        let snapshot = identity.clone();
         if !storage
             .run_typed(move |db| db.index_work_current(&snapshot))
             .await

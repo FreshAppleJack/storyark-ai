@@ -119,6 +119,20 @@ fn tauri_ipc_creates_saves_and_reads_after_reopening_the_database() {
         .unwrap();
     let loaded = ipc(&window, "local_read_book", json!({"bookId":book_id}));
     assert_eq!(loaded["value"]["chapters"][0], saved["value"]["chapter"]);
+    let directory = ipc(
+        &window,
+        "local_read_book_directory",
+        json!({"bookId":book_id}),
+    );
+    assert_eq!(directory["ok"], true);
+    assert_eq!(directory["value"]["bodyMode"], "directory");
+    assert_eq!(directory["value"]["chapters"][0]["body"]["content"], "");
+    let single = ipc(
+        &window,
+        "local_read_chapter",
+        json!({"bookId":book_id,"chapterId":saved["value"]["chapter"]["id"]}),
+    );
+    assert_eq!(single["value"], saved["value"]["chapter"]);
     let export = ipc(
         &window,
         "local_read_work_export_snapshot",

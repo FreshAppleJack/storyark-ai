@@ -4,11 +4,13 @@ import { normalizeHandleConfig } from '../../domain/relationshipHandles';
 import type { Book, Character } from '../../types';
 import { reportError, storageErrorMessage } from '../diagnostics';
 
-export interface LocalBookDetail { book: LocalBook; volumes: LocalVolume[]; chapters: LocalChapter[] }
+export interface LocalBookDetail { book: LocalBook; volumes: LocalVolume[]; chapters: LocalChapter[]; bodyMode?: 'directory' }
 export const localKeys = {
     all: ['local', 'default-workspace'] as const,
     books: ['local', 'default-workspace', 'books'] as const,
     book: (id: string) => ['local', 'default-workspace', 'book', id] as const,
+    fullBook: (id: string) => ['local', 'default-workspace', 'full-book', id] as const,
+    chapter: (bookId: string, id: string) => ['local', 'default-workspace', 'chapter', bookId, id] as const,
     characters: (bookId: string) => ['local', 'default-workspace', 'characters', bookId] as const,
 };
 export const localDerivedIndexKey = (bookId: string) => [...localKeys.all, 'derived-index', bookId] as const;
@@ -45,6 +47,8 @@ export async function call<T>(
 export const localRepository = {
     listBooks: () => call<LocalBook[]>('local_list_books'),
     readBook: (bookId: string) => call<LocalBookDetail>('local_read_book', { bookId }),
+    readDirectory: (bookId: string) => call<LocalBookDetail>('local_read_book_directory', { bookId }),
+    readChapter: (bookId: string, chapterId: string) => call<LocalChapter>('local_read_chapter', { bookId, chapterId }),
     createBook: (title: string, author: string, coverColor: string) => call<LocalBook>('local_create_book', { input: { title, author, coverColor } }),
     updateBook: (input: { bookId: string; expectedDatabaseVersion: number; title?: string; status?: 'serializing' | 'completed' }) =>
         call<LocalBook>('local_update_book', { input }),
@@ -58,8 +62,8 @@ export const localRepository = {
         call<T>('local_rename', { input }),
     setReadOnly: <T extends LocalRecord = LocalRecord>(input: ExpectedTarget & { isReadOnly: boolean }) =>
         call<T>('local_set_read_only', { input }),
-    reorder: <T extends LocalRecord = LocalRecord>(input: { parent: ExpectedTarget | null; items: Array<ExpectedTarget & { expectedPosition: number }> }) =>
-        call<T[]>('local_reorder', { input }),
+    reorder: <T extends LocalRecord = LocalRecord>(input: { parent: ExpectedTarget | null; items: Array<ExpectedTarget & { expectedPosition: number }> }, directoryOnly = false) =>
+        call<T[]>('local_reorder', directoryOnly ? { input, directoryOnly } : { input }),
     delete: <T extends LocalRecord = LocalRecord>(input: ExpectedTarget & { expectedParentVersion?: number }) =>
         call<{ deletedId: string; parent: T | null }>('local_delete', { input }),
     listCharacters: (bookId: string) => call<LocalCharacter[]>('local_list_characters', { bookId }),
@@ -100,16 +104,23 @@ export function projectCharacter(record: LocalCharacter): Character {
 }
 
 export function projectBook(book: LocalBook, detail?: LocalBookDetail, characters?: Character[]): Book {
+    const chaptersByVolume = new Map<string, LocalChapter[]>();
+    for (const chapter of detail?.chapters ?? []) {
+        let chapters = chaptersByVolume.get(chapter.volumeId);
+        if (!chapters) { chapters = []; chaptersByVolume.set(chapter.volumeId, chapters); }
+        chapters.push(chapter);
+    }
     return {
         id: book.id, title: book.title, author: book.author, status: book.status,
         isReadOnly: book.isReadOnly,
         coverColor: book.coverColor || undefined,
-        lastModified: Math.max(book.updatedAt, ...(detail?.chapters.map(ch => ch.updatedAt) ?? [])),
+        lastModified: detail?.chapters.reduce((latest, chapter) => Math.max(latest, chapter.updatedAt), book.updatedAt) ?? book.updatedAt,
         characters: characters ?? NO_CHARACTERS,
         volumes: detail?.volumes.map(volume => ({
             id: volume.id, title: volume.title,
-            chapters: detail.chapters.filter(ch => ch.volumeId === volume.id).map(ch => ({
+            chapters: (chaptersByVolume.get(volume.id) ?? []).map(ch => ({
                 id: ch.id, title: ch.title, status: ch.status, content: ch.body.content, databaseVersion: ch.databaseVersion,
+                contentLoaded: detail.bodyMode !== 'directory',
                 contentFormat: ch.body.format, contentVersion: ch.body.version,
                 wordCount: ch.wordCount, foreshadowings: ch.foreshadowings,
                 isReadOnly: book.isReadOnly || volume.isReadOnly || ch.isReadOnly,
@@ -124,9 +135,20 @@ export function projectBook(book: LocalBook, detail?: LocalBookDetail, character
 
 // Never silently refresh the version underneath an unsaved editor draft.
 export const localBookOptions = (bookId: string) => ({
-    queryKey: localKeys.book(bookId), queryFn: () => localRepository.readBook(bookId),
+    queryKey: localKeys.book(bookId), queryFn: () => localRepository.readDirectory(bookId),
     staleTime: Infinity, retry: false, refetchOnWindowFocus: false, refetchOnReconnect: false,
 });
+
+// Analysis workspaces still need complete source snapshots. Release their
+// bodies as soon as the workspace closes, independently of the directory.
+export const localFullBookOptions = (bookId: string) => ({
+    ...localBookOptions(bookId), queryKey: localKeys.fullBook(bookId),
+    queryFn: () => localRepository.readBook(bookId), gcTime: 0,
+});
+
+export function directoryChapter(chapter: LocalChapter): LocalChapter {
+    return { ...chapter, body: { ...chapter.body, content: '', originalContent: null, originalFormat: null }, foreshadowings: [] };
+}
 
 // Character queries are independent so character edits never rewrite the
 // chapter cache underneath an open draft; the query data reference stays

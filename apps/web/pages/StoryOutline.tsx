@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import type { Book } from '../types';
-import { localBookOptions, localCharactersOptions, projectBook, projectCharacter } from '../data/local/repository';
+import { localFullBookOptions, localCharactersOptions, projectBook, projectCharacter } from '../data/local/repository';
 import { localPlanningOptions, type LocalPlanning } from '../data/local/planningRepository';
 import { useLocalPlanningPersistence } from '../features/planning/hooks/useLocalPlanningPersistence';
 import type { PlanningPersistence } from '../features/planning/hooks/useStoryPlanning';
@@ -117,7 +117,7 @@ function LoadedLocalOutline({ book, initial }: { book: Book; initial: LocalPlann
     return <StoryOutlineContent bookId={book.id} localBook={book} persistence={persistence} />;
 }
 function LocalOutline({ bookId }: { bookId: string }) {
-    const detail = useQuery({ ...localBookOptions(bookId), refetchOnMount: 'always' });
+    const detail = useQuery({ ...localFullBookOptions(bookId), refetchOnMount: 'always' });
     const characters = useQuery({ ...localCharactersOptions(bookId), refetchOnMount: 'always' });
     const planning = useQuery(localPlanningOptions(bookId));
     const book = useMemo(() => detail.data && characters.data

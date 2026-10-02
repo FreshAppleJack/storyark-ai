@@ -6,7 +6,7 @@ import { collectForeshadowingCards, filterForeshadowingCards, type Foreshadowing
 import { ForeshadowingCard } from '../features/foreshadowing/components/ForeshadowingCard';
 import { useForeshadowingRecovery } from '../features/foreshadowing/hooks/useForeshadowingRecovery';
 import { useQuery } from '@tanstack/react-query';
-import { localBookOptions, projectBook, type LocalBookDetail } from '../data/local/repository';
+import { localFullBookOptions, projectBook, type LocalBookDetail } from '../data/local/repository';
 import type { Book } from '../types';
 import type { ForeshadowingRecovery } from '../features/foreshadowing/hooks/useForeshadowingRecovery';
 import { useLocalNoteDrafts } from '../features/foreshadowing/hooks/useLocalNoteDrafts';
@@ -143,7 +143,7 @@ function LoadedLocalBoard({ detail }: { detail: LocalBookDetail }) {
     return <ForeshadowingContent bookId={book.id} localBook={book} localNotes={notes} />;
 }
 function LocalBoard({ bookId }: { bookId: string }) {
-    const query = useQuery({ ...localBookOptions(bookId), refetchOnMount: 'always' });
+    const query = useQuery({ ...localFullBookOptions(bookId), refetchOnMount: 'always' });
     if (query.error || !query.data || query.isFetching) return <main className="p-8">
         <p role={query.error ? 'alert' : 'status'}>{query.error?.message ?? 'Loading foreshadowing...'}</p>
         {query.error && <Button onClick={() => { void query.refetch(); }}>Retry</Button>}

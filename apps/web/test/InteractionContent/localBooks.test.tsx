@@ -7,6 +7,8 @@ import { localKeys, localRepository, projectBook, projectCharacter, type LocalBo
 import type { LocalCharacter } from '../../data/local/contracts';
 import type { ChapterDraftSnapshot } from '../../features/editor/hooks/useChapterDraft';
 import { useChapterDraft } from '../../features/editor/hooks/useChapterDraft';
+import { chapterBodyCache } from '../../data/local/chapterBodyCache';
+import { directoryChapter } from '../../data/local/repository';
 
 const native = vi.hoisted(() => ({ invoke: vi.fn(), isTauri: vi.fn() }));
 const http = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() }));
@@ -36,6 +38,20 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('Local books', () => {
+    it('renames an inactive directory chapter even when its full body is still cached', async () => {
+        const { result, client } = setup();
+        await waitFor(() => expect(result.current.booksLoading).toBe(false));
+        client.setQueryData(localKeys.book(book.id), { ...detail, bodyMode: 'directory', chapters: [directoryChapter(chapter)] });
+        chapterBodyCache(client).put(chapter);
+        native.invoke.mockResolvedValue({ ok: true, value: { ...chapter, title: 'Renamed', databaseVersion: 2 } });
+        await act(async () => {
+            expect(await result.current.updateChapterContent(book.id, volume.id, chapter.id, 'Renamed', '', chapter.wordCount, [])).toBe(true);
+        });
+        expect(native.invoke).toHaveBeenLastCalledWith('local_rename', expect.objectContaining({ input: expect.objectContaining({ title: 'Renamed' }) }));
+        expect(client.getQueryData<LocalBookDetail>(localKeys.book(book.id))?.chapters[0].body.content).toBe('');
+        expect(chapterBodyCache(client).get(book.id, chapter.id, 2)?.body.content).toBe(chapter.body.content);
+    });
+
     it.each(['', '   '])('persists a blank editor title through desktop IPC with its body intact (%j)', async title => {
         const projectedChapter = projectBook(book, detail).volumes[0].chapters[0];
         const { result, client } = setupHook(() => ({
@@ -97,7 +113,7 @@ describe('Local books', () => {
         expect(command).toBe('local_create_book');
         expect(args).toMatchObject({ input: { title: 'Local book', author: 'Writer' } });
         expect((args as { input: { coverColor: string } }).input.coverColor).toMatch(/^bg-(blue|emerald|rose|amber|purple)-600$/);
-        expect(client.getQueryData(localKeys.book(book.id))).toEqual({ book, volumes: [], chapters: [] });
+        expect(client.getQueryData(localKeys.book(book.id))).toEqual({ book, volumes: [], chapters: [], bodyMode: 'directory' });
     });
 
     it('creates volume and chapter using committed parent versions', async () => {

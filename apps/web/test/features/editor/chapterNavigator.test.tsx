@@ -324,3 +324,24 @@ describe('ChapterNavigator', () => {
         expect(props.onNavigateDashboard).toHaveBeenCalledTimes(1);
     });
 });
+
+
+it('virtualizes 10,000 chapters and can reveal a distant active chapter without rendering the whole directory', () => {
+    const chapters = Array.from({ length: 10000 }, (_, index) => ({ ...book.volumes[0].chapters[0], id: `large-${index}`, title: `Large chapter ${index}`, content: '' }));
+    const props = createProps({ book: { ...book, volumes: [{ ...book.volumes[0], chapters }] }, activeChapterId: 'large-9999' });
+    const { container } = render(<ChapterNavigator {...props} />);
+    expect(screen.getByText('Large chapter 9999')).toBeInTheDocument();
+    expect(container.querySelectorAll('[id^="sidebar-chapter-"]').length).toBeLessThan(40);
+    expect(screen.queryByText('Large chapter 0')).not.toBeInTheDocument();
+    const scroll = screen.getByTestId('chapter-tree-scroll');
+    fireEvent.scroll(scroll, { target: { scrollTop: 0 } });
+    expect(screen.getByText('Large chapter 0')).toBeInTheDocument();
+    expect(screen.queryByText('Large chapter 9999')).not.toBeInTheDocument();
+    fireEvent.contextMenu(screen.getByText('Large chapter 0'));
+    fireEvent.click(screen.getByText('Rename'));
+    fireEvent.change(screen.getByDisplayValue('Large chapter 0'), { target: { value: 'Pinned rename' } });
+    fireEvent.scroll(scroll, { target: { scrollTop: 300000 } });
+    expect(screen.getByDisplayValue('Pinned rename')).toBeInTheDocument();
+    expect(props.onRenameChapter).not.toHaveBeenCalled();
+    expect(container.querySelectorAll('[id^="sidebar-chapter-"]').length).toBeLessThan(40);
+});

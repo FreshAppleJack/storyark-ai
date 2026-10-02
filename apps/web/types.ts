@@ -67,6 +67,8 @@ export const AI_CONTINUE_LIMITS = {
 } as const;
 
 export interface Chapter {
+  /** False only for directory entries; an empty body must not become an editable draft. */
+  contentLoaded?: boolean;
   contentFormat?: ChapterSummaryContentFormat;
   contentVersion?: number;
   databaseVersion?: number;

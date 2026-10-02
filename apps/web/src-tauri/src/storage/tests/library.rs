@@ -146,3 +146,37 @@ fn invalid_or_unknown_content_never_overwrites_the_original() {
         "<p>Old</p>"
     );
 }
+
+#[test]
+fn directory_excludes_bodies_and_chapter_reads_enforce_ownership() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let input = fixture(&mut db);
+    let saved = db.save_chapter(input.clone()).unwrap();
+    let directory = db.read_book_directory(&input.book_id).unwrap();
+    assert_eq!(directory["bodyMode"], "directory");
+    assert_eq!(directory["chapters"][0]["title"], saved["chapter"]["title"]);
+    assert_eq!(
+        directory["chapters"][0]["databaseVersion"],
+        saved["chapter"]["databaseVersion"]
+    );
+    assert_eq!(directory["chapters"][0]["body"]["content"], "");
+    assert_eq!(
+        directory["chapters"][0]["body"]["originalContent"],
+        Value::Null
+    );
+    assert_eq!(directory["chapters"][0]["foreshadowings"], json!([]));
+    assert_eq!(
+        db.read_chapter(&input.book_id, &input.chapter_id).unwrap(),
+        saved["chapter"]
+    );
+    let other = Uuid::new_v4().to_string();
+    assert_eq!(
+        db.read_chapter(&other, &input.chapter_id).unwrap_err().code,
+        "OWNERSHIP_MISMATCH"
+    );
+    assert_eq!(
+        db.read_chapter(&input.book_id, &other).unwrap_err().code,
+        "NOT_FOUND"
+    );
+}

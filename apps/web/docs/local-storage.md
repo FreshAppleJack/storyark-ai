@@ -134,12 +134,13 @@ business commands only (no arbitrary SQL or caller-selected database paths).
 | Command | Transaction rules |
 | --- | --- |
 | listBooks / readBook | Stable ordering; readBook uses one read transaction for a consistent book/volume/chapter snapshot |
+| readDirectory / readChapter | The editor reads ordered metadata without authored bodies or notes, then loads only its selected chapter with a book ownership check. See [large-books.md](large-books.md) for cache and draft safeguards. |
 | createBook | Generate UUID, set defaults, append position; return persisted record |
 | createVolume / createChapter | Check parent existence, ownership, locks and expected parent version; insert and increment direct parent's version atomically; return both records |
 | saveChapter | Match book/volume/chapter chain; check locks and chapter expected version; write title, content, word count and complete notes together; increment chapter version and return committed record plus unchanged sessionKey/revision |
 | rename / setStatus | Validate status for target kind; check ancestor locks and target version; increment target version |
 | setReadOnly | Check target version and ancestor locks; allow unlocking the target itself; increment target version |
-| reorder | Validate exact current sibling membership and every expected version; parent must be a book for volumes, a volume for chapters, or null for books; check locks, update positions and increment all affected records plus direct parent atomically; return all changed records including parent |
+| reorder | Validate exact current sibling membership, expected content versions and positions; check ownership and locks; update positions atomically without changing content versions. The optional `directoryOnly` IPC flag returns chapter metadata instead of authored bodies. |
 | delete | Check target and direct parent versions and all affected locks; cascade descendants atomically; increment/return surviving direct parent; root book has no parent version |
 
 Rust checks actual stored ancestry, never trusts supplied IDs independently.

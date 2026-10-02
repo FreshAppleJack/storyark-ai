@@ -6,7 +6,7 @@ import { Button } from '../components/ui/Button';
 import { SaveStatusIndicator } from '../components/ui/SaveStatusIndicator';
 import { useBooks } from '../InteractionContent/BooksContext';
 import type { Book } from '../types';
-import { localBookOptions, localCharactersOptions, projectBook, projectCharacter } from '../data/local/repository';
+import { localFullBookOptions, localCharactersOptions, projectBook, projectCharacter } from '../data/local/repository';
 import { localPlanningOptions, type LocalPlanning } from '../data/local/planningRepository';
 import { localBrainstormOptions, type LocalBrainstorm } from '../data/local/brainstormRepository';
 import { localGraphOptions } from '../data/local/graphRepository';
@@ -110,7 +110,7 @@ function LoadedLocalBrainstorm({ book, planning, initial }: { book: Book; planni
     return <AiBrainstormContent bookId={book.id} localBook={book} sources={sources} />;
 }
 function LocalBrainstormRoute({ bookId }: { bookId: string }) {
-    const detail = useQuery({ ...localBookOptions(bookId), refetchOnMount: 'always' });
+    const detail = useQuery({ ...localFullBookOptions(bookId), refetchOnMount: 'always' });
     const characters = useQuery(localCharactersOptions(bookId));
     const planning = useQuery(localPlanningOptions(bookId));
     const workspace = useQuery(localBrainstormOptions(bookId));

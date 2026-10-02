@@ -329,7 +329,7 @@ fn chapter_reorder_preserves_content_versions_and_indexed_sources() {
         .unwrap();
 
     let reordered = db
-        .reorder(Reorder {
+        .reorder_directory(Reorder {
             parent: Some(ExpectedTarget {
                 target: Target::Volume {
                     book_id: first.book_id.clone(),
@@ -365,6 +365,12 @@ fn chapter_reorder_preserves_content_versions_and_indexed_sources() {
         .unwrap();
     assert_eq!(reordered[0]["databaseVersion"], 2);
     assert_eq!(reordered[1]["databaseVersion"], 2);
+    assert_eq!(reordered[0]["body"]["content"], "");
+    assert_eq!(reordered[1]["body"]["content"], "");
+    assert_eq!(
+        db.read_chapter(&first.book_id, &first.chapter_id).unwrap()["body"]["content"],
+        first.content
+    );
     assert_eq!(source_states(&db), before);
     assert_eq!(
         db.connection

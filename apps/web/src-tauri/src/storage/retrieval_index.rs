@@ -45,6 +45,20 @@ pub(crate) struct IndexWork {
     pub chunks: Vec<IndexChunkWork>,
 }
 
+impl IndexWork {
+    pub(crate) fn validation_snapshot(&self) -> Self {
+        Self {
+            chunks: Vec::new(),
+            job_id: self.job_id.clone(),
+            book_id: self.book_id.clone(),
+            source_id: self.source_id.clone(),
+            source_version: self.source_version,
+            index_version: self.index_version,
+            embedding_fingerprint: self.embedding_fingerprint.clone(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum IndexCommitResult {
     Completed,

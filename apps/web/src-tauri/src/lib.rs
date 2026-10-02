@@ -62,6 +62,8 @@ fn with_storage_commands<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri
         ai_commands::ai_validate_adoption,
         commands::local_list_books,
         commands::local_read_book,
+        commands::local_read_book_directory,
+        commands::local_read_chapter,
         commands::local_read_work_export_snapshot,
         commands::local_prepare_work_import,
         commands::local_import_work,
