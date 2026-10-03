@@ -59,6 +59,7 @@ struct ChapterContext {
     volume_title: String,
     title: String,
     source_version: i64,
+    content_version_floor: i64,
     content_format: String,
     content: String,
     updated_at: i64,
@@ -213,32 +214,97 @@ fn add_planning_text_source(
     ));
 }
 
+fn chapter_content_fingerprint(title: &str, format: &str, content: &str, notes: &str) -> String {
+    // Hash borrowed fields individually instead of serializing another full document copy.
+    stable_text_hash(
+        &[title, format, content, notes]
+            .map(stable_text_hash)
+            .join(":"),
+    )
+}
+
+fn content_version_floor(metadata: Option<&Value>, fingerprint: &str, version: i64) -> i64 {
+    metadata
+        .filter(|value| value["contentFingerprint"].as_str() == Some(fingerprint))
+        .and_then(|value| value["contentVersionFloor"].as_i64())
+        .filter(|floor| *floor > 0 && *floor <= version)
+        .unwrap_or(version)
+}
+
+// Seed older registries before a lock-only version bump. Never acknowledge a
+// summary of older content, or mutate its original generation evidence.
+pub(crate) fn prepare_chapter_lock_change(
+    db: &Connection,
+    book_id: &str,
+    chapter_id: &str,
+) -> Result<()> {
+    let source_id = source_id(book_id, &RetrievalSourceKind::Manuscript, chapter_id);
+    let row = db.query_row(
+        "SELECT c.title,c.content_format,c.content,c.foreshadowings_json,c.database_version,s.entity_metadata_json
+         FROM chapters c JOIN retrieval_sources s ON s.source_id=?1 AND s.source_version=c.database_version
+         WHERE c.id=?2 AND c.book_id=?3",
+        params![source_id, chapter_id, book_id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?, row.get::<_, i64>(4)?, row.get::<_, String>(5)?)),
+    ).optional()?;
+    if let Some((title, format, content, notes, version, metadata)) = row {
+        let mut metadata = parse_json(&metadata, "Stored source metadata is invalid")?;
+        let fingerprint = chapter_content_fingerprint(&title, &format, &content, &notes);
+        let floor = content_version_floor(Some(&metadata), &fingerprint, version);
+        metadata["contentFingerprint"] = json!(fingerprint);
+        metadata["contentVersionFloor"] = json!(floor);
+        db.execute(
+            "UPDATE retrieval_sources SET entity_metadata_json=? WHERE source_id=?",
+            params![metadata.to_string(), source_id],
+        )?;
+    }
+    Ok(())
+}
+
 fn chapter_sources(
     db: &Connection,
     book_id: &str,
     drafts: &mut Vec<SourceDraft>,
 ) -> Result<Vec<ChapterContext>> {
     let mut statement = db.prepare(
-        "SELECT c.id,c.volume_id,v.title,c.title,c.database_version,c.content_format,c.content,c.updated_at
+        "SELECT c.id,c.volume_id,v.title,c.title,c.database_version,c.content_format,c.content,c.updated_at,c.foreshadowings_json,s.entity_metadata_json
          FROM chapters c JOIN volumes v ON v.book_id=c.book_id AND v.id=c.volume_id
+         LEFT JOIN retrieval_sources s ON s.source_id=c.book_id||':manuscript:'||c.id
          WHERE c.book_id=? ORDER BY v.position,v.id,c.position,c.id",
     )?;
     let rows = statement.query_map([book_id], |row| {
-        Ok(ChapterContext {
-            id: row.get(0)?,
-            volume_id: row.get(1)?,
-            volume_title: row.get(2)?,
-            title: row.get(3)?,
-            source_version: row.get(4)?,
-            content_format: row.get(5)?,
-            content: row.get(6)?,
-            updated_at: row.get(7)?,
-            chapter_order: 0,
-        })
+        Ok((
+            ChapterContext {
+                id: row.get(0)?,
+                volume_id: row.get(1)?,
+                volume_title: row.get(2)?,
+                title: row.get(3)?,
+                source_version: row.get(4)?,
+                content_version_floor: row.get(4)?,
+                content_format: row.get(5)?,
+                content: row.get(6)?,
+                updated_at: row.get(7)?,
+                chapter_order: 0,
+            },
+            row.get::<_, String>(8)?,
+            row.get::<_, Option<String>>(9)?,
+        ))
     })?;
     let mut chapters = Vec::new();
     for (index, row) in rows.enumerate() {
-        let mut chapter = row?;
+        let (mut chapter, notes, metadata) = row?;
+        let fingerprint = chapter_content_fingerprint(
+            &chapter.title,
+            &chapter.content_format,
+            &chapter.content,
+            &notes,
+        );
+        let metadata = metadata
+            .as_deref()
+            .map(|value| parse_json(value, "Stored source metadata is invalid"))
+            .transpose()?;
+        chapter.content_version_floor =
+            content_version_floor(metadata.as_ref(), &fingerprint, chapter.source_version);
         chapter.chapter_order = index as i64;
         let body_text = if chapter.content_format == "tiptap-json" {
             parse_json(&chapter.content, "Stored manuscript content is invalid")
@@ -268,7 +334,8 @@ fn chapter_sources(
             },
             source_text,
             chapter.updated_at,
-            json!({"chapterId": chapter.id, "contentFormat": chapter.content_format}),
+            json!({"chapterId": chapter.id, "contentFormat": chapter.content_format,
+                "contentFingerprint": fingerprint, "contentVersionFloor": chapter.content_version_floor}),
         ));
         chapters.push(chapter);
     }
@@ -345,10 +412,18 @@ fn planning_sources(
             .filter(|snapshot| snapshot["chapterId"].as_str() == Some(chapter_id))
             .and_then(|snapshot| snapshot["chapterDatabaseVersion"].as_i64());
         let source_status = match recorded_version {
-            Some(value) if value == chapter.source_version && snapshot_version == Some(value) => {
+            Some(value)
+                if value >= chapter.content_version_floor
+                    && value <= chapter.source_version
+                    && snapshot_version == Some(value) =>
+            {
                 RetrievalSourceStatus::Active
             }
-            Some(value) if value == chapter.source_version => RetrievalSourceStatus::Pending,
+            Some(value)
+                if value >= chapter.content_version_floor && value <= chapter.source_version =>
+            {
+                RetrievalSourceStatus::Pending
+            }
             Some(value) if value > 0 => RetrievalSourceStatus::Stale,
             _ => RetrievalSourceStatus::Pending,
         };
@@ -703,6 +778,7 @@ fn sync_book_chunks(
     book_id: &str,
     drafts: &[SourceDraft],
     chapters: &[ChapterContext],
+    reusable_versions: &HashMap<String, i64>,
 ) -> Result<()> {
     for draft in drafts {
         let chunks = chunk_blocks(&blocks_for_source(draft, chapters));
@@ -715,7 +791,10 @@ fn sync_book_chunks(
             let locator_json = serde_json::to_string(&locator).map_err(|_| invalid())?;
             db.execute(
                 "INSERT OR IGNORE INTO retrieval_chunks(chunk_id,source_id,book_id,source_version,index_version,ordinal,source_text,index_text,text_hash,short_quote,locator_json,created_at,embedding_blob)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,NULL)",
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,(SELECT embedding_blob FROM retrieval_chunks
+                    WHERE book_id=?3 AND source_id=?2 AND source_version=?13 AND index_version=?5
+                    AND text_hash=?9 AND index_text=?8 AND source_text=?7
+                    AND embedding_blob IS NOT NULL LIMIT 1))",
                 params![
                     chunk_id(
                         &draft.source_id,
@@ -734,6 +813,7 @@ fn sync_book_chunks(
                     chunk.short_quote,
                     locator_json,
                     draft.updated_at,
+                    reusable_versions.get(&draft.source_id),
                 ],
             )?;
             db.execute(
@@ -784,6 +864,8 @@ fn sync_book_sources(db: &Connection, book_id: &str) -> Result<()> {
     note_sources_from_db(db, book_id, &chapters, &mut drafts)?;
 
     let mut current_ids = HashSet::new();
+    let mut reusable_versions = HashMap::new();
+    let current_embedding_fingerprint = crate::rag::embeddings::current_fingerprint();
     for draft in &drafts {
         current_ids.insert(draft.source_id.clone());
         let existing = db
@@ -807,7 +889,25 @@ fn sync_book_sources(db: &Connection, book_id: &str) -> Result<()> {
                 && state.source_text == draft.source_text
                 && state.index_text == draft.index_text
         });
-        let preserve_index = unchanged && draft.source_status == RetrievalSourceStatus::Active;
+        // A metadata-only version bump does not change the embedding input.
+        // Keep version checks and new locators, but reuse ready vectors by exact chunk text.
+        let reusable = existing.as_ref().is_some_and(|state| {
+            state.source_version != draft.source_version
+                && state.source_text == draft.source_text
+                && state.index_text == draft.index_text
+                && state.index_status == RetrievalIndexStatus::Ready.as_str()
+                && state.index_version == Some(CHUNK_INDEX_VERSION)
+                && state.embedding_fingerprint.as_deref()
+                    == Some(current_embedding_fingerprint.as_str())
+        });
+        let preserve_index =
+            (unchanged || reusable) && draft.source_status == RetrievalSourceStatus::Active;
+        if reusable && preserve_index {
+            reusable_versions.insert(
+                draft.source_id.clone(),
+                existing.as_ref().unwrap().source_version,
+            );
+        }
         let (index_status, index_version, embedding_fingerprint) = match existing {
             Some(state) if preserve_index => (
                 state.index_status,
@@ -862,6 +962,7 @@ fn sync_book_sources(db: &Connection, book_id: &str) -> Result<()> {
             ],
         )?;
         if !unchanged
+            && !reusable
             && draft.source_status == RetrievalSourceStatus::Active
             && !draft.source_text.trim().is_empty()
         {
@@ -889,7 +990,7 @@ fn sync_book_sources(db: &Connection, book_id: &str) -> Result<()> {
             )?;
         }
     }
-    sync_book_chunks(db, book_id, &drafts, &chapters)?;
+    sync_book_chunks(db, book_id, &drafts, &chapters, &reusable_versions)?;
     Ok(())
 }
 

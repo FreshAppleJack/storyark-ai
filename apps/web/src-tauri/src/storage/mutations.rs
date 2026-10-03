@@ -74,6 +74,13 @@ impl Database {
         // otherwise a locked chapter could never be unlocked again.
         unlocked_ancestors(&target)?;
         expected(&target.row, input.target.expected_database_version)?;
+        if target.table == "chapters" {
+            super::retrieval_sources::prepare_chapter_lock_change(
+                &tx,
+                target.row["bookId"].as_str().ok_or_else(invalid)?,
+                &target.id,
+            )?;
+        }
         let changed = tx.execute(&format!("UPDATE {} SET is_read_only=?,database_version=database_version+1,updated_at=max(updated_at,?) WHERE id=? AND database_version=?", target.table), params![input.is_read_only, now()?, target.id, input.target.expected_database_version])?;
         if changed != 1 {
             return Err(StorageError::new("VERSION_CONFLICT", "Record changed"));

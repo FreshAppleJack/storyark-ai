@@ -35,6 +35,275 @@ fn current_summary_snapshot(chapter: &SaveChapter, version: i64) -> Value {
     })
 }
 
+fn finish_test_index(db: &mut Database, book_id: &str) {
+    db.queue_retrieval_index(
+        QueueRetrievalIndex {
+            book_id: book_id.into(),
+        },
+        &current_fingerprint(),
+    )
+    .unwrap();
+    while let Some(work) = db.claim_next_retrieval_index_job(book_id).unwrap() {
+        let mut vector = vec![0.0; DIMENSION];
+        vector[0] = 1.0;
+        let vectors = vec![vector; work.chunks.len()];
+        assert_eq!(
+            db.commit_retrieval_index_job(&work, &vectors).unwrap(),
+            super::super::retrieval_index::IndexCommitResult::Completed
+        );
+    }
+}
+
+#[test]
+fn lock_changes_reuse_ready_vectors_and_keep_current_summaries_without_hiding_real_edits() {
+    let temp = TempDirectory::new();
+    let mut db = Database::open(&temp.0).unwrap();
+    let mut chapter = fixture(&mut db);
+    db.save_chapter(chapter.clone()).unwrap();
+    let snapshot = current_summary_snapshot(&chapter, 2);
+    db.save_planning(SavePlanning {
+        book_id: chapter.book_id.clone(),
+        expected_database_version: 0,
+        story_summary: "".into(),
+        story_background: "".into(),
+        chapter_summaries: json!([{"chapterId": chapter.chapter_id, "summary": "A current summary",
+            "sourceChapterVersion": 2, "sourceSnapshot": snapshot, "updatedAt": 2}]),
+        plot_settings: json!([]),
+        session_key: "lock-regression".into(),
+        revision: 1,
+    })
+    .unwrap();
+    finish_test_index(&mut db, &chapter.book_id);
+    let before: Vec<(String, Vec<u8>)> = db.connection.prepare(
+        "SELECT c.source_id,c.embedding_blob FROM retrieval_chunks c JOIN retrieval_sources s ON s.source_id=c.source_id AND s.source_version=c.source_version ORDER BY c.source_id,c.ordinal"
+    ).unwrap().query_map([], |row| Ok((row.get(0)?, row.get(1)?))).unwrap().map(|row| row.unwrap()).collect();
+    // Simulate a registry created before content-version metadata was introduced.
+    db.connection.execute("UPDATE retrieval_sources SET entity_metadata_json=json_remove(entity_metadata_json,'$.contentFingerprint','$.contentVersionFloor') WHERE source_kind='manuscript'", []).unwrap();
+    for (version, locked) in [(2, true), (3, false)] {
+        let record = db
+            .set_read_only(SetReadOnly {
+                target: ExpectedTarget {
+                    target: Target::Chapter {
+                        book_id: chapter.book_id.clone(),
+                        volume_id: chapter.volume_id.clone(),
+                        chapter_id: chapter.chapter_id.clone(),
+                    },
+                    expected_database_version: version,
+                },
+                is_read_only: locked,
+            })
+            .unwrap();
+        assert_eq!(record["databaseVersion"], version + 1);
+        let sources = db.sync_retrieval_sources(&chapter.book_id).unwrap();
+        assert!(
+            sources
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|source| source["indexStatus"] == "ready"),
+            "{sources}"
+        );
+        assert_eq!(
+            source(&sources, "chapter_summary")["sourceStatus"],
+            "active"
+        );
+        assert_eq!(source(&sources, "manuscript")["sourceVersion"], version + 1);
+        let after: Vec<(String, Vec<u8>)> = db.connection.prepare(
+            "SELECT c.source_id,c.embedding_blob FROM retrieval_chunks c JOIN retrieval_sources s ON s.source_id=c.source_id AND s.source_version=c.source_version ORDER BY c.source_id,c.ordinal"
+        ).unwrap().query_map([], |row| Ok((row.get(0)?, row.get(1)?))).unwrap().map(|row| row.unwrap()).collect();
+        assert_eq!(after, before);
+        let response = db
+            .search_retrieval(
+                RetrievalSearchRequest {
+                    freshness_policy: None,
+                    scope: RetrievalScope {
+                        book_id: chapter.book_id.clone(),
+                        allowed_source_kinds: vec![
+                            crate::rag::contracts::RetrievalSourceKind::Manuscript,
+                        ],
+                        allowed_chapter_ids: vec![chapter.chapter_id.clone()],
+                        before_chapter_order: None,
+                        before_anchor: None,
+                        include_future_plan: false,
+                        include_generated: false,
+                        include_stale: false,
+                        time_range: None,
+                    },
+                    query: "你好".into(),
+                    mode: RetrievalSearchMode::Lexical,
+                    limit: 8,
+                    excluded_hit_ids: vec![],
+                    char_budget: 1000,
+                    token_budget: None,
+                    adjacent_chunk_count: 0,
+                    task: RetrievalTaskStrategy::Generic,
+                    index_status: None,
+                },
+                None,
+                None,
+            )
+            .unwrap();
+        let hit = &response["hits"][0];
+        assert_eq!(hit["sourceVersion"], version + 1);
+        assert_eq!(hit["locator"]["chapterSourceVersion"], version + 1);
+        assert!(db
+            .queue_retrieval_index(
+                QueueRetrievalIndex {
+                    book_id: chapter.book_id.clone()
+                },
+                &current_fingerprint()
+            )
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
+    assert_eq!(
+        db.read_planning(&chapter.book_id).unwrap()["chapterSummaries"][0]["sourceSnapshot"],
+        snapshot
+    );
+    // Ancestor locks also change permissions without changing search material.
+    for target in [
+        Target::Volume {
+            book_id: chapter.book_id.clone(),
+            volume_id: chapter.volume_id.clone(),
+        },
+        Target::Book {
+            book_id: chapter.book_id.clone(),
+        },
+    ] {
+        let (table, id) = match &target {
+            Target::Volume { volume_id, .. } => ("volumes", volume_id),
+            Target::Book { book_id } => ("books", book_id),
+            _ => unreachable!(),
+        };
+        let first_version: i64 = db
+            .connection
+            .query_row(
+                &format!("SELECT database_version FROM {table} WHERE id=?"),
+                [id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        for (version, locked) in [(first_version, true), (first_version + 1, false)] {
+            db.set_read_only(SetReadOnly {
+                target: ExpectedTarget {
+                    target: target.clone(),
+                    expected_database_version: version,
+                },
+                is_read_only: locked,
+            })
+            .unwrap();
+            assert!(db
+                .sync_retrieval_sources(&chapter.book_id)
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|source| source["indexStatus"] == "ready"));
+        }
+    }
+    // A new summary captured after unlocking is also current through later locks.
+    let later_snapshot = current_summary_snapshot(&chapter, 4);
+    db.save_planning(SavePlanning {
+        book_id: chapter.book_id.clone(),
+        expected_database_version: 1,
+        story_summary: "".into(),
+        story_background: "".into(),
+        chapter_summaries: json!([{"chapterId": chapter.chapter_id, "summary": "A current summary",
+            "sourceChapterVersion": 4, "sourceSnapshot": later_snapshot, "updatedAt": 4}]),
+        plot_settings: json!([]),
+        session_key: "lock-regression".into(),
+        revision: 2,
+    })
+    .unwrap();
+    finish_test_index(&mut db, &chapter.book_id);
+    for (version, locked) in [(4, true), (5, false)] {
+        db.set_read_only(SetReadOnly {
+            target: ExpectedTarget {
+                target: Target::Chapter {
+                    book_id: chapter.book_id.clone(),
+                    volume_id: chapter.volume_id.clone(),
+                    chapter_id: chapter.chapter_id.clone(),
+                },
+                expected_database_version: version,
+            },
+            is_read_only: locked,
+        })
+        .unwrap();
+        let sources = db.sync_retrieval_sources(&chapter.book_id).unwrap();
+        assert_eq!(
+            source(&sources, "chapter_summary")["sourceStatus"],
+            "active"
+        );
+        assert!(sources
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|source| source["indexStatus"] == "ready"));
+    }
+    assert_eq!(
+        db.read_planning(&chapter.book_id).unwrap()["chapterSummaries"][0]["sourceSnapshot"],
+        later_snapshot
+    );
+    chapter.expected_database_version = 6;
+    chapter.content = chapter.content.replace("你好", "再见");
+    db.save_chapter(chapter.clone()).unwrap();
+    let changed = db.sync_retrieval_sources(&chapter.book_id).unwrap();
+    assert_eq!(source(&changed, "manuscript")["indexStatus"], "stale");
+    assert_eq!(source(&changed, "chapter_summary")["sourceStatus"], "stale");
+    db.set_read_only(SetReadOnly {
+        target: ExpectedTarget {
+            target: Target::Chapter {
+                book_id: chapter.book_id.clone(),
+                volume_id: chapter.volume_id.clone(),
+                chapter_id: chapter.chapter_id.clone(),
+            },
+            expected_database_version: 7,
+        },
+        is_read_only: true,
+    })
+    .unwrap();
+    let locked = db.sync_retrieval_sources(&chapter.book_id).unwrap();
+    assert_eq!(source(&locked, "manuscript")["indexStatus"], "stale");
+    assert_eq!(source(&locked, "chapter_summary")["sourceStatus"], "stale");
+}
+
+#[test]
+fn lock_changes_do_not_reuse_missing_vectors_or_a_different_embedding_model() {
+    for missing_vector in [true, false] {
+        let temp = TempDirectory::new();
+        let mut db = Database::open(&temp.0).unwrap();
+        let chapter = fixture(&mut db);
+        db.save_chapter(chapter.clone()).unwrap();
+        finish_test_index(&mut db, &chapter.book_id);
+        if missing_vector {
+            db.connection.execute("UPDATE retrieval_chunks SET embedding_blob=NULL WHERE source_id LIKE '%:manuscript:%'", []).unwrap();
+        } else {
+            db.connection.execute("UPDATE retrieval_sources SET embedding_fingerprint='old-model' WHERE source_kind='manuscript'", []).unwrap();
+        }
+        db.set_read_only(SetReadOnly {
+            target: ExpectedTarget {
+                target: Target::Chapter {
+                    book_id: chapter.book_id.clone(),
+                    volume_id: chapter.volume_id.clone(),
+                    chapter_id: chapter.chapter_id.clone(),
+                },
+                expected_database_version: 2,
+            },
+            is_read_only: true,
+        })
+        .unwrap();
+        assert_eq!(
+            source(
+                &db.sync_retrieval_sources(&chapter.book_id).unwrap(),
+                "manuscript"
+            )["indexStatus"],
+            "stale"
+        );
+    }
+}
+
 #[test]
 fn source_registry_keeps_display_text_separate_and_invalidates_changed_versions() {
     let temp = TempDirectory::new();
