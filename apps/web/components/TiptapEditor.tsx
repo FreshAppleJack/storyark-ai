@@ -737,7 +737,9 @@ const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
                     1,
                 );
                 editor.view.dispatch(editor.state.tr.setSelection(selection));
-                editorDom.focus({ preventScroll: true });
+                // Restore focus through ProseMirror so its selection is also written to the DOM.
+                if (!editor.view.editable) editorDom.focus({ preventScroll: true });
+                editor.view.focus();
                 const position = editor.view.coordsAtPos(selection.from);
                 scrollEditorTargetIntoView(editorDom, { top: position.top, height: position.bottom - position.top });
             } catch (error) {

@@ -142,6 +142,30 @@ describe('TiptapEditor', () => {
     scrollTo.mockRestore();
   });
 
+  it('synchronizes the visible DOM selection when a sidebar action returns focus to a lexical match', () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
+    const ref = React.createRef<TiptapEditorRef>();
+    const onUpdate = vi.fn();
+    const body = '前文，精确命中短语，后文';
+    const content = chapter(body);
+    const { getByRole, rerender } = render(<><button>Locate</button><TiptapEditor ref={ref} contentId="chapter-1" content={content} characters={characters} onUpdate={onUpdate} /></>);
+    const locator = retrievalLocator(0, Array.from(body).length);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      if (attempt === 2) rerender(<><button>Locate</button><TiptapEditor ref={ref} contentId="chapter-2" content={content} characters={characters} onUpdate={onUpdate} /></>);
+      if (attempt === 3) rerender(<><button>Locate</button><TiptapEditor ref={ref} contentId="chapter-2" content={content} isEditable={false} characters={characters} onUpdate={onUpdate} /></>);
+      act(() => {
+        ref.current!.editor!.commands.setTextSelection(1);
+        ref.current!.editor!.view.focus();
+        getByRole('button', { name: 'Locate' }).focus();
+        expect(ref.current!.focusRetrievalLocator(locator, { paragraphOrdinal: 0, textOffset: 3, textLength: 6 })).toBe(true);
+      });
+      expect(ref.current!.editor!.state.doc.textBetween(ref.current!.editor!.state.selection.from, ref.current!.editor!.state.selection.to)).toBe('精确命中短语');
+      expect(window.getSelection()?.toString()).toBe('精确命中短语');
+    }
+    expect(onUpdate).not.toHaveBeenCalled();
+    scrollTo.mockRestore();
+  });
+
   it('keeps blockquote paragraph ordinals aligned with the retrieval indexer', () => {
     const content = JSON.stringify({
       type: 'doc',
