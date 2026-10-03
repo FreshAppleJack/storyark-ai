@@ -10,7 +10,7 @@ import { BookActionsMenu } from '../features/books/components/BookActionsMenu';
 import { WorkImportPreflightDialog } from '../features/books/components/WorkImportPreflightDialog';
 import { useWorkImport } from '../features/books/hooks/useWorkImport';
 import { Button } from '../components/ui/Button';
-import { FileUp, Plus, LogOut, Settings, Search, X } from 'lucide-react';
+import { BookOpen, FileUp, Plus, LogOut, Settings, Search, X } from 'lucide-react';
 import { Book } from '../types';
 import { getFuzzyScore } from '../utils/search';
 import { localDerivedIndexKey, localKeys } from '../data/local/repository';
@@ -130,7 +130,7 @@ const Dashboard: React.FC = () => {
         <div className="min-h-screen bg-slate-50 dark:bg-slate-950 relative transition-colors duration-300">
             <nav className="bg-white dark:bg-slate-950 border-b border-slate-200 dark:border-slate-800 px-6 py-4 flex justify-between items-center sticky top-0 z-10 transition-colors duration-300">
                 <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white font-serif font-bold">S</div>
+                    <div className="w-8 h-8 bg-brand-600 rounded-lg flex items-center justify-center text-white"><BookOpen size={21} aria-hidden="true" /></div>
                     <span className="font-bold text-xl text-slate-800 dark:text-white tracking-tight">StoryArk</span>
                 </div>
                 <div className="flex items-center gap-4">
