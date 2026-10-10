@@ -139,6 +139,13 @@ establish live-provider compatibility, installer signing or macOS release readin
 - [Release checklist](apps/web/docs/releasing.md)
 - [Third-party components and resources](THIRD_PARTY_NOTICES.md)
 
+## Acknowledgements
+
+Thank you to [Brandon717-max](https://github.com/Brandon717-max) and
+[Casanova-kdb](https://github.com/Casanova-kdb), fellow team members on the group
+project that preceded StoryArk. This acknowledgement recognizes their involvement
+in that earlier project and our shared project history.
+
 ## License
 
 StoryArk's source code and documentation are licensed under the
